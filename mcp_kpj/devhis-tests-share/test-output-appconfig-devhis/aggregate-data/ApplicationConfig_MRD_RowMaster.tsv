@@ -1,0 +1,5 @@
+PASS	Application Configuration - MRD - Row Master	ApplicationConfig_MRD_RowMaster	Login	Authenticated; Patient Dashboard	Logged in
+PASS	Application Configuration - MRD - Row Master	ApplicationConfig_MRD_RowMaster	Open Row Master screen	The Row Master list is shown	Opened Row Master Welcome: Employee 1306:(KPJ) Last  @ https://devhis.sancyberhad.com/#/RowMasterList
+PASS	Application Configuration - MRD - Row Master	ApplicationConfig_MRD_RowMaster	Click Add	The Row Master entry form is shown	Add form opened - Row Master Welcome: Employee 1306:(KPJ) Last  @ https://devhis.sancyberhad.com/#/add-RowMaster
+PASS	Application Configuration - MRD - Row Master	ApplicationConfig_MRD_RowMaster	Enter Code and Remark	Row Code, Remark and Rack are entered	Rack=Rack1 [model=1] | RowCode=RW61300 | Remark=Top Shelf Row
+FAIL	Application Configuration - MRD - Row Master	ApplicationConfig_MRD_RowMaster	Click Submit & success toast	A '... saved successfully' success toast is shown	WRONG MESSAGE - expected a success message but the app showed: "×KPJ PortalCode already exist!"

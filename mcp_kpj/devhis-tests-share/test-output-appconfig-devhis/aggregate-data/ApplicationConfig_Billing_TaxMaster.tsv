@@ -1,0 +1,5 @@
+PASS	Application Configuration - Billing - Tax	ApplicationConfig_Billing_TaxMaster	Login	Authenticated; Patient Dashboard	Logged in
+PASS	Application Configuration - Billing - Tax	ApplicationConfig_Billing_TaxMaster	Open Tax screen	The Tax Master screen is shown	Opened https://devhis.sancyberhad.com/?_cb=1.2.18#/TaxMasterList
+PASS	Application Configuration - Billing - Tax	ApplicationConfig_Billing_TaxMaster	Click Add	The add form is shown	Add form opened (https://devhis.sancyberhad.com/?_cb=1.2.18#/add-TaxMaster)
+PASS	Application Configuration - Billing - Tax	ApplicationConfig_Billing_TaxMaster	Enter Code, Remark, Percentage, Ledger Name	The Tax Master fields are filled	Code=TAX38400 | Remark=Auto tax TAX38400 | Percentage=6 | LedgerName=Auto Ledger TAX38400
+PASS	Application Configuration - Billing - Tax	ApplicationConfig_Billing_TaxMaster	Click Save & success toast	'... saved successfully' toast	×KPJ PortalRecord added succesfully.

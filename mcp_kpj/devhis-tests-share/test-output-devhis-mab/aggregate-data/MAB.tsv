@@ -1,0 +1,4 @@
+PASS	Multiple Appointment Booking	TC01_MAB	Login	Authenticated; Patient Dashboard	Logged in
+PASS	Multiple Appointment Booking	TC01_MAB	Navigate to module	Booking screen opens	Booking form displayed
+PASS	Multiple Appointment Booking	TC01_MAB	Fill patient details	Fields accepted	Patient details filled
+FAIL	Multiple Appointment Booking	TC01_MAB	ERROR	Test completes	FAILED: Could not select Booking Type = 'KPJ' (attempt 5/5): {ok=false, status=select-not-found}

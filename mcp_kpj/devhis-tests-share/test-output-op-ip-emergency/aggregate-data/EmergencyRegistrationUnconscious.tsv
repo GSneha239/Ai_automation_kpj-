@@ -1,0 +1,6 @@
+PASS	Emergency Registration (Unconscious)	TC11_EmergencyRegistrationUnconscious	Login	Authenticated; Patient Dashboard	Logged in
+PASS	Emergency Registration (Unconscious)	TC11_EmergencyRegistrationUnconscious	Open Emergency Registration (Unconscious)	The Emergency Registration form is shown	Form opened
+PASS	Emergency Registration (Unconscious)	TC11_EmergencyRegistrationUnconscious	Select Reg.type	Reg.type selected	Reg.type: New
+PASS	Emergency Registration (Unconscious)	TC11_EmergencyRegistrationUnconscious	Fill mandatory details (if empty)	Mandatory fields populated	Prefix=Mr. | Gender=Male | Name=EMERGENCY UNKNOWN | Age=30 | Encounter=Emergency (kept) | Location=KPJ (kept) | Dept=Emergency Department (kept) | Doctor=A | VisitType=(no-opt) | Disaster=Natural
+PASS	Emergency Registration (Unconscious)	TC11_EmergencyRegistrationUnconscious	Save registration	'Registration Saved Successfully & MRN is …' toast	×KPJ PortalRegistration Saved Successfully & MRN is ED000178.
+FAIL	Emergency Registration (Unconscious)	TC11_EmergencyRegistrationUnconscious	ERROR	Test completes	FAILED: org/apache/pdfbox/pdmodel/PDDocument

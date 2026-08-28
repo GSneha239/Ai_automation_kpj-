@@ -1,0 +1,4 @@
+PASS	Application Configuration - CSSD Configuration - Sterilization Type	ApplicationConfig_CSSD_SterilizationType	Login	Authenticated; Patient Dashboard	Logged in
+PASS	Application Configuration - CSSD Configuration - Sterilization Type	ApplicationConfig_CSSD_SterilizationType	Open Sterilization Type screen	The Sterilization Type screen is shown	Opened https://devhis.sancyberhad.com/#/SterilizationType
+PASS	Application Configuration - CSSD Configuration - Sterilization Type	ApplicationConfig_CSSD_SterilizationType	Enter Code, Remark, Alert Threshold (%), Standard TAT (Mins)	All fields are entered	Code=ST702100 | Remark=Auto sterilization type ST702100 | StandardTAT=30 | AlertThreshold=80
+PASS	Application Configuration - CSSD Configuration - Sterilization Type	ApplicationConfig_CSSD_SterilizationType	Click Submit & success toast	'... saved successfully.' toast	×KPJ PortalMaster Saved Successfully.

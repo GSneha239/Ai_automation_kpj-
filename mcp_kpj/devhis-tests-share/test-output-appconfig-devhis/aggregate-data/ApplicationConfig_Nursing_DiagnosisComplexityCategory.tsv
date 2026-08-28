@@ -1,0 +1,2 @@
+PASS	Application Configuration - Nursing - Diagnosis Complexity Category	ApplicationConfig_Nursing_DiagnosisComplexityCategory	Login	Authenticated; Patient Dashboard	Logged in
+FAIL	Application Configuration - Nursing - Diagnosis Complexity Category	ApplicationConfig_Nursing_DiagnosisComplexityCategory	Open Diagnosis Complexity Category screen	The Diagnosis Complexity Category screen is shown	WRONG PAGE - expected Diagnosis Complexity Category but the app opened: Welcome: Employee 1306:(KPJ) Last Login : 11/ @ https://devhis.sancyberhad.com/#

@@ -1,0 +1,4 @@
+PASS	Application Configuration - Nursing - Allergy	ApplicationConfig_Nursing_Allergy	Login	Authenticated; Patient Dashboard	Logged in
+PASS	Application Configuration - Nursing - Allergy	ApplicationConfig_Nursing_Allergy	Open Allergy screen	The Allergy screen (inline-add form) is shown	Opened Allergy master Welcome: Employee 1306:(K @ https://devhis.sancyberhad.com/#/Allergy
+PASS	Application Configuration - Nursing - Allergy	ApplicationConfig_Nursing_Allergy	Enter Code and Remark	Code and Remark are entered	Code=AL87500 | Remark=Dust Mite
+PASS	Application Configuration - Nursing - Allergy	ApplicationConfig_Nursing_Allergy	Click Submit & success toast	A '... saved successfully' success toast is shown	×KPJ PortalMaster Saved Successfully.

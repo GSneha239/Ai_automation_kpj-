@@ -1,0 +1,2 @@
+PASS	Application Configuration - Patient - CaseType	ApplicationConfig_Patient_CaseType	Login	Authenticated; Patient Dashboard	Logged in
+FAIL	Application Configuration - Patient - CaseType	ApplicationConfig_Patient_CaseType	Open CaseType screen	The CaseType screen (inline-add form) is shown	WRONG PAGE - expected CaseType but the app opened: Welcome: Employee 1306:(KPJ) Last Login : 11/08/2026 12:25:3 @ https://devhis.sancyberhad.com/#

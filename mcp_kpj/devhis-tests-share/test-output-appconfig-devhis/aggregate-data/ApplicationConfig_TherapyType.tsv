@@ -1,0 +1,4 @@
+PASS	Application Configuration - Therapy Type	ApplicationConfig_TherapyType	Login	Authenticated; Patient Dashboard	Logged in
+PASS	Application Configuration - Therapy Type	ApplicationConfig_TherapyType	Open Therapy Type screen	The Therapy Type screen is shown	Opened https://devhis.sancyberhad.com/#/TherapyType
+PASS	Application Configuration - Therapy Type	ApplicationConfig_TherapyType	Enter Code + Therapy Type	Code and Therapy Type are entered	Code=TT848200 | Type=AutoTherapy8200 | codeNg=commonmaster.Code | nameNg=commonmaster.Description
+PASS	Application Configuration - Therapy Type	ApplicationConfig_TherapyType	Click Submit & success toast	'... saved successfully.' toast	×KPJ PortalMaster Saved Successfully.

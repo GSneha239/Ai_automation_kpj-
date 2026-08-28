@@ -1,0 +1,5 @@
+PASS	Application Configuration - Blood Bank - Blood Test Master	ApplicationConfig_BloodBank_BloodTestMaster	Login	Authenticated; Patient Dashboard	Logged in
+PASS	Application Configuration - Blood Bank - Blood Test Master	ApplicationConfig_BloodBank_BloodTestMaster	Open Blood Test Master screen	The Blood Test Master screen is shown	Opened https://devhis.sancyberhad.com/#/BloodTestMaster
+PASS	Application Configuration - Blood Bank - Blood Test Master	ApplicationConfig_BloodBank_BloodTestMaster	Click Add	The Blood Test add form opens	Add clicked (https://devhis.sancyberhad.com/#/add-BloodTestMaster)
+PASS	Application Configuration - Blood Bank - Blood Test Master	ApplicationConfig_BloodBank_BloodTestMaster	Enter Code, Remark, Test Result	All fields are entered	Code=TM532500 | Remark=Auto blood test TM532500 | TestResult=Negative
+PASS	Application Configuration - Blood Bank - Blood Test Master	ApplicationConfig_BloodBank_BloodTestMaster	Click Submit & success toast	'... saved successfully.' toast	×KPJ PortalBlood Test saved successfully.

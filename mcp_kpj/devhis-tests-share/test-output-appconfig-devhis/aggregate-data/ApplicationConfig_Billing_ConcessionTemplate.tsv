@@ -1,0 +1,7 @@
+PASS	Application Configuration - Billing - Concession Template	ApplicationConfig_Billing_ConcessionTemplate	Login	Authenticated; Patient Dashboard	Logged in
+PASS	Application Configuration - Billing - Concession Template	ApplicationConfig_Billing_ConcessionTemplate	Open Concession Template screen	The Concession Template screen is shown	Opened https://devhis.sancyberhad.com/#/concessiontemplateMaster
+PASS	Application Configuration - Billing - Concession Template	ApplicationConfig_Billing_ConcessionTemplate	Click Add	The Concession Template add form opens	Add clicked (https://devhis.sancyberhad.com/#/add-concessiontemplate)
+PASS	Application Configuration - Billing - Concession Template	ApplicationConfig_Billing_ConcessionTemplate	Enter Code, Remark, Group, Percentage	All fields are entered	Code=CT568400 | Remark=Auto concession CT568400 | Group=Cardiology | Percentage=10
+PASS	Application Configuration - Billing - Concession Template	ApplicationConfig_Billing_ConcessionTemplate	Click Add (add the detail line)	The detail line is added to the template grid	(detail row added)
+PASS	Application Configuration - Billing - Concession Template	ApplicationConfig_Billing_ConcessionTemplate	Click Save & success toast	'... saved successfully.' toast	×KPJ PortalConcession Template Saved Successfully.
+PASS	Application Configuration - Billing - Concession Template	ApplicationConfig_Billing_ConcessionTemplate	Check the list table for the added row	The newly added Concession Template row is shown in the table	Found in table: CT568400Auto concession CT568400 True

@@ -1,0 +1,2 @@
+PASS	System Configuration - User Role	SystemConfig_UserRole	Login	Authenticated; Patient Dashboard	Logged in
+FAIL	System Configuration - User Role	SystemConfig_UserRole	ERROR	Test completes	FAILED: com/kpj/pages/SystemConfiguration_page/UserRolePage

@@ -1,0 +1,4 @@
+PASS	Application Configuration - Dialysis Configuration - Dialysis Parameter	ApplicationConfig_Dialysis_DialysisParameter	Login	Authenticated; Patient Dashboard	Logged in
+PASS	Application Configuration - Dialysis Configuration - Dialysis Parameter	ApplicationConfig_Dialysis_DialysisParameter	Open Dialysis Parameter screen	The Dialysis Parameter screen is shown	Opened https://devhis.sancyberhad.com/#/DialysisParameter
+PASS	Application Configuration - Dialysis Configuration - Dialysis Parameter	ApplicationConfig_Dialysis_DialysisParameter	Enter Code, Remark	Code and Remark are entered	Code=DP407400 | Remark=Auto dialysis parameter DP407400 | Store=(n/a)
+FAIL	Application Configuration - Dialysis Configuration - Dialysis Parameter	ApplicationConfig_Dialysis_DialysisParameter	Click Submit & success toast	'... saved successfully.' toast	No toast appeared

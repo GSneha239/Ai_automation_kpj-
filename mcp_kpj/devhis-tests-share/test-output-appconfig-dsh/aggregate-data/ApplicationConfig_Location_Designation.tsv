@@ -1,0 +1,6 @@
+PASS	Application Configuration - Designation	ApplicationConfig_Location_Designation	Login	Authenticated; Patient Dashboard	Logged in
+PASS	Application Configuration - Designation	ApplicationConfig_Location_Designation	Open Designation screen	The Designation screen is shown	Opened https://dsh-nhisqa.kpjhealth.com.my/#/Designation
+PASS	Application Configuration - Designation	ApplicationConfig_Location_Designation	Confirm the master being edited	Form Name = Designation	Form Name = Designation (of 177 masters)
+PASS	Application Configuration - Designation	ApplicationConfig_Location_Designation	Enter Code and Remark	Code and Remark are entered	Code=DS97743915 | Remark=Laboratory Technologist | [models: commonmaster.Code / commonmaster.Description]
+PASS	Application Configuration - Designation	ApplicationConfig_Location_Designation	Click Submit	The Designation is saved	Message: "×KPJ PortalMaster Saved Successfully."  [attempts: DS97743915/Laboratory Technologist -> "×KPJ PortalMaster Saved Successfully."]
+PASS	Application Configuration - Designation	ApplicationConfig_Location_Designation	Success toast message	'... saved successfully' toast	Toast: "×KPJ PortalMaster Saved Successfully."

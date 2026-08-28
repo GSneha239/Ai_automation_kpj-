@@ -1,0 +1,1 @@
+FAIL	Emergency Visits	TC17_EmergencyVisits	ERROR	Test completes	FAILED: Login failed: still on login page after authentication. URL=https://devhis.sancyberhad.com/Account#/PatientDashboard — check credentials or counter selection.

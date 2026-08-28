@@ -1,0 +1,9 @@
+PASS	Discharge (Cancel Discharge / Print)	TC21_Discharge	Login	Authenticated; Patient Dashboard	Logged in
+PASS	Discharge (Cancel Discharge / Print)	TC21_Discharge	Cancel Discharge · Open Discharge	The Discharge list is shown	Opened (#/DischargeList)
+PASS	Discharge (Cancel Discharge / Print)	TC21_Discharge	Cancel Discharge · Search (Discharge view, 1-month range, To = today)	Discharged patients are listed	Searched 11/07/2026 -> 11/08/2026
+PASS	Discharge (Cancel Discharge / Print)	TC21_Discharge	Cancel Discharge · Select a patient	One patient selected	Selected: Mr. ADMISSON CONSENT
+PASS	Discharge (Cancel Discharge / Print)	TC21_Discharge	Cancel Discharge · Click & success toast	'Discharge Cancel successfully.' toast	Discharge Cancel successfully.
+PASS	Discharge (Cancel Discharge / Print)	TC21_Discharge	Print · Open Discharge	The Discharge list is shown	Opened (#/DischargeList)
+PASS	Discharge (Cancel Discharge / Print)	TC21_Discharge	Print · Search (Discharge view, 1-month range, To = today)	Discharged patients are listed	Searched 11/07/2026 -> 11/08/2026
+PASS	Discharge (Cancel Discharge / Print)	TC21_Discharge	Print · Select a patient	One patient selected	Selected: Mr. IP ADMISSION
+PASS	Discharge (Cancel Discharge / Print)	TC21_Discharge	Print · Report opens in new tab & screenshot	The discharge report is shown	Report opened in a new tab (PDF): https://devhis.sancyberhad.com/SQLReport/RegistrationReport/DischargeGridReport.aspx?FromDate=11/07/2026&ToDate=11/08/2026&LocationId=1&DischargeFlag=Discharge&PatientID=11134

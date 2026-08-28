@@ -1,0 +1,4 @@
+PASS	Application Configuration - Nursing - Body Symptoms	ApplicationConfig_Nursing_BodySymptoms	Login	Authenticated; Patient Dashboard	Logged in
+PASS	Application Configuration - Nursing - Body Symptoms	ApplicationConfig_Nursing_BodySymptoms	Open Body Symptoms screen	The Body Symptoms screen (inline-add form) is shown	Opened Body Symptoms Welcome: Employee 1306:(KPJ) La @ https://devhis.sancyberhad.com/#/BodySymptoms
+PASS	Application Configuration - Nursing - Body Symptoms	ApplicationConfig_Nursing_BodySymptoms	Select Catogory, enter Code and Symptom	Catogory, Code and Symptom are set	Category=Right Hand | Code=BS31600 | Symptom=Tingling
+PASS	Application Configuration - Nursing - Body Symptoms	ApplicationConfig_Nursing_BodySymptoms	Click Submit & success toast	A '... saved successfully' success toast is shown	×KPJ PortalSaved Successfully.

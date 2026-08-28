@@ -1,0 +1,5 @@
+PASS	Application Configuration - Bed Type	ApplicationConfig_BedType	Login	Authenticated; Patient Dashboard	Logged in
+PASS	Application Configuration - Bed Type	ApplicationConfig_BedType	Open Bed Type screen	The Bed Type screen is shown	Opened https://devhis.sancyberhad.com/#/BedTypeMaster
+PASS	Application Configuration - Bed Type	ApplicationConfig_BedType	Click Add	The Bed Type add form opens	Add clicked
+PASS	Application Configuration - Bed Type	ApplicationConfig_BedType	Enter Code + Bed Type	Code and Bed Type are entered	Code=BT301900 | BedType=AutoBedType1900 | codeNg=BedTypeMaster.code | btNg=BedTypeMaster.name | text=(none) | taHostNg=-
+PASS	Application Configuration - Bed Type	ApplicationConfig_BedType	Click Submit & success toast	'... saved successfully.' toast	×KPJ PortalBed Type Master details added successfully.

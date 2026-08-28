@@ -1,0 +1,6 @@
+PASS	Emergency List View (Change Admission Type)	TC13_EmergencyListView	Login	Authenticated; Patient Dashboard	Logged in
+PASS	Emergency List View (Change Admission Type)	TC13_EmergencyListView	Open Emergency List View (via menu tab)	The Emergency List View screen is shown	Emergency List View opened
+PASS	Emergency List View (Change Admission Type)	TC13_EmergencyListView	Search by date range + MRN	Matching emergency patients are listed	From=01/06/2026 | To=06/08/2026 | MRN=9 | Search=clicked | rows=27
+PASS	Emergency List View (Change Admission Type)	TC13_EmergencyListView	Select a patient	One patient is selected	Selected: MARY JANE / MRN 100000932 / Adm 10465 [row 25/27]
+PASS	Emergency List View (Change Admission Type)	TC13_EmergencyListView	Click Change Admission Type	The admission form (3 sections) opens	Admission form opened
+FAIL	Emergency List View (Change Admission Type)	TC13_EmergencyListView	ERROR	Test completes	FAILED: com/microsoft/playwright/Keyboard$PressOptions

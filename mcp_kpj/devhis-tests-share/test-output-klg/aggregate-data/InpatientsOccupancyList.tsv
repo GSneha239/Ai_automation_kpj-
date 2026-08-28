@@ -1,0 +1,11 @@
+PASS	Inpatients Occupancy List (Change Admission Type / Expected Discharge Date)	TC23_InpatientsOccupancyList	Login	Authenticated; Patient Dashboard	Logged in
+FAIL	Inpatients Occupancy List (Change Admission Type / Expected Discharge Date)	TC23_InpatientsOccupancyList	Change Admission Type · Open Occupancy List	The Occupancy List is shown	Did NOT reach the list
+PASS	Inpatients Occupancy List (Change Admission Type / Expected Discharge Date)	TC23_InpatientsOccupancyList	Expected Discharge Date · Open Occupancy List	The Occupancy List is shown	Opened (#/AdmissionList)
+PASS	Inpatients Occupancy List (Change Admission Type / Expected Discharge Date)	TC23_InpatientsOccupancyList	Expected Discharge Date · Search (1-month range, To = today)	Admitted patients are listed	Searched 21/06/2026 -> 21/07/2026
+FAIL	Inpatients Occupancy List (Change Admission Type / Expected Discharge Date)	TC23_InpatientsOccupancyList	Expected Discharge Date · Select a patient	One patient selected	No patient in the list
+PASS	Inpatients Occupancy List (Change Admission Type / Expected Discharge Date)	TC23_InpatientsOccupancyList	Cancel Admission · Open Occupancy List	The Occupancy List is shown	Opened (#/AdmissionList)
+PASS	Inpatients Occupancy List (Change Admission Type / Expected Discharge Date)	TC23_InpatientsOccupancyList	Cancel Admission · Search (1-month range, To = today)	Admitted patients are listed	Searched 21/06/2026 -> 21/07/2026
+FAIL	Inpatients Occupancy List (Change Admission Type / Expected Discharge Date)	TC23_InpatientsOccupancyList	Cancel Admission · Select a patient	One patient selected	No patient in the list
+PASS	Inpatients Occupancy List (Change Admission Type / Expected Discharge Date)	TC23_InpatientsOccupancyList	Close Admission · Open Occupancy List	The Occupancy List is shown	Opened (#/AdmissionList)
+PASS	Inpatients Occupancy List (Change Admission Type / Expected Discharge Date)	TC23_InpatientsOccupancyList	Close Admission · Search (1-month range, To = today)	Admitted patients are listed	Searched 21/06/2026 -> 21/07/2026
+FAIL	Inpatients Occupancy List (Change Admission Type / Expected Discharge Date)	TC23_InpatientsOccupancyList	Close Admission · Select a patient	One patient selected	No patient in the list

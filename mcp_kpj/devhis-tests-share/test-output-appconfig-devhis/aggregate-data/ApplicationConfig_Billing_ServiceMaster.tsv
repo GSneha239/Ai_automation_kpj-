@@ -1,0 +1,8 @@
+PASS	Application Configuration - Billing - Service Master	ApplicationConfig_Billing_ServiceMaster	Login	Authenticated; Patient Dashboard	Logged in
+PASS	Application Configuration - Billing - Service Master	ApplicationConfig_Billing_ServiceMaster	Open Service Master screen	The Service Master screen is shown	Opened https://devhis.sancyberhad.com/?_cb=1.2.18#/serviceItemMaster
+PASS	Application Configuration - Billing - Service Master	ApplicationConfig_Billing_ServiceMaster	Click Add	The Service Master add form opens	Add clicked (https://devhis.sancyberhad.com/?_cb=1.2.18#/add-serviceItem/serviceMaster)
+PASS	Application Configuration - Billing - Service Master	ApplicationConfig_Billing_ServiceMaster	Enter Service Name, Group, SubGroup	Service Name / Group / SubGroup entered	ServiceName=Auto Service SM083900 | Code=SM083900 | Group=Cardiology | SubGroup=Auto Sub Group SG031800
+PASS	Application Configuration - Billing - Service Master	ApplicationConfig_Billing_ServiceMaster	Fill Pricing Policy Details*	Pricing Policy Details filled	Unit Purchase Price set on 15 pricing row(s)
+PASS	Application Configuration - Billing - Service Master	ApplicationConfig_Billing_ServiceMaster	Enter HSN Code + Code Type, click Add	The code row is added	CodeType=13th Schedule | HSNCode=9993 | codeRowAdded=true
+PASS	Application Configuration - Billing - Service Master	ApplicationConfig_Billing_ServiceMaster	Select Tax Details	A tax detail is selected	ticked a tax default
+PASS	Application Configuration - Billing - Service Master	ApplicationConfig_Billing_ServiceMaster	Click Submit & success toast	'... saved successfully.' toast	×KPJ PortalService Details Saved Successfully.

@@ -1,0 +1,14 @@
+PASS	Emergency Visits	TC17_EmergencyVisits	Login	Authenticated; Patient Dashboard	Logged in
+PASS	Emergency Visits	TC17_EmergencyVisits	Attach Signature · Open Emergency Visits & search	Emergency visits are listed	Queue searched
+PASS	Emergency Visits	TC17_EmergencyVisits	Attach Signature · Select a patient	One patient selected	Selected: EMERGENCY UNKNOWN
+PASS	Emergency Visits	TC17_EmergencyVisits	Attach Signature · Attach image & toast	'Digital Signature Saved Successfully.' toast is shown	×KPJ PortalDigital Signature Saved Successfully.
+PASS	Emergency Visits	TC17_EmergencyVisits	Change Doctor · Open Emergency Visits & search	Emergency visits are listed	Queue searched
+PASS	Emergency Visits	TC17_EmergencyVisits	Change Doctor · Select a patient	One patient selected	Selected: EMER UNCONSCIOUS
+PASS	Emergency Visits	TC17_EmergencyVisits	Change Doctor · Open popup	The Change Doctor modal opens	Change Doctor modal opened
+PASS	Emergency Visits	TC17_EmergencyVisits	Change Doctor · Select doctor, Save & toast	Success toast is shown	Doctor=ABC | ×KPJ PortalDoctor Updated Successfully.
+PASS	Emergency Visits	TC17_EmergencyVisits	Consent/Forms · Open Emergency Visits & search	Emergency visits are listed	Queue searched
+PASS	Emergency Visits	TC17_EmergencyVisits	Consent/Forms · Select a patient	One patient selected	Selected: SATHISH KUMAR KKV
+PASS	Emergency Visits	TC17_EmergencyVisits	Consent/Forms · Open modal	Consent Details modal opens	Consent/Forms modal opened
+PASS	Emergency Visits	TC17_EmergencyVisits	Consent/Forms · Select form + Add + Save	A consent form is selected, its template loaded, and saved	Form: NUTRITIONAL ASSESSMENT FORM
+PASS	Emergency Visits	TC17_EmergencyVisits	Consent/Forms · Submit report & screenshot	The submitted consent report (/Edit/<id>) is shown	Form Submitted Successfully (https://nhisformstest.sancyberhad.com/NutritionalAssessmentForm/Edit/2753)
+FAIL	Emergency Visits	TC17_EmergencyVisits	ERROR	Test completes	FAILED: com/microsoft/playwright/Page$CloseOptions

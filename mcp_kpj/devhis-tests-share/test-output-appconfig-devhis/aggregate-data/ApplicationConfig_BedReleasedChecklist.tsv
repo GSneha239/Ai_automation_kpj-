@@ -1,0 +1,7 @@
+PASS	Application Configuration - Bed Released Checklist	ApplicationConfig_BedReleasedChecklist	Login	Authenticated; Patient Dashboard	Logged in
+PASS	Application Configuration - Bed Released Checklist	ApplicationConfig_BedReleasedChecklist	Open Bed Released Checklist screen	The Bed Released Checklist screen is shown	Opened https://devhis.sancyberhad.com/#/BedReleaseCheckListMasterList
+PASS	Application Configuration - Bed Released Checklist	ApplicationConfig_BedReleasedChecklist	Select a record	A record is selected	Selected: BR00000001
+PASS	Application Configuration - Bed Released Checklist	ApplicationConfig_BedReleasedChecklist	Click Add	The add form opens	Add clicked
+PASS	Application Configuration - Bed Released Checklist	ApplicationConfig_BedReleasedChecklist	Enter Code + Remark	Code and Remark are entered	Code=RC477400 | Remark=Auto checklist RC477400 | codeNg=BedReleaseCheckListMaster.code | remNg=BedReleaseCheckListMaster.description
+PASS	Application Configuration - Bed Released Checklist	ApplicationConfig_BedReleasedChecklist	Select the mandatory checkbox	The mandatory checkbox is ticked	Ticked: Mandatory
+PASS	Application Configuration - Bed Released Checklist	ApplicationConfig_BedReleasedChecklist	Click Submit & success toast	'... saved successfully.' toast	×KPJ PortalStatus updated successfully.

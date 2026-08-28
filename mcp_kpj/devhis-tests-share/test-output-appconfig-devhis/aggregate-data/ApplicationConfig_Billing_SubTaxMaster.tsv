@@ -1,0 +1,5 @@
+PASS	Application Configuration - Billing - SubTax Master	ApplicationConfig_Billing_SubTaxMaster	Login	Authenticated; Patient Dashboard	Logged in
+PASS	Application Configuration - Billing - SubTax Master	ApplicationConfig_Billing_SubTaxMaster	Open SubTax Master screen	The SubTax Master screen is shown	Opened https://devhis.sancyberhad.com/?_cb=1.2.18#/SubTaxMasterList
+FAIL	Application Configuration - Billing - SubTax Master	ApplicationConfig_Billing_SubTaxMaster	Click Add	The add form is shown	Add form did not open
+FAIL	Application Configuration - Billing - SubTax Master	ApplicationConfig_Billing_SubTaxMaster	Enter Code, Remark, Base Tax, Percentage	The SubTax Master fields are filled	Code=STX77200 | Remark=Auto subtax STX77200 | BaseTax=(n/a) | Percentage=3
+FAIL	Application Configuration - Billing - SubTax Master	ApplicationConfig_Billing_SubTaxMaster	Click Save & success toast	'... saved successfully' toast	No toast appeared

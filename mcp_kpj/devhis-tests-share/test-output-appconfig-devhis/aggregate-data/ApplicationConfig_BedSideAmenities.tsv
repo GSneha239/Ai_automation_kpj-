@@ -1,0 +1,5 @@
+PASS	Application Configuration - Bed Side Amenities	ApplicationConfig_BedSideAmenities	Login	Authenticated; Patient Dashboard	Logged in
+PASS	Application Configuration - Bed Side Amenities	ApplicationConfig_BedSideAmenities	Open Bed Side Amenities screen	The Bed Side Amenities screen is shown (Form Name resolved, grid loaded)	Opened Bed Side Attachments Welcome: Employee 1 | Form Name: Bed Side Attachments
+PASS	Application Configuration - Bed Side Amenities	ApplicationConfig_BedSideAmenities	Enter Code + Remark	Code and Remark are entered AND still present on screen	Code=AM590400 | Remark=Bedside Locker | codeNg=commonmaster.Code | remNg=commonmaster.Description | on-screen: Code="AM590400" Remark="Bedside Locker"
+PASS	Application Configuration - Bed Side Amenities	ApplicationConfig_BedSideAmenities	Select a record	A record is selected	Selected: 3e
+PASS	Application Configuration - Bed Side Amenities	ApplicationConfig_BedSideAmenities	Click Submit & success toast	'... saved successfully.' toast	×KPJ PortalMaster Saved Successfully.

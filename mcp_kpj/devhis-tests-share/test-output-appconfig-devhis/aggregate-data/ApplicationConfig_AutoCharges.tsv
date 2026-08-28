@@ -1,0 +1,5 @@
+PASS	Application Configuration - Auto Charges	ApplicationConfig_AutoCharges	Login	Authenticated; Patient Dashboard	Logged in
+PASS	Application Configuration - Auto Charges	ApplicationConfig_AutoCharges	Open Auto Charges screen	The Auto Charges screen is shown	Opened https://devhis.sancyberhad.com/#/AutoChargesMasterList
+PASS	Application Configuration - Auto Charges	ApplicationConfig_AutoCharges	Click Add	The add form opens	Add clicked
+PASS	Application Configuration - Auto Charges	ApplicationConfig_AutoCharges	Select a service	7887 service option(s); tried: AB001 - Thorascopic Oesophageal Mobilisation via Mediastinum(SAVED)	using: AB001 - Thorascopic Oesophageal Mobilisation via Mediastinum
+PASS	Application Configuration - Auto Charges	ApplicationConfig_AutoCharges	Click Submit & success toast	'... saved successfully.' toast	×KPJ PortalAuto Charges saved successfully.

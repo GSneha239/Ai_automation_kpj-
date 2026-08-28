@@ -1,0 +1,11 @@
+PASS	IP Admission	TC14_IP_Admission	Login	Authenticated; Patient Dashboard	Logged in
+PASS	IP Admission	TC14_IP_Admission	Open Admission (via IP menu tab)	The Admission form is shown	Admission opened (#/Admission)
+PASS	IP Admission	TC14_IP_Admission	Fill · Patient Information	Patient section populated	Patient: Mr. John Peter | Male | 21/09/1968 | Australian | Passport P3218800 | Mobile 1225369353 | Email johnpeter5915@example.com
+PASS	IP Admission	TC14_IP_Admission	Passport No. enabled for a foreign patient	Passport No. is enabled for a foreigner (the passport is the identification)	Passport No. is available — {"nat":"--Select--","idType":"Passport","passportVisible":true,"labStar":true,"domRequired":true,"invalidReq":true,"enabled":true,"fillable":true,"writeHeld":true,"probeErr":""}
+PASS	IP Admission	TC14_IP_Admission	Fill · Visa Details	The visa row is added (mandatory for a passport holder)	Visa Type=Auto Visa Type 96100 | Duration=30 | Valid 27/08/2026 to 27/08/2027 | Remarks=Visitor visa for medical treatment | Add clicked | attachments PassportFileData=set, VisaFileData=set (both copies uploaded) | image click: clicked 2: IMG[img], IMG[img] | toasts=[] | visa lists: drpVisaType=7, VisaDetails=0, VisaDetails=1 | modal rows=n/a
+PASS	IP Admission	TC14_IP_Admission	Fill · NOK / Guarantor	A Next-of-Kin row is added	NOK: Mrs. Rose Adams (Grandfather) | Nationality Australian | NRIC 760326071712 | Mobile 129376068 | added=true
+PASS	IP Admission	TC14_IP_Admission	Fill · Payor Information	Payor is set to Self (row auto-filled)	Payor: Mode = ALL FINANCIAL CLASS (Self, row auto-filled)
+PASS	IP Admission	TC14_IP_Admission	Fill · Admission Information	Admission section populated	Admission: Dept=1 | AttendingDoctor=15300 | Type=4 | Source=1 | Billing=4 | Purpose=3 | Doctor=A (DoctorID=15300)
+PASS	IP Admission	TC14_IP_Admission	Select Room Type, Ward	Room Type and Ward are both set	RoomType=2 BEDDED | Ward=5TH FLOOR ENDOSCOPY SUITE
+PASS	IP Admission	TC14_IP_Admission	Fill · Additional Doctors	A doctor row is added to the Additional Doctors grid	Classification=Auto Provider Class 94500 | Doctor=A | Add=clicked | rows=1
+FAIL	IP Admission	TC14_IP_Admission	Save admission	'Patient Admitted Successfully.' toast	×KPJ PortalPlease Enter First Name!

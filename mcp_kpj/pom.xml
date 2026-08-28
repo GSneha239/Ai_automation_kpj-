@@ -1,0 +1,155 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.kpj</groupId>
+    <artifactId>mcp-kpj</artifactId>
+    <version>1.0.0</version>
+    <packaging>jar</packaging>
+    <name>MCP KPJ - DevHIS Playwright Java Framework</name>
+    <description>Prompt-driven Playwright Java test framework for DevHIS (KPJ nHIS)</description>
+
+    <properties>
+        <maven.compiler.source>21</maven.compiler.source>
+        <maven.compiler.target>21</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <playwright.version>1.40.0</playwright.version>
+    </properties>
+
+    <dependencies>
+        <!-- Playwright for Java -->
+        <dependency>
+            <groupId>com.microsoft.playwright</groupId>
+            <artifactId>playwright</artifactId>
+            <version>${playwright.version}</version>
+        </dependency>
+        <!-- JUnit 5 (run all with `mvn test`, or one with `mvn test -Dtest=ClassName`) -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>5.10.2</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- Apache PDFBox: rasterize server-generated PDF reports (e.g. the MRD file label) to PNG.
+             Chromium's native PDF viewer screenshots as a blank gray page, so we render the PDF's first
+             page ourselves and embed that image in the HTML report. -->
+        <dependency>
+            <groupId>org.apache.pdfbox</groupId>
+            <artifactId>pdfbox</artifactId>
+            <version>2.0.30</version>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!-- Run a test's main():  mvn compile exec:java -Dexec.mainClass=com.kpj.tests.RegistrationTest -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.1.1</version>
+                <configuration>
+                    <!-- test sources are on the classpath -->
+                    <classpathScope>test</classpathScope>
+                </configuration>
+            </plugin>
+            <!-- JUnit runner: `mvn test` runs all *Test classes; `mvn test -Dtest=RegistrationTest` runs one -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.2.5</version>
+                <configuration>
+                    <!-- these tests drive a real browser: don't fork/parallelise, keep going on failure -->
+                    <testFailureIgnore>true</testFailureIgnore>
+                    <forkCount>1</forkCount>
+                    <reuseForks>true</reuseForks>
+                </configuration>
+            </plugin>
+            <!-- One-time Playwright browser install:  mvn compile exec:java -Dexec.mainClass=com.microsoft.playwright.CLI -Dexec.args="install chromium" -->
+        </plugins>
+    </build>
+
+    <!-- ========================================================================================
+         Standalone executable (shaded / fat) jar.  The flow/page/test classes live under
+         src/test/java, so this profile temporarily adds that folder as a MAIN source (build-helper)
+         and pulls in the JUnit Console Launcher (compile scope) so the shade plugin can bundle
+         EVERYTHING — flow classes + main classes (DevHisBase, PdfUtil) + Playwright + PDFBox + JUnit —
+         into one runnable jar. The normal `mvn test` / run-tests.bat workflow is untouched (this only
+         activates with -Pshaded).
+
+           Build:  mvn -Pshaded -DskipTests package
+           Output: target/mcp-kpj-1.0.0-shaded.jar
+           Run:    java -jar target/mcp-kpj-1.0.0-shaded.jar -c com.kpj.tests.Emergency_page.EmergencyListView
+         ======================================================================================== -->
+    <profiles>
+        <profile>
+            <id>shaded</id>
+            <dependencies>
+                <!-- ConsoleLauncher (Main-Class) + all JUnit engines, at compile scope so shade bundles it
+                     and so the flow classes' JUnit imports compile when added as a main source. -->
+                <dependency>
+                    <groupId>org.junit.platform</groupId>
+                    <artifactId>junit-platform-console-standalone</artifactId>
+                    <version>1.10.2</version>
+                    <scope>compile</scope>
+                </dependency>
+            </dependencies>
+            <build>
+                <plugins>
+                    <!-- Compile src/test/java into the MAIN artifact so it ends up in the shaded jar. -->
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>build-helper-maven-plugin</artifactId>
+                        <version>3.6.0</version>
+                        <executions>
+                            <execution>
+                                <id>add-flow-sources</id>
+                                <phase>generate-sources</phase>
+                                <goals><goal>add-source</goal></goals>
+                                <configuration>
+                                    <sources>
+                                        <source>src/test/java</source>
+                                    </sources>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <!-- Shade the main artifact (now incl. flow classes) + all deps into one runnable jar. -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-shade-plugin</artifactId>
+                        <version>3.5.3</version>
+                        <executions>
+                            <execution>
+                                <phase>package</phase>
+                                <goals><goal>shade</goal></goals>
+                                <configuration>
+                                    <shadedArtifactAttached>true</shadedArtifactAttached>
+                                    <shadedClassifierName>shaded</shadedClassifierName>
+                                    <transformers>
+                                        <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                            <mainClass>org.junit.platform.console.ConsoleLauncher</mainClass>
+                                        </transformer>
+                                        <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                                    </transformers>
+                                    <filters>
+                                        <filter>
+                                            <artifact>*:*</artifact>
+                                            <excludes>
+                                                <exclude>META-INF/*.SF</exclude>
+                                                <exclude>META-INF/*.DSA</exclude>
+                                                <exclude>META-INF/*.RSA</exclude>
+                                                <exclude>module-info.class</exclude>
+                                            </excludes>
+                                        </filter>
+                                    </filters>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+</project>

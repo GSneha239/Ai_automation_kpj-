@@ -1,0 +1,5 @@
+PASS	Application Configuration - Ambulance - Vehicle	ApplicationConfig_Ambulance_Vehicle	Login	Authenticated; Patient Dashboard	Logged in
+PASS	Application Configuration - Ambulance - Vehicle	ApplicationConfig_Ambulance_Vehicle	Open Vehicle screen	The Vehicle screen is shown	Opened https://devhis.sancyberhad.com/#/Vehicle
+PASS	Application Configuration - Ambulance - Vehicle	ApplicationConfig_Ambulance_Vehicle	Click Add	The Vehicle add form opens	Add clicked (https://devhis.sancyberhad.com/#/add-Vehicle)
+PASS	Application Configuration - Ambulance - Vehicle	ApplicationConfig_Ambulance_Vehicle	Enter Vehicle details	All fields are entered	VehicleType=Ambulance | Name=Auto Ambulance VH340300 | Make=Toyota | No=VH340300 | Chassis=CHVH340300 | Invoice=INVVH340300 | Amount=50000 | Location=Main | PurchaseDate=01/01/2026
+PASS	Application Configuration - Ambulance - Vehicle	ApplicationConfig_Ambulance_Vehicle	Click Submit & success toast	'... saved successfully.' toast	×KPJ PortalVehicle added succesfully.

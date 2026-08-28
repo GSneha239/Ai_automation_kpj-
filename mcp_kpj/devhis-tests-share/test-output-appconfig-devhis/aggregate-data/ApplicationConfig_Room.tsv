@@ -1,0 +1,7 @@
+PASS	Application Configuration - Room	ApplicationConfig_Room	Login	Authenticated; Patient Dashboard	Logged in
+PASS	Application Configuration - Room	ApplicationConfig_Room	Open Room screen	The Room screen is shown	Opened https://devhis.sancyberhad.com/#/RoomMaster
+PASS	Application Configuration - Room	ApplicationConfig_Room	Click Add	The Room add form opens	Add clicked
+PASS	Application Configuration - Room	ApplicationConfig_Room	Enter Code + Remark	Code and Remark are entered	Code=RM912800 | Remark=Auto room RM912800 | codeNg=RoomMaster.code | remNg=RoomMaster.description
+PASS	Application Configuration - Room	ApplicationConfig_Room	Select Room Type	A Room Type is selected	Close Observation Unit [ng=RoomMaster.RoomType]
+PASS	Application Configuration - Room	ApplicationConfig_Room	Select an amenity	An amenity is selected	Selected: Aircond [ng=AmenitiesList[$index].isselected]
+PASS	Application Configuration - Room	ApplicationConfig_Room	Click Submit & success toast	'... saved successfully.' toast	×KPJ PortalRoom saved successfully.

@@ -1,0 +1,6 @@
+PASS	Application Configuration - Billing - Payor	ApplicationConfig_Billing_Payor	Login	Authenticated; Patient Dashboard	Logged in
+PASS	Application Configuration - Billing - Payor	ApplicationConfig_Billing_Payor	Open Payor screen	The Payor (Receivable Master) screen is shown	Opened https://devhis.sancyberhad.com/?_cb=1.2.18#/receivableMaster
+PASS	Application Configuration - Billing - Payor	ApplicationConfig_Billing_Payor	Click Add	The Payor add form opens	Add clicked (https://devhis.sancyberhad.com/?_cb=1.2.18#/add-receivable)
+PASS	Application Configuration - Billing - Payor	ApplicationConfig_Billing_Payor	Enter Payor Type, Payable Code, Payor, Phone, E-mail, Contact Person	All fields are entered	PayorType=Self | PayableCode=PY587800 | Payor=Auto Payor PY587800 | PrimaryPhoneNo=0123456789 | Email=autopy587800@test.com | PrimaryContactPerson=Auto Contact Person
+PASS	Application Configuration - Billing - Payor	ApplicationConfig_Billing_Payor	Click Submit & success toast	'... saved successfully.' toast	×KPJ PortalPayor Added Successfully.
+PASS	Application Configuration - Billing - Payor	ApplicationConfig_Billing_Payor	Check the list table for the added row	The newly added Payor row is shown in the table	Found in table: PY587800Auto Payor PY587800 True

@@ -1,0 +1,5 @@
+PASS	Application Configuration - Patient - Visit Type Master	ApplicationConfig_Patient_VisitTypeMaster	Login	Authenticated; Patient Dashboard	Logged in
+PASS	Application Configuration - Patient - Visit Type Master	ApplicationConfig_Patient_VisitTypeMaster	Open Visit Type Master screen	The Visit Type Master list screen is shown	Opened Visit Type Master Welcome: Employee 1306 @ https://devhis.sancyberhad.com/#/visitType
+PASS	Application Configuration - Patient - Visit Type Master	ApplicationConfig_Patient_VisitTypeMaster	Click Add	The Visit Type add form is shown	Add form opened (https://devhis.sancyberhad.com/#/add-visitType)
+PASS	Application Configuration - Patient - Visit Type Master	ApplicationConfig_Patient_VisitTypeMaster	Enter Code, Visit Type, Location	Code, Visit Type and Location are set	Code=VT84800 | VisitType=Day Care | Location=KPJ
+FAIL	Application Configuration - Patient - Visit Type Master	ApplicationConfig_Patient_VisitTypeMaster	Click Submit & success toast	A '... saved successfully' success toast is shown	Submit not confirmed - server returned: "×KPJ PortalFailed!"

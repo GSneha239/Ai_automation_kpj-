@@ -1,0 +1,7 @@
+PASS	IP - Bed Management - Under Maintenance	UnderMaintenance	Login	Authenticated; Patient Dashboard	Logged in
+PASS	IP - Bed Management - Under Maintenance	UnderMaintenance	Open Under Maintenance	The Under Maintenance (#/underMaintenanceList) screen is shown	Opened https://devhis.sancyberhad.com/#/underMaintenanceList
+PASS	IP - Bed Management - Under Maintenance	UnderMaintenance	Click Add	The add form (#/add-undermaintenance) opens	Form opened (https://devhis.sancyberhad.com/#/add-undermaintenance)
+PASS	IP - Bed Management - Under Maintenance	UnderMaintenance	Select Ward + Room Type (generate bed list)	The bed list is generated with at least one bed	Ward=Auto ward WD012100 | RoomType=Daycare | beds=1
+PASS	IP - Bed Management - Under Maintenance	UnderMaintenance	Select the bed	A bed is selected	Selected: Auto ward WD012100 Daycare DC9123
+PASS	IP - Bed Management - Under Maintenance	UnderMaintenance	Enter remark	The remark is entered	Remark = 'Bed under maintenance - automated test'
+PASS	IP - Bed Management - Under Maintenance	UnderMaintenance	Click Save & success toast	'Bed Under Maintenance saved successfully.' toast	×KPJ PortalBed under maintenance is saved successfully.

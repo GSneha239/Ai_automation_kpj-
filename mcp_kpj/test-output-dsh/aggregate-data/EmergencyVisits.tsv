@@ -1,0 +1,51 @@
+PASS	Emergency Visits	TC17_EmergencyVisits	Login	Authenticated; Patient Dashboard	Logged in
+PASS	Emergency Visits	TC17_EmergencyVisits	Attach Signature · Open Emergency Visits & search	Emergency visits are listed	Queue searched
+PASS	Emergency Visits	TC17_EmergencyVisits	Attach Signature · Select a patient	One patient selected	Selected: JOHN PETER
+PASS	Emergency Visits	TC17_EmergencyVisits	Attach Signature · Attach image & toast	'Digital Signature Saved Successfully.' toast is shown	×KPJ PortalDigital Signature Saved Successfully.
+PASS	Emergency Visits	TC17_EmergencyVisits	Change Doctor · Open Emergency Visits & search	Emergency visits are listed	Queue searched
+PASS	Emergency Visits	TC17_EmergencyVisits	Change Doctor · Select a patient	One patient selected	Selected: AIN
+PASS	Emergency Visits	TC17_EmergencyVisits	Change Doctor · Open popup	The Change Doctor modal opens	Change Doctor modal opened
+PASS	Emergency Visits	TC17_EmergencyVisits	Change Doctor · Select doctor, Save & toast	Success toast is shown	Doctor=A | ×KPJ PortalDoctor Updated Successfully.
+PASS	Emergency Visits	TC17_EmergencyVisits	Consent/Forms · Open Emergency Visits & search	Emergency visits are listed	Queue searched
+PASS	Emergency Visits	TC17_EmergencyVisits	Consent/Forms · Select a patient	One patient selected	Selected: GOVINDAN
+PASS	Emergency Visits	TC17_EmergencyVisits	Consent/Forms · Open modal	Consent Details modal opens	Consent/Forms modal opened
+PASS	Emergency Visits	TC17_EmergencyVisits	Consent/Forms · Select form + Add + Save	A consent form is selected, its template loaded, and saved	Form: NUTRITIONAL ASSESSMENT FORM
+PASS	Emergency Visits	TC17_EmergencyVisits	Consent/Forms · Submit report & screenshot	The submitted consent report (/Edit/<id>) is shown	Form Submitted Successfully (https://dsh-nhisforms.kpjhealth.com.my/NutritionalAssessmentForm/Edit/1615)
+PASS	Emergency Visits	TC17_EmergencyVisits	Consent/Forms · Close	The report tab and Consent Details modal are closed	Report tab + Consent Details modal closed
+PASS	Emergency Visits	TC17_EmergencyVisits	View Consent · Open Emergency Visits & search	Emergency visits are listed	Queue searched
+PASS	Emergency Visits	TC17_EmergencyVisits	View Consent · Select a patient	One patient selected	Selected: ANNUAR
+PASS	Emergency Visits	TC17_EmergencyVisits	View Consent · Open modal	The View Consent Forms modal opens	View Consent modal opened
+PASS	Emergency Visits	TC17_EmergencyVisits	View Consent · Search	The patient's saved consents are listed	Searched saved consents
+MANUAL	Emergency Visits	TC17_EmergencyVisits	View Consent · Open a saved consent	A saved consent form opens in a new tab	No saved consents for this patient — nothing to view (most emergency patients have none)
+PASS	Emergency Visits	TC17_EmergencyVisits	Generate Queue · Open Emergency Visits & search (today)	Today's emergency visits are listed	Queue searched for 22/07/2026
+PASS	Emergency Visits	TC17_EmergencyVisits	Generate Queue · Select a patient & check Queue No	A patient whose Generate Queue modal opens is selected	Selected: JOHN PETER | Queue No: 1 (modal opened; tried 1)
+PASS	Emergency Visits	TC17_EmergencyVisits	Generate Queue · Click Generate Queue	Generate Queue modal opens	Generate Queue modal opened
+PASS	Emergency Visits	TC17_EmergencyVisits	Generate Queue · Change to a different queue, Save & toast	'Token Updated Successfully.' toast	Room=Fertility Centre | QueueNo=1->2 | ×KPJ PortalToken Updated Successfully.
+PASS	Emergency Visits	TC17_EmergencyVisits	New Case · Open Emergency Visits & search	Emergency visits are listed	Queue searched
+PASS	Emergency Visits	TC17_EmergencyVisits	New Case · Select a patient	One patient selected	Selected: GOVINDAN
+PASS	Emergency Visits	TC17_EmergencyVisits	New Case · Click New Case	New Case modal opens	New Case modal opened
+PASS	Emergency Visits	TC17_EmergencyVisits	New Case · Fill details	Case details accepted	Department=UROLOGY | Doctor=Doctor_Annie | Diagnosis=Routine new case - automation test
+PASS	Emergency Visits	TC17_EmergencyVisits	New Case · Save, toast & close popup	'EMR Case added successfully.' toast	×KPJ PortalEMR Case added successfully.
+PASS	Emergency Visits	TC17_EmergencyVisits	Patient Task · Open Emergency Visits & search	Emergency visits are listed	Queue searched
+PASS	Emergency Visits	TC17_EmergencyVisits	Patient Task · Select a patient	One patient selected	Selected: AIN
+PASS	Emergency Visits	TC17_EmergencyVisits	Patient Task · Click Patient Task	Patient Task modal opens	Patient Task modal opened
+PASS	Emergency Visits	TC17_EmergencyVisits	Patient Task · Add tasks, Save, toast & close	'Record Added Successfully.' toast	×KPJ PortalRecord Added Successfully.
+PASS	Emergency Visits	TC17_EmergencyVisits	Request MRD · Open Emergency Visits & search	Emergency visits are listed	Queue searched
+PASS	Emergency Visits	TC17_EmergencyVisits	Request MRD · Select a patient (no MRD file)	A patient without an MRD file is selected	Selected: JOHN PETER
+PASS	Emergency Visits	TC17_EmergencyVisits	Request MRD · Click Request MRD File	If the patient HAS a file the MRD report opens in a new tab; else a 'File not generated — create one?' confirm appears	Outcome: confirm
+PASS	Emergency Visits	TC17_EmergencyVisits	Request MRD · Confirm Yes	The MRD Details modal opens	MRD Details modal opened
+PASS	Emergency Visits	TC17_EmergencyVisits	Request MRD · Fill details & Save	'File Allocated Successfully.' toast is shown	×KPJ PortalFile Allocated Successfully.
+PASS	Emergency Visits	TC17_EmergencyVisits	Request MRD · Cancel	The popup is closed	Popup closed
+PASS	Emergency Visits	TC17_EmergencyVisits	Return MRD · Open Emergency Visits & search	Emergency visits are listed	Queue searched
+PASS	Emergency Visits	TC17_EmergencyVisits	Return MRD · Select a patient (with MRD file)	A patient with an MRD file is selected	Selected: JOHN PETER
+PASS	Emergency Visits	TC17_EmergencyVisits	Return MRD · Click Return MRD File	The MRD Return popup opens	MRD Return popup opened
+PASS	Emergency Visits	TC17_EmergencyVisits	Return MRD · Fill details & OK	'File Return successfully.' toast is shown	×KPJ PortalFile Return successfully.
+PASS	Emergency Visits	TC17_EmergencyVisits	Fall Risk · Open Emergency Visits & search	Emergency visits are listed	Queue searched
+PASS	Emergency Visits	TC17_EmergencyVisits	Fall Risk · Select a patient	One patient selected	Selected: ANNUAR
+PASS	Emergency Visits	TC17_EmergencyVisits	Fall Risk · Open popup	The Assessment of Fall modal opens	Fall Risk modal opened
+PASS	Emergency Visits	TC17_EmergencyVisits	Fall Risk · Tick a checkbox, Apply & toast	'Fall Risk Assessment saved successfully.' toast is shown	×KPJ PortalFall Risk Assessment saved successfully.
+PASS	Emergency Visits	TC17_EmergencyVisits	Close Visit · Open Emergency Visits & search	Emergency visits are listed	Queue searched
+PASS	Emergency Visits	TC17_EmergencyVisits	Close Visit · Select a patient	One patient selected	Selected: AIN
+PASS	Emergency Visits	TC17_EmergencyVisits	Close Visit · Open popup	The Close Visit modal opens	Close Visit modal opened
+PASS	Emergency Visits	TC17_EmergencyVisits	Close Visit · Enter remark	The remark is accepted	Remark=Closed - automated test
+PASS	Emergency Visits	TC17_EmergencyVisits	Close Visit · Save	'Visit Closed Successfully.' toast is shown	Visit Closed Successfully.

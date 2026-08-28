@@ -1,0 +1,10 @@
+PASS	IP Admission	TC14_IP_Admission	Login	Authenticated; Patient Dashboard	Logged in
+PASS	IP Admission	TC14_IP_Admission	Open Admission (via IP menu tab)	The Admission form is shown	Admission opened (#/Admission)
+PASS	IP Admission	TC14_IP_Admission	Fill · Patient Information	Patient section populated	Patient: Mr. John Peter | Male | 01/01/1985 | NRIC 850101107901 | Mobile 1292490807 | Email johnpeter8451@example.com
+MANUAL	IP Admission	TC14_IP_Admission	Fill · NOK / Guarantor	A Next-of-Kin row is added	NOK: Mrs. Grace Hall (Biological Child) | NRIC 790527077823 | Mobile 194153630 | added=false
+PASS	IP Admission	TC14_IP_Admission	Fill · Payor Information	Payor is set to Self (row auto-filled)	Payor: Mode = Self (Self, row auto-filled)
+PASS	IP Admission	TC14_IP_Admission	Fill · Admission Information	Admission section populated	Admission: Dept=1 | AttendingDoctor=15300 | Type=4 | Source=1 | Billing=4 | Purpose=3 | Doctor=Demo Doctor (DoctorID=3262)
+MANUAL	IP Admission	TC14_IP_Admission	Fill · Vacant Bed Selection	A vacant bed is selected (Admission.BedID set)	No vacant bed in any ward — fell back to Non-Presence admission
+PASS	IP Admission	TC14_IP_Admission	Fill · Additional Doctors	A doctor row is added to the Additional Doctors grid	Classification=Medical Officer | Doctor=A | Add=clicked | rows=1
+PASS	IP Admission	TC14_IP_Admission	Save admission	'Patient Admitted Successfully.' toast	×KPJ PortalPatient Admitted Successfully.
+FAIL	IP Admission	TC14_IP_Admission	ERROR	Test completes	FAILED: org/apache/pdfbox/pdmodel/PDDocument

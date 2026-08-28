@@ -1,0 +1,11 @@
+target/
+test-output/
+.idea/
+*.iml
+.vscode/
+node_modules/
+
+# ad-hoc test run console captures
+*.log
+logs/
+.playwright-mcp/

@@ -1,0 +1,1330 @@
+package com.kpj.pages.Op_page;
+
+import com.kpj.pages.BasePage;
+import com.microsoft.playwright.Page;
+
+import java.nio.file.Path;
+import java.util.Arrays;
+import java.util.Map;
+import java.util.Random;
+
+/**
+ * RegistrationPage — Page Object for OP &gt; Registration (VisitScreen, #/VisitScreen).
+ *
+ * <p>Encapsulates the whole DevHIS registration flow: filling every section (Patient, Correspondence,
+ * Other, Payor, Visit, Next of Kin), the Photo/Thumb/IC-Card attachments, Save + confirm, the in-app
+ * "Consent Details" (PERSONAL DATA NOTICE &amp; CONSENT) modal, and capturing the auto-opened
+ * artifacts (Registration Report label + Patient Registration Form consent).</p>
+ *
+ * <p>Notable quirks handled here (see {@code devhis-registration} memory): NationalityID must be set
+ * before ICCardTypeID or the NRIC field disables; Queue No lives on the Save button's scope; several
+ * fields intermittently fail to commit and silently block Save with a "Please Enter ..." toast, so
+ * critical fields are re-asserted before Save and the Kin row is re-filled on retry.</p>
+ */
+public class RegistrationPage extends BasePage {
+
+    public RegistrationPage(Page page) {
+        super(page);
+    }
+
+    /**
+     * Snapshot of every field value set during the fill (keyed by ng-model, e.g. "Registration.PrefixID" ->
+     * numeric model value; "Registration.KinName" -> text). At Save these are re-applied as PLAIN properties
+     * on the Registration/Visit objects (no DOM change events) so no watcher fires and no field-reset cascade
+     * knocks another field empty — the fix for the interdependent "Please Enter X" chain on this screen.
+     */
+    private final java.util.Map<String, Object> snap = new java.util.LinkedHashMap<>();
+
+    /** Record a field's model value in the snapshot (only when non-null/non-empty, so a good value is kept). */
+    private void snap(String ngModel, Object value) {
+        if (value != null && !value.toString().isEmpty()) snap.put(ngModel, value);
+    }
+
+    // ---- randomised patient data -----------------------------------------
+
+    /** A randomised patient (a different patient each run) used to fill the whole form. */
+    public static class PatientProfile {
+        public String gender, prefix, fullName, familyName, marital, race, religion, blood, income;
+        public String dob, nric, tin;
+        public String address, postcode, houseNo, street, mobile, phone, email;
+        public String kinTitle, kinName, kinFamily, kinRel, kinNric, kinMobile, kinEmail;
+
+        /** Build a random, internally-consistent patient (NRIC prefix matches DOB; kin uses valid options). */
+        public static PatientProfile random() {
+            Random rnd = new Random();
+            PatientProfile p = new PatientProfile();
+            boolean male = rnd.nextBoolean();
+            p.gender = male ? "Male" : "Female";
+            String[] maleNames   = {"John Peter", "David Smith", "Michael Brown", "James Wilson", "Robert Test", "Peter Johnson"};
+            String[] femaleNames = {"Mary Jane", "Sarah Test", "Emma Watson", "Linda Carter", "Anna Peters", "Test User"};
+            p.fullName = (male ? maleNames : femaleNames)[rnd.nextInt(6)];
+            p.familyName = p.fullName.substring(p.fullName.lastIndexOf(' ') + 1);
+            p.marital = new String[]{"Single", "Married", "Divorced"}[rnd.nextInt(3)];
+            p.prefix = male ? "Mr." : (p.marital.equals("Married") ? "Mrs." : "Ms.");
+            p.race = new String[]{"Malay", "Chinese", "Indian", "Others"}[rnd.nextInt(4)];
+            p.religion = new String[]{"Islam", "Buddhism", "Hinduism", "Christianity"}[rnd.nextInt(4)];
+            p.blood = new String[]{"A", "B", "O", "AB"}[rnd.nextInt(4)];
+            p.income = new String[]{"No Income", "< RM 500", "RM 500 - RM 1000"}[rnd.nextInt(3)];
+            int byear = 1965 + rnd.nextInt(40), bmonth = 1 + rnd.nextInt(12), bday = 1 + rnd.nextInt(28);
+            p.dob = String.format("%02d/%02d/%04d", bday, bmonth, byear);
+            String[] placeCodes = {"10", "14", "08", "12", "01", "07"};
+            // NRIC: YYMMDD (must match DOB) + valid place code + unique 4-digit serial.
+            p.nric = String.format("%02d%02d%02d", byear % 100, bmonth, bday)
+                    + placeCodes[rnd.nextInt(placeCodes.length)] + String.format("%04d", Math.abs(System.nanoTime() % 10000));
+            p.tin = "IG" + (rnd.nextInt(90000000) + 10000000);
+            String[][] addresses = {{"15 Jalan Damai", "50000"}, {"22 Jalan Ampang", "50450"}, {"8 Persiaran Surian", "50480"},
+                    {"30 Jalan Bukit Bintang", "50000"}, {"5 Lorong Mawar", "50450"}, {"12 Jalan Tun Razak", "50400"}};
+            String[] a = addresses[rnd.nextInt(addresses.length)];
+            p.address = a[0]; p.postcode = a[1];
+            p.houseNo = p.address.split(" ")[0];
+            p.street = p.address.substring(p.address.indexOf(' ') + 1);
+            // MUST be at least 10 digits — the app rejects Save with "Mobile number must be at least 10 digits!".
+            // ("1" + 8 digits = 9, which is what used to block every Save.)
+            p.mobile = "1" + String.format("%09d", rnd.nextInt(900000000) + 100000000);
+            p.phone = "03" + (rnd.nextInt(9000000) + 1000000);
+            p.email = p.familyName.toLowerCase() + (rnd.nextInt(9000) + 1000) + "@example.com";
+            // Next of Kin — Relationship must be an EXACT option; kin gender is independent.
+            p.kinRel = new String[]{"Father", "Grandfather", "Biological Child", "Adopted Child"}[rnd.nextInt(4)];
+            boolean kinMale = rnd.nextBoolean();
+            p.kinTitle = kinMale ? "Mr." : "Mrs.";
+            String[] kinMaleNames   = {"Tom Baker", "Chris Evans", "Paul Test", "George King"};
+            String[] kinFemaleNames = {"Jane Doe", "Lucy Test", "Grace Hall", "Rose Adams"};
+            p.kinName = (kinMale ? kinMaleNames : kinFemaleNames)[rnd.nextInt(4)];
+            p.kinFamily = p.kinName.substring(p.kinName.lastIndexOf(' ') + 1);
+            p.kinNric = String.format("%02d%02d%02d", (1960 + rnd.nextInt(30)) % 100, 1 + rnd.nextInt(12), 1 + rnd.nextInt(28))
+                    + placeCodes[rnd.nextInt(placeCodes.length)] + String.format("%04d", Math.abs(System.nanoTime() % 9999) + 1);
+            // 10 digits, same rule as the patient mobile ("1" + 8 digits = 9 is rejected).
+            p.kinMobile = "1" + String.format("%09d", rnd.nextInt(900000000) + 100000000);
+            p.kinEmail = p.kinFamily.toLowerCase() + (rnd.nextInt(9000) + 1000) + "@example.com";
+            return p;
+        }
+
+        public String patientLine() {
+            return prefix + " " + fullName + " | " + gender + " | " + dob + " | New IC " + nric
+                    + " | Malaysian | " + religion + " | " + race + " | " + marital + " | Blood " + blood;
+        }
+        public String correspondenceLine() { return address + " | Postcode " + postcode + " | Mobile " + mobile + " | " + email; }
+        public String kinLine() { return kinTitle + " " + kinName + " (" + kinRel + ") | Malaysian | NRIC " + kinNric + " | Mobile " + kinMobile; }
+    }
+
+    /** Outcome of the Save step. */
+    public static class SaveOutcome {
+        public boolean saved;
+        public String toast;
+    }
+
+    // ---- navigation -------------------------------------------------------
+
+    /**
+     * Open OP &gt; Registration via the menu (falls back to the direct hash) and wait for the dropdown
+     * master-data to finish loading. Returns true once the master-data has populated.
+     */
+    public boolean open(String baseUrl) {
+        // Guard the menu/link click evaluates: clicking a nav link makes the SPA route-change, and under the
+        // flaky server that can trigger a full navigation (e.g. a session re-auth) that destroys the JS context
+        // mid-evaluate ("Execution context was destroyed"). Swallow that — the #txtFirstName wait below (or the
+        // direct-navigate fallback) is the real readiness gate.
+        try { page.evaluate("() => { const op=[...document.querySelectorAll('a')].find(x=>x.textContent.trim()==='OP'); if(op) op.click(); }"); }
+        catch (Exception ignore) { System.out.println("open: OP menu click raced a navigation - continuing"); }
+        waitForAngular(1200);
+        try { page.evaluate("() => { const a=[...document.querySelectorAll(\"a[href='#/VisitScreen']\")][0]; if(a) a.click(); }"); }
+        catch (Exception ignore) { System.out.println("open: VisitScreen link click raced a navigation - continuing"); }
+        waitForAngular(1500);
+        try {
+            page.waitForSelector("#txtFirstName", new Page.WaitForSelectorOptions().setTimeout(8000));
+        } catch (Exception e) {
+            // Use in-app hash routing instead of page.navigate() to avoid SPA reload hangs
+            page.evaluate("() => { window.location.hash = '#/VisitScreen'; }");
+            page.waitForSelector("#txtFirstName", new Page.WaitForSelectorOptions().setTimeout(40000));
+        }
+        try { page.waitForLoadState(com.microsoft.playwright.options.LoadState.DOMCONTENTLOADED); } catch (Exception ignore) {}
+        waitForAngular(2500);
+        boolean masterLoaded = false;
+        for (int i = 0; i < 4 && !masterLoaded; i++) {
+            try {
+                page.waitForFunction(
+                        "() => { const e=[...document.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')==='Registration.GenderID'); return e && e.options.length>1; }",
+                        null, new Page.WaitForFunctionOptions().setTimeout(8000));
+                masterLoaded = true;
+            } catch (com.microsoft.playwright.PlaywrightException ex) {
+                waitForAngular(1500);
+            }
+        }
+        return masterLoaded;
+    }
+
+    /**
+     * Open a screen that REUSES this exact registration form (identical {@code Registration.*}/{@code Visit.*}
+     * ng-models, same {@code #txtFirstName}/attachments/{@code IUDRegistration()} save) at the given hash route —
+     * e.g. {@code "#/EmergencyRegistrationConsious"} for Emergency Registration (Conscious). Hash-routes in-app
+     * (no full reload), waits for the form (Save button + First Name), then the master-data. Returns true if the
+     * master-data (Gender options) loaded.
+     */
+    public boolean openRoute(String hashRoute) {
+        // Wait for the SPA to boot (Angular + the left menu) before routing — right after login the AngularJS
+        // router may not be initialised yet, so an immediate hash change is ignored and the form never loads.
+        try { page.waitForFunction("() => window.angular && [...document.querySelectorAll('li > a')].length > 3",
+                null, new Page.WaitForFunctionOptions().setTimeout(30000)); }
+        catch (Exception ignore) { }
+        waitForAngular(1000);
+        // Route with retries: bounce via #/PatientDashboard first so the hashchange to the target route always
+        // fires (even if the hash was already set), then wait for the form (Save button + First Name).
+        boolean formUp = false;
+        for (int attempt = 0; attempt < 3 && !formUp; attempt++) {
+            try { page.evaluate("() => { window.location.hash = '#/PatientDashboard'; }"); } catch (Exception ignore) { }
+            waitForAngular(700);
+            try { page.evaluate("(h) => { window.location.hash = h; }", hashRoute); } catch (Exception ignore) { }
+            try {
+                page.waitForFunction("() => window.angular && document.querySelector(\"button[ng-click='IUDRegistration();']\") && document.getElementById('txtFirstName')",
+                        null, new Page.WaitForFunctionOptions().setTimeout(attempt == 0 ? 20000 : 15000));
+                formUp = true;
+            } catch (Exception e) { System.out.println("openRoute: form not ready for " + hashRoute + " (attempt " + (attempt + 1) + ") — re-routing"); waitForAngular(1500); }
+        }
+        try { page.waitForLoadState(com.microsoft.playwright.options.LoadState.DOMCONTENTLOADED); } catch (Exception ignore) { }
+        waitForAngular(2500);
+        boolean masterLoaded = false;
+        for (int i = 0; i < 4 && !masterLoaded; i++) {
+            try {
+                page.waitForFunction(
+                        "() => { const e=[...document.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')==='Registration.GenderID'); return e && e.options.length>1; }",
+                        null, new Page.WaitForFunctionOptions().setTimeout(8000));
+                masterLoaded = true;
+            } catch (com.microsoft.playwright.PlaywrightException ex) {
+                waitForAngular(1500);
+            }
+        }
+        return masterLoaded;
+    }
+
+    // ---- section fills ----------------------------------------------------
+
+    /** Patient Information — Nationality BEFORE ICCardType so the NRIC field ends up enabled. */
+    public void fillPatientInformation(PatientProfile p) {
+        setSel("Registration.NationalityID", "Malaysian");
+        if (!setPrefixRobust(p.prefix))
+            System.out.println("fillPatientInformation: Patient Title not committed after retries — options may differ on this env");
+        setSel("Registration.GenderID", p.gender);
+        setSel("Registration.RaceID", p.race);
+        setSel("Registration.ReligionID", p.religion);
+        setSel("Registration.MaritalStatusID", p.marital);
+        setSel("Registration.BloodGroupID", p.blood);
+        setSel("Registration.IncomeCategoryID", p.income);
+        // Identification Type (ICCardType): wait for the dropdown to load, select "New IC", and VERIFY it stuck.
+        // A slow-loading dropdown makes setSel silently no-op — leaving Identification Type empty, which in turn
+        // keeps the Identification No (NationalId) field disabled/empty. Retry until the model is actually set.
+        try {
+            page.waitForFunction("() => { const e=[...document.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')==='Registration.ICCardTypeID'); return e && e.options.length>1; }",
+                    null, new Page.WaitForFunctionOptions().setTimeout(15000));
+        } catch (Exception ignore) { System.out.println("fillPatientInformation: ICCardType dropdown did not populate in time"); }
+        for (int a = 0; a < 4; a++) {
+            setSel("Registration.ICCardTypeID", "New IC");
+            waitForAngular(300);
+            boolean idTypeSet = Boolean.TRUE.equals(page.evaluate("() => { const e=[...document.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')==='Registration.ICCardTypeID'); const c=e?angular.element(e).controller('ngModel'):null; return c && c.$modelValue!=null && c.$modelValue!==''; }"));
+            if (idTypeSet) break;
+            System.out.println("fillPatientInformation: Identification Type not set yet — retrying (attempt " + (a + 1) + ")");
+            setSelTxt("Registration.ICCardTypeID", "New IC");  // fallback: selectedIndex-based (picks 'New IC' or first real)
+            waitForAngular(300);
+        }
+        page.locator("#txtFirstName").fill(p.fullName);
+        fillModel("Registration.FamilyName", p.familyName);
+        waitForAngular(400);
+        // Identification No (NRIC) via the Angular model (the field can be transiently guarded/disabled). Verify it
+        // committed and retry — if the Identification Type wasn't set, this field stays empty and blocks Save.
+        for (int a = 0; a < 4; a++) {
+            page.evaluate("(v)=>{const e=[...document.querySelectorAll(\"input[ng-model='Registration.NationalId']\")].find(x=>x.getAttribute('maxlength')==='12') || [...document.querySelectorAll(\"input[ng-model='Registration.NationalId']\")][0];"
+                    + "if(e){const c=angular.element(e).controller('ngModel');e.value=v;if(c){c.$setViewValue(v);c.$render();}"
+                    + "e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}));}}", p.nric);
+            waitForAngular(300);
+            boolean nricSet = Boolean.TRUE.equals(page.evaluate("(v) => { const e=[...document.querySelectorAll(\"input[ng-model='Registration.NationalId']\")].find(x=>x.value===v); return !!e; }", p.nric));
+            if (nricSet) break;
+            System.out.println("fillPatientInformation: Identification No not committed yet — retrying (attempt " + (a + 1) + ")");
+        }
+        snap("Registration.NationalId", p.nric);
+        page.locator("#txtDateOfBirth").fill(p.dob);
+        snap("Registration.DateOfBirth", p.dob);
+        fillModel("Registration.TINNumber", p.tin);
+    }
+
+    /**
+     * Validation check — with Nationality = <b>Malaysian</b>, the <b>Passport No.</b> field must NOT be mandatory
+     * (a Malaysian registers with an NRIC, not a passport). This inspects the current form state: the Nationality
+     * display value, whether a Passport No. field is visible, and whether it is currently marked required — by the
+     * DOM {@code required} property (Angular sets it when {@code ng-required} evaluates true), the
+     * {@code ng-invalid-required} class (the red border), or a {@code *} in its label. Returns a compact JSON-ish
+     * string: {@code {"nat":"Malaysia","passportVisible":true,"labStar":true,"domRequired":true,"invalidReq":true,"mandatory":true}}.
+     */
+    public String checkPassportRequiredForLocal() {
+        Object r = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                + " let nat=''; const ns=[...document.querySelectorAll('select')].find(s=>s.getAttribute('ng-model')==='Registration.NationalityID');"
+                + " if(ns && ns.selectedIndex>=0){ const o=ns.options[ns.selectedIndex]; nat=norm(o?o.textContent:''); }"
+                + " const labs=[...document.querySelectorAll('label,.control-label')].filter(l=>/passport\\s*no/i.test(l.textContent||'') && norm(l.textContent).length<30);"
+                + " if(!labs.length) return JSON.stringify({nat, passportVisible:false, mandatory:false});"
+                + " const lab=labs.find(l=>l.offsetParent!==null) || labs[0]; const labStar=/\\*/.test(lab.textContent||'');"
+                + " let inp=null; const fid=lab.getAttribute('for'); if(fid) inp=document.getElementById(fid);"
+                + " if(!inp){ const g=lab.closest('.form-group,.row,.form-line,.col-sm-6,.col-md-6,.col-sm-4,div'); if(g) inp=g.querySelector('input,textarea'); }"
+                + " if(!inp){ let sib=lab.nextElementSibling; for(let i=0;i<4&&sib&&!inp;i++){ inp=sib.tagName==='INPUT'?sib:(sib.querySelector?sib.querySelector('input'):null); sib=sib.nextElementSibling; } }"
+                + " const visible = !!inp && inp.offsetParent!==null;"
+                + " const domRequired = !!inp && inp.required===true;"
+                + " const invalidReq = !!inp && /\\bng-invalid-required\\b/.test(inp.className||'');"
+                + " const mandatory = domRequired || invalidReq || labStar;"
+                + " return JSON.stringify({nat, passportVisible:visible, labStar, domRequired, invalidReq, mandatory}); }");
+        return r == null ? "{}" : r.toString();
+    }
+
+    /**
+     * Validation check — after a Next of Kin is added, verify the <b>NOK/Guarantor grid</b> shows each value UNDER
+     * ITS CORRECT COLUMN HEADER. DSH mis-maps the columns (e.g. the RELATIONSHIP column shows the passport/NRIC,
+     * MOBILE NO shows the nationality, E-MAIL shows the name, ADDRESS shows the title). We read the header row +
+     * first data row, map header→cell, and flag a defect when a column's value is semantically wrong:
+     * RELATIONSHIP isn't the entered relationship (or a known relationship word), MOBILE NO contains letters, or
+     * E-MAIL has no "@". Returns a JSON-ish string incl. a non-empty {@code "problems":[...]} when mis-mapped.
+     */
+    public String checkNokGridColumnMapping(String expRel, String expMobile, String expName) {
+        Object r = page.evaluate("(a) => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                + " const expRel=norm(a[0]).toLowerCase();"
+                + " const t=[...document.querySelectorAll('table')].find(x=>{ const h=norm((x.querySelector('thead')||{}).innerText||'').toLowerCase(); return /relationship/.test(h) && /mobile/.test(h) && (/guarantor/.test(h) || /legal\\s*guardian/.test(h)); });"
+                + " if(!t) return JSON.stringify({found:false});"
+                + " const heads=[...t.querySelectorAll('thead th,thead td')].map(h=>norm(h.textContent).toLowerCase());"
+                + " const row=[...t.querySelectorAll('tbody tr')].find(r=>{ const tx=norm(r.textContent); return tx && !/no records|no data/i.test(tx); });"
+                + " if(!row) return JSON.stringify({found:true, row:false});"
+                + " const cells=[...row.querySelectorAll('td')].map(td=>norm(td.textContent));"
+                + " const val=name=>{ const key=name.replace(/\\s+/g,''); const i=heads.findIndex(h=>h.replace(/\\s+/g,'')===key); return i>=0?(cells[i]||''):''; };"
+                + " const relCell=val('relationship'), mobCell=val('mobile no'), emailCell=val('e-mail')||val('email');"
+                + " const knownRels=['father','mother','grandfather','grandmother','biological child','adopted child','adopted son','spouse','sibling','brother','sister'];"
+                + " const problems=[];"
+                + " if(relCell && (/^[0-9]+$/.test(relCell.replace(/\\s/g,'')) || (relCell.toLowerCase().indexOf(expRel)<0 && knownRels.indexOf(relCell.toLowerCase())<0))) problems.push('RELATIONSHIP shows \"'+relCell+'\"');"
+                + " if(mobCell && /[a-z]/i.test(mobCell)) problems.push('MOBILE NO shows \"'+mobCell+'\"');"
+                + " if(emailCell && !/@/.test(emailCell)) problems.push('E-MAIL shows \"'+emailCell+'\"');"
+                + " const map={}; heads.forEach((h,i)=>{ if(h && h!=='delete') map[h]=cells[i]||''; });"
+                + " return JSON.stringify({found:true, row:true, problems, map}); }",
+                java.util.Arrays.asList(expRel, expMobile, expName));
+        return r == null ? "{}" : r.toString();
+    }
+
+    /** Attach an image to Photo (#PhotoData), Thumb (#ThumbData) and IC Card (#ICCard). Returns what stuck. */
+    public String attachDocuments(Path file) {
+        String attached = "";
+        try { page.setInputFiles("#PhotoData", file); attached += "Photo "; } catch (Exception e) { System.out.println("Photo attach: " + e.getMessage()); }
+        try { page.setInputFiles("#ThumbData", file); attached += "Thumb "; } catch (Exception e) { System.out.println("Thumb attach: " + e.getMessage()); }
+        try { page.setInputFiles("#ICCard", file);    attached += "IC Card"; } catch (Exception e) { System.out.println("Card attach: " + e.getMessage()); }
+        waitForAngular(800);
+        return attached.trim();
+    }
+
+    /** Correspondence Details — Postcode auto-fills City/State/Country; Mobile set via the model. */
+    public void fillCorrespondence(PatientProfile p) {
+        fillModel("Registration.ResHouseNo", p.houseNo);
+        fillModel("Registration.ResStreet", p.street);
+        fillModel("Registration.ResAddress", p.address);
+        fillModel("Registration.ResPinCode", p.postcode);
+        page.evaluate("(v) => { const e=document.querySelector('#txtMobileNo') || [...document.querySelectorAll(\"input[ng-model='Registration.MobileNo']\")][0];"
+                + " if(e){ const c=angular.element(e).controller('ngModel'); e.value=v; if(c){c.$setViewValue(v);c.$render();} e.dispatchEvent(new Event('change',{bubbles:true})); } }", p.mobile);
+        snap("Registration.MobileNo", p.mobile);
+        fillModel("Registration.ResiNo", p.phone);
+        fillModel("Registration.Email", p.email);
+        // The postcode fires an ASYNC lookup that loads the City/State/Country dropdowns. Wait for the City select
+        // to actually get its options before we read/commit them — else ResCityID is empty at Save and the app
+        // rejects it with "Please Select City".
+        try {
+            page.waitForFunction(
+                    "() => { const e=[...document.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')==='Registration.ResCityID'); return e && e.options.length>1; }",
+                    null, new Page.WaitForFunctionOptions().setTimeout(12000));
+        } catch (Exception ignore) { System.out.println("fillCorrespondence: City dropdown did not populate from postcode in time"); }
+        waitForAngular(400);
+        // Ensure City/State/Country are actually SELECTED — the postcode auto-fill sometimes loads the options but
+        // leaves the ng-model empty. For any that's still empty, pick the first real option (selectedIndex=1, the
+        // ng-options-safe way) and capture the resulting model value.
+        Object geo = page.evaluate("() => { const ensure=(ng)=>{ const e=[...document.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')===ng); if(!e) return null; const c=angular.element(e).controller('ngModel');"
+                + " let v=(c && c.$modelValue!=null)?c.$modelValue:null; if((v===null||v==='') && e.options.length>1){ e.selectedIndex=1; e.dispatchEvent(new Event('change',{bubbles:true})); try{ if(window.jQuery) window.jQuery(e).trigger('change'); }catch(e2){} v=(c && c.$modelValue!=null)?c.$modelValue:null; } return v; };"
+                + " return { ResCountryID:ensure('Registration.ResCountryID'), ResStateID:ensure('Registration.ResStateID'), ResCityID:ensure('Registration.ResCityID'), MobileCountryCode:ensure('Registration.MobileCountryCode') }; }");
+        waitForAngular(300);
+        // Snapshot the postcode-derived geo values first; the fallback below (if it runs) overrides State/City.
+        if (geo instanceof Map) ((Map<?, ?>) geo).forEach((k, v) -> snap("Registration." + k, v));
+        // FALLBACK: if the postcode gave no usable City (dropdown has no real option / model still empty), pick a
+        // DIFFERENT State — that repopulates the City list — then select the first city. Try each state until one
+        // yields at least one city option, and capture the resulting State+City model values.
+        boolean cityOk = Boolean.TRUE.equals(page.evaluate("() => { const e=[...document.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')==='Registration.ResCityID'); if(!e) return false; const c=angular.element(e).controller('ngModel'); return e.options.length>1 && c && c.$modelValue!=null && c.$modelValue!==''; }"));
+        if (!cityOk) {
+            System.out.println("fillCorrespondence: no City from postcode — selecting a different State to load cities.");
+            Object fb = page.evaluate("async () => { const sleep=ms=>new Promise(r=>setTimeout(r,ms));"
+                    + " const st=[...document.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')==='Registration.ResStateID');"
+                    + " const ct=[...document.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')==='Registration.ResCityID');"
+                    + " if(!st||!ct) return null; const stC=angular.element(st).controller('ngModel'), ctC=angular.element(ct).controller('ngModel');"
+                    + " for(let i=1;i<st.options.length;i++){ st.selectedIndex=i; st.dispatchEvent(new Event('change',{bubbles:true})); try{ if(window.jQuery) window.jQuery(st).trigger('change'); }catch(e){}"
+                    + "   await sleep(700);"  // let the State's ng-change load the City list
+                    + "   if(ct.options.length>1){ ct.selectedIndex=1; ct.dispatchEvent(new Event('change',{bubbles:true})); try{ if(window.jQuery) window.jQuery(ct).trigger('change'); }catch(e){} await sleep(200);"
+                    + "     return { ResStateID:(stC&&stC.$modelValue!=null)?stC.$modelValue:null, ResCityID:(ctC&&ctC.$modelValue!=null)?ctC.$modelValue:null }; } }"
+                    + " return null; }");
+            waitForAngular(300);
+            if (fb instanceof Map) ((Map<?, ?>) fb).forEach((k, v) -> { if (v != null) snap("Registration." + k, v); });
+        }
+    }
+
+    /** Other Details — Language / Occupation / Employer. */
+    public void fillOtherDetails() {
+        setSel("Registration.LanguagePreferedID", "English");
+        setSel("Registration.OccupationId", "Education");
+        fillModel("Registration.EmployerOccupation", "ABC Company Sdn Bhd");
+    }
+
+    /**
+     * Fill the Payor Information section = Self. The "Payor Information" accordion header
+     * ({@code FillSponserDropDown}) loads the default payor GRID ROW for the MRN; clicking that row
+     * ({@code EditSponser($index)}) populates the payor FORM (Payor Mode=Self, Payor/Pricing Policy=
+     * SELFPAY CASH CUSTOMER). Selecting only the Insurer radio leaves the form empty. Also ticks the
+     * Insurer "Self" radio (value=1) and backfills any empty mandatory payor select. Returns true when
+     * Payor Mode = Self (or the Insurer radio is checked as a fallback).
+     */
+    public boolean selectPayorSelf() {
+        // Open the Payor Information accordion so its default row loads.
+        page.evaluate("() => { const a=[...document.querySelectorAll('a,button')].find(x=>x.getAttribute('ng-click')==='FillSponserDropDown();' && x.offsetParent!==null); if(a) a.click(); }");
+        try {
+            page.waitForFunction(
+                    "() => [...document.querySelectorAll('table')].some(t=>/PAYOR MODE|PRICING POLICY/i.test((t.querySelector('thead')||{}).innerText||'') && /self|selfpay|cash/i.test((t.querySelector('tbody')||{}).innerText||''))",
+                    null, new Page.WaitForFunctionOptions().setTimeout(8000));
+        } catch (Exception ignore) { System.out.println("selectPayorSelf: payor default row did not load"); }
+        waitForAngular(500);
+        // Invoke the payor grid row's handler (EditSponser) — that fills the payor form with Self.
+        page.evaluate("() => { const t=[...document.querySelectorAll('table')].find(x=>/PAYOR MODE|PRICING POLICY/i.test((x.querySelector('thead')||{}).innerText||''));"
+                + " if(!t) return; const row=t.querySelector('tbody tr'); if(!row) return;"
+                + " const cell=[...row.querySelectorAll('td')].find(td=>/self|selfpay|cash/i.test(td.textContent||'')) || row.querySelector('td') || row;"
+                + " const sc=angular.element(cell).scope(); if(sc && typeof sc.EditSponser==='function'){ sc.$apply(function(){ sc.EditSponser(sc.$index); }); } else { cell.click(); } }");
+        waitForAngular(600);
+        // Ensure Insurer = Self (REAL click) and backfill any empty mandatory payor select.
+        Object tagged = page.evaluate("()=>{const r=[...document.querySelectorAll('input[ng-model=\"Insurer\"]')].find(x=>x.value==='1'); if(!r) return false; r.id='__payorSelf'; return true;}");
+        if (Boolean.TRUE.equals(tagged)) {
+            try { page.locator("#__payorSelf").check(new com.microsoft.playwright.Locator.CheckOptions().setTimeout(5000)); }
+            catch (Exception e) { try { page.locator("#__payorSelf").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000)); } catch (Exception ignore) {} }
+            page.evaluate("()=>{const e=document.getElementById('__payorSelf'); if(e) e.removeAttribute('id');}");
+        }
+        page.evaluate("() => { const setSelIfEmpty=(ng,txt)=>{ const e=[...document.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')===ng); if(!e) return; const cur=((e.options[e.selectedIndex]||{}).text||'').trim(); if(cur && !/^-*\\s*select\\s*-*$/i.test(cur)) return;"
+                + " let i=[...e.options].findIndex(o=>(o.text||'').trim().toLowerCase()===txt.toLowerCase()); if(i<1) i=[...e.options].findIndex((o,ix)=>ix>0 && !/select/i.test(o.text||'')); if(i<1) return; e.selectedIndex=i; e.dispatchEvent(new Event('change',{bubbles:true})); const $=window.jQuery||window.$; if($){try{$(e).trigger('change'); $(e).select2('val', e.value);}catch(err){}} };"
+                + " setSelIfEmpty('Registration.receivabletypeid','Self'); setSelIfEmpty('Registration.PayerTypeId','Self'); }");
+        waitForAngular(400);
+        Object payorMode = page.evaluate("() => { const e=[...document.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')==='Registration.receivabletypeid'); return e?((e.options[e.selectedIndex]||{}).text||'').trim():''; }");
+        System.out.println("selectPayorSelf: Payor Mode = " + payorMode);
+        boolean modeSelf = payorMode != null && payorMode.toString().toLowerCase().contains("self");
+        return modeSelf || Boolean.TRUE.equals(page.evaluate("()=>{const r=[...document.querySelectorAll('input[ng-model=\"Insurer\"]')].find(x=>x.value==='1'); return r && r.checked;}"));
+    }
+
+    /**
+     * Visit Information, for a screen that REQUIRES Sub Department.
+     *
+     * <p>Use this from the Appointment List → VisitScreen path: that screen rejects the save with
+     * "Please Select SubDepartment !", but its label is not starred, so the mandatory-detection below cannot see
+     * it and the fallback would clear the field. Saying so explicitly beats guessing from the URL or the markup.</p>
+     */
+    public void fillVisitInformationRequiringSubDept() {
+        subDeptRequired = true;
+        try { fillVisitInformation(); } finally { subDeptRequired = false; }
+    }
+
+    /** Set by {@link #fillVisitInformationRequiringSubDept()} — never clear Sub Department on this pass. */
+    private boolean subDeptRequired = false;
+
+    /** Visit Information — Source, Encounter, Department + Doctor, Queue No (on the Save button scope), Cash. */
+    public void fillVisitInformation() {
+        setSelTxt("Visit.PatientSourceID", "External");
+        setSelTxt("Visit.EncounterTypeID", "Outpatient");
+        setSelTxt("Visit.DepartmentID", "Cardiology");
+        setSelTxt("Registration.GroupCategoryId", "Cardiology");
+        waitForAngular(800); // doctor list can reload after the department is set
+        // Sub Department is filtered BY Department, so it must be set AFTER the department cascade has reloaded it.
+        // Emergency Registration (Conscious) makes it mandatory — Save is blocked with "Please Select SubDepartment !"
+        // — while OP Registration does not show it, hence the if-present treatment.
+        selectSubDepartmentAndDoctor();
+        // Still no Doctor? Try a DIFFERENT DEPARTMENT — some departments have no doctors attached at all, and no
+        // sub-department under them can produce one. Walking departments is the only way out.
+        if (currentDoctor().isEmpty()) ensureDoctorByChangingDepartment();
+        selectCaseCategoryIfPresent();
+        // Run LAST: the sub-department / department cascades above can clear Visit Type on their way through
+        // (Telemedicine Registration saved with "Please Select Visit Type!" once the fallback re-fired Department).
+        ensureVisitTypeIfPresent();
+        // ...and then re-check Sub Department, because everything above can leave it empty on a slow environment.
+        reassertSubDepartmentIfRequired();
+        page.evaluate("() => { const b=[...document.querySelectorAll('button')].find(x=>x.getAttribute('ng-click')==='IUDRegistration();' && x.offsetParent!==null);"
+                + " let s = b ? angular.element(b).scope() : angular.element(document.querySelector('#txtFirstName')).scope();"
+                + " s.$apply(function(){ let x=s; for(let i=0;i<10&&x;i++){ if(x.Visit){ x.Visit.TokenNo='1'; break; } x=x.$parent; } }); }");
+        page.evaluate("()=>{const c=[...document.querySelectorAll('input[type=checkbox]')].find(x=>x.getAttribute('ng-model')==='Visit.IsCashPayment');if(c&&!c.checked)c.click();}");
+    }
+    /**
+     * Set <b>Sub Department</b> and <b>Doctor</b> together, because they are coupled.
+     *
+     * <p>Sub Department is present on BOTH OP Registration and Emergency Registration (Conscious), but only
+     * Emergency makes it mandatory (Save answers <i>"Please Select SubDepartment !"</i>). Selecting one RELOADS the
+     * doctor list, and some sub-departments have <b>no doctors at all</b> — on OP, "Sub Cardio Unit" empties the
+     * list, so a naive "pick the first sub-department" broke Save with <i>"Please Select Doctor!"</i>.</p>
+     *
+     * <p>So: walk the sub-department options and keep the first one that still leaves a selectable doctor, then set
+     * the doctor from the filtered list (preferring "Allen R", else whatever remains). If no sub-department yields a
+     * doctor, leave Sub Department unset and just pick a doctor — that is the pre-existing OP behaviour. Both values
+     * go through {@link #setSelTxt(String, String)} so they land in the snapshot the Save re-apply uses.</p>
+     */
+    private void selectSubDepartmentAndDoctor() {
+        // Locate the Sub Department select and list its real options (polling — it loads off Department).
+        Object info = page.evaluate("() => new Promise(async (resolve) => { const norm=s=>(s||'').replace(/\s+/g,' ').trim(); const sleep=ms=>new Promise(r=>setTimeout(r,ms));"
+                + " const labelOf=s=>{ let t=''; if(s.id){ const l=document.querySelector('label[for=\"'+s.id+'\"]'); if(l) t+=' '+l.textContent; }"
+                + "   const g=s.closest('.form-group,.form-line,.row,.col-sm-6,.col-md-6,.col-sm-4,.col-sm-3,td,div'); if(g){ const l=g.querySelector('label,.control-label'); if(l) t+=' '+l.textContent; } return norm(t).toLowerCase(); };"
+                + " const real=e=>[...e.options].filter(o=>o.value && !/^-*\s*select\s*-*$/i.test(norm(o.textContent))).map(o=>norm(o.textContent));"
+                + " let sel=null;"
+                + " for(let k=0;k<20;k++){ sel=[...document.querySelectorAll('select')].find(s=>/sub.?depart/i.test(s.getAttribute('ng-model')||''))"
+                + "     || [...document.querySelectorAll('select')].find(s=>/sub\s*depart/.test(labelOf(s)));"
+                + "   if(sel && real(sel).length) break; await sleep(500); }"
+                + " if(!sel) return resolve({found:false});"
+                + " resolve({found:true, ng:(sel.getAttribute('ng-model')||''), options:real(sel)}); })");
+        java.util.Map<?, ?> m = (info instanceof java.util.Map) ? (java.util.Map<?, ?>) info : java.util.Collections.emptyMap();
+
+        if (!Boolean.TRUE.equals(m.get("found"))) {
+            // No Sub Department on this screen — original behaviour.
+            setSelTxt("Visit.DoctorID", "Allen R");
+            System.out.println("selectSubDepartmentAndDoctor: no Sub Department field; doctor set directly");
+            return;
+        }
+        String model = String.valueOf(m.get("ng"));
+        java.util.List<?> opts = (m.get("options") instanceof java.util.List)
+                ? (java.util.List<?>) m.get("options") : java.util.Collections.emptyList();
+
+        for (Object o : opts) {
+            String subDept = String.valueOf(o);
+            setSelTxt(model, subDept);
+            waitForAngular(1500);                     // the doctor list reloads off the sub-department
+            setSelTxt("Visit.DoctorID", "Allen R");   // falls back to the first real doctor if Allen R is filtered out
+            String doctor = currentDoctor();
+            if (!doctor.isEmpty()) {
+                System.out.println("selectSubDepartmentAndDoctor: " + model + "=" + subDept + " | Doctor=" + doctor);
+                return;
+            }
+            System.out.println("selectSubDepartmentAndDoctor: '" + subDept + "' has no doctors — trying the next one");
+        }
+
+        // No sub-department leaves a doctor. What to do now DIFFERS by screen:
+        //  • Emergency Registration (Conscious) REQUIRES Sub Department ("Please Select SubDepartment !") and saves
+        //    happily without a doctor — so keep the first sub-department and stop. Clearing it here also re-fires the
+        //    department cascade, which wipes other Visit fields and produced "Please Select Visit Type!".
+        //  • OP Registration requires a Doctor and does not need Sub Department — so clear it and restore the doctor.
+        //
+        // Decide by whether Sub Department is MANDATORY on the screen in front of us, NOT by the URL. The URL test
+        // (contains "emergencyregistration") silently took the OP branch on the VisitScreen reached from the
+        // Appointment List — clearing a Sub Department that screen requires, so every save was rejected with
+        // "Please Select SubDepartment !". A starred label / required attribute is the real signal.
+        boolean needsSubDept = subDeptRequired || Boolean.TRUE.equals(page.evaluate("(ng) => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                + " const e=[...document.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')===ng); if(!e) return false;"
+                + " if(e.hasAttribute('required')||e.hasAttribute('ng-required')) return true;"
+                + " let n=e.closest('.form-group,.form-line,.row,.col-sm-6,.col-md-6,.col-sm-4,.col-sm-3,td,div');"
+                + " for(let i=0;i<5&&n;i++){ const l=n.querySelector('label,.control-label');"
+                + "   if(l && /sub\\s*depart/i.test(norm(l.textContent))) return /\\*/.test(l.textContent) || !!l.querySelector('.arstrik');"
+                + "   n=n.parentElement; } return false; }", model))
+                || page.url().toLowerCase().contains("emergencyregistration");
+        if (needsSubDept && !opts.isEmpty()) {
+            String first = String.valueOf(opts.get(0));
+            setSelTxt(model, first);
+            waitForAngular(1500);
+            setSelTxt("Visit.DoctorID", "Allen R");   // best effort; this screen saves without one
+            System.out.println("selectSubDepartmentAndDoctor: Sub Department is mandatory here — kept " + first
+                    + " | Doctor=" + currentDoctor());
+            return;
+        }
+
+        // OP: clear Sub Department and fall back to a doctor-only selection (pre-existing behaviour).
+        // Clearing alone is NOT enough — the doctor list stays empty until the DEPARTMENT cascade is re-triggered,
+        // so re-select the department to repopulate the doctors before picking one.
+        page.evaluate("(ng) => { const e=[...document.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')===ng); if(!e) return;"
+                + " e.selectedIndex=0; e.dispatchEvent(new Event('change',{bubbles:true})); const $=window.jQuery; if($){try{$(e).trigger('change');}catch(err){}} }", model);
+        waitForAngular(800);
+        setSelTxt("Visit.DepartmentID", "Cardiology");   // re-fires the cascade that fills the doctor list
+        waitForAngular(1800);
+        setSelTxt("Visit.DoctorID", "Allen R");
+        if (currentDoctor().isEmpty()) { waitForAngular(1500); setSelTxt("Visit.DoctorID", ""); }
+        System.out.println("selectSubDepartmentAndDoctor: no sub-department left a doctor — cleared it; Doctor=" + currentDoctor());
+    }
+
+    /**
+     * Last line of defence for <b>Sub Department</b> — re-select it if the screen requires it and it is empty.
+     *
+     * <p>{@link #selectSubDepartmentAndDoctor()} runs early, and two things can still leave the field blank by the
+     * time Save is clicked, both seen on DSH as <i>"Please Select SubDepartment !"</i> while the fill step reported
+     * success:</p>
+     * <ul>
+     *   <li>the option list had not loaded inside that method's poll (DSH answers slower than devhis/KLG), so the
+     *       walk saw an empty list and the fallback <b>cleared</b> the field; or</li>
+     *   <li>a later cascade — {@code ensureDoctorByChangingDepartment()} / {@code ensureVisitTypeIfPresent()} —
+     *       re-fired Department, which reloads Sub Department and drops the selection.</li>
+     * </ul>
+     *
+     * <p>So this runs at the very END of {@link #fillVisitInformation()}: if the field is already set it does
+     * nothing; otherwise it waits for the list (re-firing the Department cascade once to force a reload), picks the
+     * first real option through {@link #setSelTxt(String, String)} so the value lands in the snapshot the Save
+     * re-apply uses, and reads the bound model back — Angular silently discards a value that is not in the list.</p>
+     */
+    private void reassertSubDepartmentIfRequired() {
+        Object info = page.evaluate("() => new Promise(async (resolve) => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                + " const A=window.angular; const $=window.jQuery; const sleep=ms=>new Promise(r=>setTimeout(r,ms));"
+                + " const sub=()=>[...document.querySelectorAll('select')].find(s=>/sub.?depart/i.test(s.getAttribute('ng-model')||''));"
+                + " const real=e=>e?[...e.options].filter(o=>o.value && !/^-*\\s*select\\s*-*$/i.test(norm(o.textContent))):[];"
+                + " const chosen=e=>{ const o=e&&e.options[e.selectedIndex]; const t=o?norm(o.textContent):'';"
+                + "   return (o && o.value && !/^-*\\s*select\\s*-*$/i.test(t)) ? t : ''; };"
+                + " let e=sub(); if(!e) return resolve({found:false});"
+                + " const ng=e.getAttribute('ng-model')||'';"
+                + " if(chosen(e)) return resolve({found:true, ng, current:chosen(e)});"
+                // Empty. Wait for the list; halfway through, re-fire Department to force the cascade to reload it.
+                + " for(let k=0;k<12;k++){ e=sub(); if(e && real(e).length) break;"
+                + "   if(k===5){ const d=[...document.querySelectorAll('select')].find(s=>s.getAttribute('ng-model')==='Visit.DepartmentID');"
+                + "     if(d){ d.dispatchEvent(new Event('change',{bubbles:true}));"
+                + "       try{A.element(d).triggerHandler('change');}catch(x){} if($){try{$(d).trigger('change');}catch(x){}} } }"
+                + "   await sleep(700); }"
+                + " e=sub(); const rs=real(e);"
+                + " resolve({found:true, ng, current:'', first: rs.length?norm(rs[0].textContent):''}); })");
+        java.util.Map<?, ?> m = (info instanceof java.util.Map) ? (java.util.Map<?, ?>) info : java.util.Collections.emptyMap();
+        if (!Boolean.TRUE.equals(m.get("found"))) return;
+
+        String model = String.valueOf(m.get("ng"));
+        String current = m.get("current") == null ? "" : String.valueOf(m.get("current"));
+        if (!current.isEmpty()) return;                                  // already set — leave it alone
+
+        // Only force it where the screen actually demands it; on OP an unset Sub Department is legitimate and
+        // setting one here would re-filter the doctor list that selectSubDepartmentAndDoctor() just settled.
+        boolean needs = subDeptRequired || Boolean.TRUE.equals(page.evaluate("(ng) => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                + " const e=[...document.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')===ng); if(!e) return false;"
+                + " if(e.hasAttribute('required')||e.hasAttribute('ng-required')) return true;"
+                + " let n=e.closest('.form-group,.form-line,.row,.col-sm-6,.col-md-6,.col-sm-4,.col-sm-3,td,div');"
+                + " for(let i=0;i<5&&n;i++){ const l=n.querySelector('label,.control-label');"
+                + "   if(l && /sub\\s*depart/i.test(norm(l.textContent))) return /\\*/.test(l.textContent) || !!l.querySelector('.arstrik');"
+                + "   n=n.parentElement; } return false; }", model))
+                || page.url().toLowerCase().contains("emergencyregistration");
+        if (!needs) return;
+
+        String first = m.get("first") == null ? "" : String.valueOf(m.get("first"));
+        if (first.isEmpty()) {
+            System.out.println("reassertSubDepartmentIfRequired: " + model + " is EMPTY and no options loaded — Save will be blocked");
+            return;
+        }
+        setSelTxt(model, first);
+        waitForAngular(1200);
+        Object back = page.evaluate("(ng) => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                + " const e=[...document.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')===ng); if(!e) return '';"
+                + " const o=e.options[e.selectedIndex]; const t=o?norm(o.textContent):'';"
+                + " return (o && o.value && !/^-*\\s*select\\s*-*$/i.test(t)) ? t : ''; }", model);
+        System.out.println("reassertSubDepartmentIfRequired: was empty — re-selected " + model + "="
+                + (back == null ? "" : back) + " (wanted " + first + ")");
+    }
+
+    /**
+     * Make sure the next-of-kin <b>City</b> holds a value before <b>Add</b>.
+     *
+     * <p>The kin address is normally filled by ticking "Same As Patient Address", but on Emergency Registration
+     * (Conscious) that does not always carry the City across, and {@code AddKinDetails} then refuses with
+     * <i>"Please Select City!"</i> — which shows up as a flaky "Add Next of Kin" step and, later, a Save blocked by
+     * "Please Fill Kin Details!". The kin City list is loaded FROM the kin State, so walk the states until one
+     * yields a real city. No-op when the City is already set or the fields are absent.</p>
+     */
+    private void ensureKinCity() {
+        Object res = page.evaluate("() => new Promise(async (resolve) => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const A=window.angular; const $=window.jQuery; const sleep=ms=>new Promise(r=>setTimeout(r,ms));"
+                + " const find=re=>[...document.querySelectorAll('select')].find(s=>re.test(s.getAttribute('ng-model')||''));"
+                + " const realIdx=e=>[...e.options].findIndex(o=>o.value && !/^-*\\s*select\\s*-*$/i.test(norm(o.textContent)));"
+                + " const chosen=e=>{ if(!e) return ''; const o=e.options[e.selectedIndex]; const t=o?norm(o.textContent):''; return (t && !/^-*\\s*select\\s*-*$/i.test(t))?t:''; };"
+                + " const fire=e=>{ e.dispatchEvent(new Event('change',{bubbles:true})); try{A.element(e).triggerHandler('change');}catch(x){} if($){try{$(e).trigger('change');}catch(x){}} };"
+                + " const city=find(/kin.*city/i); if(!city) return resolve({found:false});"
+                + " if(chosen(city)) return resolve({found:true, already:true, city:chosen(city)});"
+                + " const st=find(/kin.*state/i);"
+                + " if(st){ const states=[...st.options].map((o,i)=>({o,i})).filter(x=>x.o.value && !/^-*\\s*select\\s*-*$/i.test(norm(x.o.textContent)));"
+                + "   for(const s of states){ st.selectedIndex=s.i; fire(st); await sleep(1200);"
+                + "     const c=find(/kin.*city/i); if(c){ const ci=realIdx(c); if(ci>=0){ c.selectedIndex=ci; fire(c); await sleep(600);"
+                + "       if(chosen(c)) return resolve({found:true, state:norm(s.o.textContent), city:chosen(c)}); } } } }"
+                + " const ci=realIdx(city); if(ci>=0){ city.selectedIndex=ci; fire(city); await sleep(400); return resolve({found:true, city:chosen(city)}); }"
+                + " resolve({found:true, city:''}); })");
+        java.util.Map<?, ?> m = (res instanceof java.util.Map) ? (java.util.Map<?, ?>) res : java.util.Collections.emptyMap();
+        if (!Boolean.TRUE.equals(m.get("found"))) { System.out.println("ensureKinCity: no kin City field (skipped)"); return; }
+        if (Boolean.TRUE.equals(m.get("already"))) { System.out.println("ensureKinCity: already set -> " + m.get("city")); return; }
+        System.out.println("ensureKinCity: State=" + m.get("state") + " City=" + m.get("city"));
+    }
+
+    /**
+     * LAST-DITCH <b>Visit Type</b> guard, to run immediately BEFORE any {@code IUDRegistration()} save.
+     *
+     * <p>Every screen that saves the VisitScreen hits the same failure: {@link #ensureVisitTypeIfPresent()} can
+     * fail to resolve a value (Angular's {@code ngModel} controller reports null even with a real option
+     * selected), the value is therefore never snapshotted, and Save answers <i>"Please Select Visit Type!"</i>.
+     * This picks the first real option and pushes it straight onto every {@code Visit} scope, so the validator
+     * sees a value regardless of what the ngModel pipeline did.</p>
+     *
+     * <p><b>Shared on purpose.</b> The VisitScreen is reused by OP Registration, Telemedicine Registration,
+     * Emergency Registration (conscious + unconscious) and the Appointment List's Registration action. The thin
+     * subclasses inherit this automatically; the screens with their OWN save must splice this snippet in (or call
+     * {@link #ensureVisitTypeSelected()}) so a fix here reaches all of them. Expects a JS variable {@code seenV}
+     * (a Set of Visit scopes) to be in scope; {@link #ensureVisitTypeSelected()} supplies its own.</p>
+     */
+    /**
+     * Visit Types the save can REFUSE for a given patient. DSH rejects the first option in its list with
+     * <i>"Cross Consultation Visit Type Not Allowed For this Patient!"</i>, so picking "the first real option"
+     * blindly either gets the save rejected or leaves Visit Type unset on the retry. Skipped when choosing; a
+     * value the app itself pre-selected is left alone.
+     */
+    private static final String VISIT_TYPE_SKIP_JS = "/cross\\s*consult/i";
+
+    public static final String VISIT_TYPE_GUARD_JS =
+            " try{ const vt=[...document.querySelectorAll('select')].find(s=>/visit.?type/i.test(s.getAttribute('ng-model')||''));"
+            + "   if(vt){ const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const cur=vt.options[vt.selectedIndex];"
+            + "     const skipRe=" + VISIT_TYPE_SKIP_JS + ";"
+            + "     const empty=!cur || !cur.value || /^-*\\s*select\\s*-*$/i.test(norm(cur.textContent));"
+            + "     if(empty){ let i=[...vt.options].findIndex(o=>o.value && !/^-*\\s*select\\s*-*$/i.test(norm(o.textContent)) && !skipRe.test(norm(o.textContent)));"
+            + "       if(i<0) i=[...vt.options].findIndex(o=>o.value && !/^-*\\s*select\\s*-*$/i.test(norm(o.textContent)));"
+            + "       if(i>=0){ vt.selectedIndex=i; vt.dispatchEvent(new Event('change',{bubbles:true}));"
+            + "         try{ angular.element(vt).triggerHandler('change'); }catch(e){}"
+            + "         const raw=(vt.options[i].value||'').replace(/^(number|string):/,'');"
+            + "         const val=/^\\d+$/.test(raw)?Number(raw):raw;"
+            + "         seenV.forEach(v2=>{ v2.VisitTypeID=val; }); } } } }catch(e){}";
+
+    /**
+     * Standalone form of {@link #VISIT_TYPE_GUARD_JS} for screens that own their save: call this right before
+     * invoking {@code IUDRegistration()}. Collects the {@code Visit} scopes itself. Never throws.
+     *
+     * @return what it did, for logging
+     */
+    /**
+     * Move Visit Type to a DIFFERENT option — for when the save refuses the current one
+     * (<i>"Cross Consultation Visit Type Not Allowed For this Patient!"</i> on DSH). Skips the current selection
+     * and anything matching the skip list; returns the newly chosen label, or "" when there is nothing else.
+     */
+    public String selectDifferentVisitType() {
+        try {
+            Object r = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const A=window.angular; const $=window.jQuery;"
+                    + " const vt=[...document.querySelectorAll('select')].find(s=>/visit.?type/i.test(s.getAttribute('ng-model')||''));"
+                    + " if(!vt) return ''; const skipRe=" + VISIT_TYPE_SKIP_JS + "; const cur=vt.selectedIndex;"
+                    + " const cand=[...vt.options].map((o,i)=>({o,i})).filter(x=>x.i!==cur && x.o.value"
+                    + "   && !/^-*\\s*select\\s*-*$/i.test(norm(x.o.textContent)) && !skipRe.test(norm(x.o.textContent)));"
+                    + " if(!cand.length) return '';"
+                    + " const t=cand[0]; vt.selectedIndex=t.i; vt.dispatchEvent(new Event('change',{bubbles:true}));"
+                    + " try{A.element(vt).triggerHandler('change');}catch(e){} if($){try{$(vt).trigger('change');}catch(e){}}"
+                    + " const raw=(t.o.value||'').replace(/^(number|string):/,''); const val=/^\\d+$/.test(raw)?Number(raw):raw;"
+                    + " document.querySelectorAll('*').forEach(el=>{ try{ let x=A.element(el).scope();"
+                    + "   for(let k=0;k<15&&x;k++){ if(x.Visit && typeof x.Visit==='object') x.Visit.VisitTypeID=val; x=x.$parent; } }catch(e){} });"
+                    + " return norm(t.o.textContent); }");
+            String s = r == null ? "" : r.toString().trim();
+            System.out.println("selectDifferentVisitType: " + (s.isEmpty() ? "(no other Visit Type available)" : s));
+            waitForAngular(500);
+            return s;
+        } catch (Exception e) {
+            System.out.println("selectDifferentVisitType: " + e.getMessage());
+            return "";
+        }
+    }
+
+    public String ensureVisitTypeSelected() {
+        try {
+            Object r = page.evaluate("() => { const seenV=new Set();"
+                    + " document.querySelectorAll('*').forEach(el=>{ try{ let x=angular.element(el).scope();"
+                    + "   for(let i=0;i<15&&x;i++){ if(x.Visit && typeof x.Visit==='object') seenV.add(x.Visit); x=x.$parent; } }catch(e){} });"
+                    + VISIT_TYPE_GUARD_JS
+                    + " const vt=[...document.querySelectorAll('select')].find(s=>/visit.?type/i.test(s.getAttribute('ng-model')||''));"
+                    + " if(!vt) return '(no Visit Type field)';"
+                    + " const o=vt.options[vt.selectedIndex]; return 'VisitType=' + (o?(o.textContent||'').trim():'(none)'); }");
+            String s = r == null ? "" : r.toString();
+            System.out.println("ensureVisitTypeSelected: " + s);
+            return s;
+        } catch (Exception e) {
+            System.out.println("ensureVisitTypeSelected: " + e.getMessage());
+            return "";
+        }
+    }
+
+    /**
+     * Ensure <b>Visit Type</b> still holds a value, re-selecting it if a cascade cleared it.
+     *
+     * <p>Called at the very end of {@link #fillVisitInformation()}: selecting a Sub Department — and, in the OP
+     * fallback, re-selecting the Department to repopulate the doctors — can reset Visit Type, and Save then answers
+     * <i>"Please Select Visit Type!"</i>. Snapshotted through {@link #setSelTxt(String, String)}, and a no-op where
+     * the field is absent or already set.</p>
+     */
+    private void ensureVisitTypeIfPresent() {
+        Object res = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                + " const labelOf=s=>{ let t=''; if(s.id){ const l=document.querySelector('label[for=\"'+s.id+'\"]'); if(l) t+=' '+l.textContent; }"
+                + "   const g=s.closest('.form-group,.form-line,.row,.col-sm-6,.col-md-6,.col-sm-4,.col-sm-3,td,div'); if(g){ const l=g.querySelector('label,.control-label'); if(l) t+=' '+l.textContent; } return norm(t).toLowerCase(); };"
+                + " const sel=[...document.querySelectorAll('select')].find(s=>/visit.?type/i.test(s.getAttribute('ng-model')||''))"
+                + "   || [...document.querySelectorAll('select')].find(s=>/visit\\s*type/.test(labelOf(s)));"
+                + " if(!sel) return {found:false};"
+                + " const o=sel.options[sel.selectedIndex]; const cur=o?norm(o.textContent):'';"
+                + " const set=(cur && !/^-*\\s*select\\s*-*$/i.test(cur));"
+                + " return {found:true, ng:(sel.getAttribute('ng-model')||''), set:set, value:cur}; }");
+        java.util.Map<?, ?> m = (res instanceof java.util.Map) ? (java.util.Map<?, ?>) res : java.util.Collections.emptyMap();
+        if (!Boolean.TRUE.equals(m.get("found"))) { System.out.println("ensureVisitType: field not present (skipped)"); return; }
+        if (Boolean.TRUE.equals(m.get("set"))) { System.out.println("ensureVisitType: already set -> " + m.get("value")); return; }
+        String model = String.valueOf(m.get("ng"));
+        if (model.isEmpty()) { System.out.println("ensureVisitType: no ng-model; left as-is"); return; }
+        // Select and then READ THE MODEL BACK after it settles. setSelTxt only waits ~150ms and returns null if the
+        // model has not updated yet; snap() drops nulls, so the value never reached the Save re-apply snapshot and
+        // Save kept answering "Please Select Visit Type!".
+        Object v = page.evaluate("(ng) => new Promise(async (resolve) => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const A=window.angular; const $=window.jQuery; const sleep=ms=>new Promise(r=>setTimeout(r,ms));"
+                + " let e=[...document.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')===ng); if(!e) return resolve(null);"
+                // The Visit Type list loads ASYNCHRONOUSLY (after Department/Sub Dept settle). Selecting before it
+                // arrives finds no real option and bails with null — which is exactly why Save kept answering
+                // "Please Select Visit Type!". WAIT for a real option first.
+                + " const skipRe=" + VISIT_TYPE_SKIP_JS + ";"
+                + " let i=-1;"
+                + " for(let k=0;k<20;k++){ e=[...document.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')===ng); if(!e) break;"
+                // Prefer a Visit Type the save will accept; fall back to any real one if that is all there is.
+                + "   i=[...e.options].findIndex(o=>o.value && !/^-*\\s*select\\s*-*$/i.test(norm(o.textContent)) && !skipRe.test(norm(o.textContent)));"
+                + "   if(i<0) i=[...e.options].findIndex(o=>o.value && !/^-*\\s*select\\s*-*$/i.test(norm(o.textContent)));"
+                + "   if(i>=0) break; await sleep(400); }"
+                + " if(!e || i<0) return resolve(null);"
+                + " e.selectedIndex=i; e.dispatchEvent(new Event('change',{bubbles:true})); try{A.element(e).triggerHandler('change');}catch(x){} if($){try{$(e).trigger('change');}catch(x){}}"
+                + " for(let k=0;k<10;k++){ await sleep(300); const c=A.element(e).controller('ngModel'); if(c && c.$modelValue!=null && (''+c.$modelValue).trim()!=='') return resolve(c.$modelValue); }"
+                // FALL BACK TO THE DOM. The controller's $modelValue can still be null here even though a real
+                // option IS selected (the ngModel pipeline lags the change on this cascade). Returning null made
+                // snap() drop the key, so the Save re-apply had nothing to restore and Save answered
+                // "Please Select Visit Type!" — with the log reading "re-selected Visit.VisitTypeID = null".
+                + " const c=A.element(e).controller('ngModel');"
+                + " if(c && c.$modelValue!=null && (''+c.$modelValue).trim()!=='') return resolve(c.$modelValue);"
+                + " const o=e.options[e.selectedIndex];"
+                + " resolve(o && o.value ? o.value.replace(/^(number|string):/,'') : null); })", model);
+        if (v == null || String.valueOf(v).trim().isEmpty()) {
+            System.out.println("ensureVisitType: could NOT resolve a value for " + model + " — Save will re-select it");
+        } else {
+            snap(model, v);
+            System.out.println("ensureVisitType: was empty — re-selected " + model + " = " + v);
+        }
+        waitForAngular(400);
+    }
+
+    /**
+     * No doctor under the current department? Walk the DEPARTMENT list until one yields a selectable Doctor.
+     *
+     * <p>{@link #selectSubDepartmentAndDoctor()} only tries sub-departments beneath whichever department is set.
+     * Some departments have no doctors at all, so no sub-department under them can help — the way out is to change
+     * the department. Each candidate department is set, its cascade allowed to reload, and its sub-departments /
+     * doctors tried; the first department that produces a doctor wins and the search stops.</p>
+     */
+    private void ensureDoctorByChangingDepartment() {
+        Object opts = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                + " const e=[...document.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')==='Visit.DepartmentID');"
+                + " if(!e) return []; const cur=norm((e.options[e.selectedIndex]||{}).textContent||'');"
+                + " return [...e.options].filter(o=>o.value && !/^-*\\s*select\\s*-*$/i.test(norm(o.textContent)))"
+                + "   .map(o=>norm(o.textContent)).filter(t=>t!==cur); }");
+        java.util.List<?> list = (opts instanceof java.util.List) ? (java.util.List<?>) opts : java.util.Collections.emptyList();
+        if (list.isEmpty()) { System.out.println("ensureDoctorByChangingDepartment: no other department to try"); return; }
+
+        // The list is ALPHABETICAL and the first ~10 entries are specialist departments with no doctors at all
+        // (Anaesthesiology, Anatomical Pathology, Breast & Endocrine Surgery, Cardiothoracic, Chemical Pathology,
+        // Clinical Haematology …). A cap of 8 therefore ALWAYS gave up before reaching a department that has one,
+        // and the save was then rejected with "Please Select Doctor!" / "Please Select Visit Type!" (Visit Type is
+        // populated by the doctor cascade, so an empty doctor list leaves Visit Type empty too).
+        // Each candidate costs ~1.8s, so walking the whole list is bounded by -Ddept.walk.max (default 40).
+        final int maxDepartments = Integer.getInteger("dept.walk.max", 40);
+        int tried = 0;
+        for (Object o : list) {
+            if (tried++ >= maxDepartments) break;
+            String dept = String.valueOf(o);
+            setSelTxt("Visit.DepartmentID", dept);
+            waitForAngular(1800);                          // department reloads sub-department + doctor
+            setSelTxt("Visit.DoctorID", "Allen R");        // falls back to the first real doctor
+            if (!currentDoctor().isEmpty()) {
+                System.out.println("ensureDoctorByChangingDepartment: Department=" + dept + " | Doctor=" + currentDoctor());
+                return;
+            }
+            // The department alone gave no doctor — try its sub-departments before moving on.
+            selectSubDepartmentAndDoctor();
+            if (!currentDoctor().isEmpty()) {
+                System.out.println("ensureDoctorByChangingDepartment: Department=" + dept
+                        + " (via sub-department) | Doctor=" + currentDoctor());
+                return;
+            }
+            System.out.println("ensureDoctorByChangingDepartment: '" + dept + "' has no doctors — trying the next department");
+        }
+        noDoctorAvailable = true;
+        System.out.println("ensureDoctorByChangingDepartment: no department yielded a doctor (tried " + tried + ")");
+    }
+
+    /** True when NO department or sub-department offered a selectable doctor on the last visit fill. */
+    public boolean noDoctorAvailable = false;
+
+    /** The Doctor currently selected on the Visit form ("" when unset). */
+    private String currentDoctor() {
+        Object cur = page.evaluate("() => { const norm=s=>(s||'').replace(/\s+/g,' ').trim();"
+                + " const e=[...document.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')==='Visit.DoctorID' && x.offsetParent!==null);"
+                + " if(!e) return ''; const o=e.options[e.selectedIndex]; const t=o?norm(o.textContent):'';"
+                + " return (t && !/^-*\s*select\s*-*$/i.test(t)) ? t : ''; }");
+        return cur == null ? "" : cur.toString();
+    }
+
+
+    /**
+     * DSH's Visit Information has a mandatory <b>Case Category</b> select that devhis lacks (Save is blocked by
+     * "Please Select Case Category!"). Discover it by its ng-model (…casecateg…) or its "Case Category" label and
+     * pick the first real option, snapshotting the value for the Save re-apply. A harmless no-op where the field is
+     * absent (devhis), so it's safe to call unconditionally.
+     */
+    private void selectCaseCategoryIfPresent() {
+        Object res = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim().toLowerCase();"
+                + " const labelOf=s=>{ let t=''; if(s.id){ const l=document.querySelector('label[for=\"'+s.id+'\"]'); if(l) t+=' '+l.textContent; }"
+                + "   const g=s.closest('.form-group,.form-line,.row,.col-sm-6,.col-md-6,.col-sm-4,.col-sm-3,td,div'); if(g){ const l=g.querySelector('label,.control-label'); if(l) t+=' '+l.textContent; } return norm(t); };"
+                // 1) by ng-model (case category / case type variants)
+                + " let sel=[...document.querySelectorAll('select')].find(s=>/case.?categ|case.?type/i.test(s.getAttribute('ng-model')||''));"
+                // 2) by a 'Case Category' label near the select
+                + " if(!sel){ sel=[...document.querySelectorAll('select')].find(s=>/case\\s*categ/.test(labelOf(s))); }"
+                // 3) by finding the label element then its group's select (covers select2-offscreen / hidden selects)
+                + " if(!sel){ const labs=[...document.querySelectorAll('label,.control-label,span,td,th')].filter(l=>/case\\s*categ/.test(norm(l.textContent)) && norm(l.textContent).length<40);"
+                + "   for(const lab of labs){ const fid=lab.getAttribute('for'); if(fid){ const e=document.getElementById(fid); if(e&&e.tagName==='SELECT'){ sel=e; break; } }"
+                + "     const g=lab.closest('.form-group,.row,.form-line,td,.col-sm-6,.col-md-6,.col-sm-4,.col-sm-3,div'); if(g){ const e=g.querySelector('select'); if(e){ sel=e; break; } }"
+                + "     let sib=lab.nextElementSibling; for(let i=0;i<4&&sib;i++){ const e=sib.tagName==='SELECT'?sib:(sib.querySelector?sib.querySelector('select'):null); if(e){ sel=e; break; } sib=sib.nextElementSibling; } if(sel) break; } }"
+                + " if(sel){ if(!sel.id) sel.id='__caseCatSel'; return {found:true, ng:(sel.getAttribute('ng-model')||''), id:sel.id}; }"
+                // not found -> diagnostic dump
+                + " const dump=[...document.querySelectorAll('select')].map(s=>(s.getAttribute('ng-model')||'?')+' :: '+labelOf(s).slice(0,28)).filter((v,i,a)=>a.indexOf(v)===i);"
+                + " const anyText=[...document.querySelectorAll('label,.control-label,span,td,th')].filter(e=>/case\\s*categ/i.test(e.textContent||'')).map(e=>norm(e.textContent).slice(0,40)).slice(0,5);"
+                + " return {found:false, selects:dump, caseCategoryTextSeen:anyText}; }");
+        java.util.Map<?, ?> m = (res instanceof java.util.Map) ? (java.util.Map<?, ?>) res : java.util.Collections.emptyMap();
+        if (Boolean.TRUE.equals(m.get("found"))) {
+            String model = String.valueOf(m.get("ng"));
+            if (model.isEmpty()) {
+                // No ng-model: select the first real option by DOM id and dispatch change (validation reads value).
+                page.evaluate("(id)=>{ const e=document.getElementById(id); if(!e) return; let i=[...e.options].findIndex(o=>o.value && !/^-*\\s*select\\s*-*$/i.test((o.textContent||'').trim())); if(i<0) return; e.selectedIndex=i; e.dispatchEvent(new Event('change',{bubbles:true})); const $=window.jQuery; if($){try{$(e).trigger('change');}catch(err){}} }", m.get("id"));
+                System.out.println("selectCaseCategory: set Case Category (no ng-model, by id) to first real option");
+            } else {
+                setSelTxt(model, "");   // no text match -> first real option, snapped for the Save re-apply
+                System.out.println("selectCaseCategory: set " + model + " to first real option");
+            }
+            return;
+        }
+        System.out.println("selectCaseCategory: field NOT found. caseCategoryTextSeen=" + m.get("caseCategoryTextSeen"));
+        System.out.println("selectCaseCategory: VISIT SELECTS =\n  " + String.valueOf(m.get("selects")).replace(",", "\n  "));
+    }
+
+    /**
+     * Next of Kin — at least one is required. The Add no-ops if a field hasn't committed, so re-fill all
+     * kin fields and re-click Add on each attempt, verifying the row lands. Returns true if it landed.
+     */
+    public boolean addNextOfKin(PatientProfile p) {
+        // If the NOK grid ALREADY has a kin row (an existing patient can come with prior NOK details), SELECT that
+        // existing kin — click its grid row to load it into the form — instead of adding a new/duplicate kin.
+        boolean existingKin = Boolean.TRUE.equals(page.evaluate("() => { const t=[...document.querySelectorAll('table')].find(x=>/relation|nationality|guarantor/i.test((x.querySelector('thead')||{}).innerText||'')); if(!t) return false;"
+                + " return [...t.querySelectorAll('tbody tr')].some(r=>{ const tx=(r.textContent||'').trim(); return tx && !/no\\s*records|no\\s*data/i.test(tx); }); }"));
+        if (existingKin) {
+            System.out.println("addNextOfKin: NOK grid already has a kin — selecting the existing row (not adding a new kin).");
+            openNokAndClickGrid(p);
+            return true;
+        }
+        // Wait for the kin dropdowns to populate first — setSel() silently no-ops when an option isn't loaded
+        // yet, so under a slow server the kin fields stay empty and AddKinDetails is rejected on every retry.
+        try {
+            page.waitForFunction(
+                    "() => ['Registration.KinTitleID','Registration.KinRelationID','Registration.KinOccupationID','Registration.KinCountryID','Registration.KinMobileCountryCode']"
+                            + ".every(ng => { const e=[...document.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')===ng); return e && e.options.length>1; })",
+                    null, new Page.WaitForFunctionOptions().setTimeout(20000));
+        } catch (Exception ignore) { System.out.println("addNextOfKin: kin dropdowns not fully populated in time — proceeding"); }
+        // Capture any JAlert/toast the Add raises so a failure reports WHY (e.g. "Please Enter Kin ...").
+        page.evaluate("() => { window.__kinAlerts=[]; ['JAlert','jAlert'].forEach(n=>{ if(window[n] && !window['__ok_'+n]){ window['__ok_'+n]=window[n]; window[n]=function(m){ try{window.__kinAlerts.push(String(m));}catch(e){} return window['__ok_'+n].apply(this,arguments); }; } });"
+                + " const grab=()=>{ document.querySelectorAll('.toast-message,.toast').forEach(el=>{ const t=(el.textContent||'').replace(/\\s+/g,' ').trim(); if(t && !window.__kinAlerts.includes(t)) window.__kinAlerts.push(t); }); }; new MutationObserver(grab).observe(document.body,{childList:true,subtree:true}); }");
+        boolean kinAdded = false;
+        for (int attempt = 0; attempt < 4 && !kinAdded; attempt++) {
+            setSelTxt("Registration.KinTitleID", p.kinTitle);
+            fillModel("Registration.KinName", p.kinName);
+            fillModel("Registration.KinFamilyName", p.kinFamily);
+            setSelTxt("Registration.NOKnationalid", "Malaysian");
+            fillModel("Registration.KinNationalId", p.kinNric);
+            setSelTxt("Registration.KinRelationID", p.kinRel);
+            fillModel("Registration.KinMobileNo", p.kinMobile);
+            fillModel("Registration.KinEmail", p.kinEmail);
+            setSelTxt("Registration.KinOccupationID", "Education");
+            setSelTxt("Registration.KinMobileCountryCode", "60");  // mandatory: else "Please Enter Kin Mobile Country Code!"
+            setSelTxt("Registration.KinCountryID", "Malaysia");
+            // REAL click the "Same As Patient Address" checkbox (synthetic click doesn't fire Angular).
+            Object chkTagged = page.evaluate("()=>{const c=[...document.querySelectorAll('input[type=checkbox]')].find(x=>x.getAttribute('ng-model')==='chkSameasPatAddr'); if(!c || c.checked) return false; c.id='__kinSameAddr'; return true;}");
+            if (Boolean.TRUE.equals(chkTagged)) {
+                try { page.locator("#__kinSameAddr").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000)); } catch (Exception ignore) {}
+                page.evaluate("()=>{const e=document.getElementById('__kinSameAddr'); if(e) e.removeAttribute('id');}");
+            }
+            ensureKinCity();   // Same-As-Address does not always carry the City over -> "Please Select City!"
+            // Re-select the NOK Nationality RIGHT BEFORE Add so AddKinDetails captures it into the grid entry
+            // (else the grid kin lacks a nationality and Save says 'Please Select Nationality for NOK'). Its
+            // ng-change (fnsetCountrywithNationalitywiseNOK) needs a beat to settle.
+            setSelTxt("Registration.NOKnationalid", "Malaysian");
+            waitForAngular(600);
+            // REAL click the Add-kin button so the row is actually added.
+            Object addTagged = page.evaluate("()=>{const b=[...document.querySelectorAll('button,a')].find(x=>/AddKinDetails/.test(x.getAttribute('ng-click')||'') && x.offsetParent!==null); if(!b) return false; b.id='__addKinBtn'; return true;}");
+            if (Boolean.TRUE.equals(addTagged)) {
+                try { page.locator("#__addKinBtn").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000)); } catch (Exception ignore) {}
+                page.evaluate("()=>{const e=document.getElementById('__addKinBtn'); if(e) e.removeAttribute('id');}");
+            } else {
+                System.out.println("addNextOfKin: AddKinDetails button NOT found (attempt " + (attempt + 1) + ")");
+            }
+            // Scope-call fallback — fire AddKinDetails() directly on the Angular scope (a synthetic/real click
+            // occasionally doesn't fire the handler under load). Pass the kin model the same way the ng-click does.
+            page.evaluate("()=>{ let done=false; document.querySelectorAll('*').forEach(el=>{ if(done)return; try{ const s=angular.element(el).scope(); let x=s; for(let i=0;i<15&&x;i++){ if(typeof x.AddKinDetails==='function'){ x.$apply(()=>{ try{ x.AddKinDetails(x.Registration); }catch(e){ try{ x.AddKinDetails(); }catch(e2){} } }); done=true; break; } x=x.$parent; } }catch(e){} }); }");
+            waitForAngular(1000);
+            // Match on the FAMILY name (single word) and NRIC (digits) — NOT the full "First Family" name:
+            // the grid splits the name across cells, so textContent concatenates to "FirstFamily" (no space)
+            // and a spaced search string never matches, making a successful Add look like a failure.
+            kinAdded = Boolean.TRUE.equals(page.evaluate("(a) => { const fam=(a[0]||'').toLowerCase(), nric=(a[1]||'');"
+                    + " return [...document.querySelectorAll('table tbody tr')].some(r=>{ const t=(r.textContent||''); const tl=t.toLowerCase();"
+                    + "   return (fam && tl.includes(fam)) || (nric && t.replace(/\\s+/g,'').includes(nric)); }); }",
+                    Arrays.asList(p.kinFamily, p.kinNric)));
+        }
+        // NOTE: do NOT click the kin grid row after Add — clicking it fires EditKinDetails which MOVES the kin
+        // OUT of the grid (KinDetailsList) back into the form for editing, emptying the list and causing
+        // 'Please Fill Kin Details' at Save. Verified live: an empty kin form + a grid row saves cleanly.
+        if (!kinAdded) {
+            Object alerts = page.evaluate("() => (window.__kinAlerts||[]).slice(-5).join(' | ')");
+            Object emptyKin = page.evaluate("() => ['Registration.KinTitleID','Registration.KinRelationID','Registration.KinOccupationID','Registration.KinCountryID','Registration.KinMobileCountryCode']"
+                    + ".filter(ng=>{ const e=[...document.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')===ng); return !e || !e.value || e.selectedIndex<=0; }).join(',')");
+            Object diag = page.evaluate("() => { const btn=[...document.querySelectorAll('button,a')].some(x=>/AddKinDetails/.test(x.getAttribute('ng-click')||''));"
+                    + " const kt=[...document.querySelectorAll('table')].find(x=>/relation/i.test((x.querySelector('thead')||{}).innerText||''));"
+                    + " const rows=kt?[...kt.querySelectorAll('tbody tr')].filter(r=>(r.textContent||'').trim() && !/no records/i.test(r.textContent||'')).length:'(no kin table)';"
+                    + " const name=(document.querySelector(\"input[ng-model='Registration.KinName']\")||{}).value;"
+                    + " return 'addBtn='+btn+' kinRows='+rows+' kinNameField=\"'+(name||'')+'\"'; }");
+            System.out.println("addNextOfKin: FAILED — alerts=[" + alerts + "] emptyKinSelects=[" + emptyKin + "] " + diag);
+        }
+        return kinAdded;
+    }
+
+    // ---- save -------------------------------------------------------------
+
+    /**
+     * Re-assert critical fields (they occasionally fail to commit and block Save with a
+     * "Please Enter ..." toast), then click Save and wait for the "Do you want to Save" confirm dialog.
+     * Returns null if the dialog appeared, or the blocking toast text if the save was rejected.
+     */
+    /**
+     * Open the NOK section (its grid sits under the "Patient Information" panel, which can be collapsed) and click
+     * the kin's grid row. Clicking the row fires {@code EditKinDetails($index)}, which LOADS the kin's values
+     * (KinName, NOK Nationality, etc.) back into the form WITHOUT removing it from {@code KinDetailsList} — so the
+     * data no longer disappears before Save. Call this right after adding the kin (before Payor) and again at Save.
+     */
+    /**
+     * Select a kin row from the NOK grid without needing a {@link PatientProfile} — for callers (e.g. the
+     * Appointment List → VisitScreen path) that fill the kin fields themselves and then need the SAME
+     * "click the row so the kin is committed" step OP Registration performs.
+     */
+    public void openNokAndClickGrid(String kinFamily, String kinNric) {
+        PatientProfile p = new PatientProfile();
+        p.kinFamily = kinFamily;
+        p.kinNric = kinNric;
+        openNokAndClickGrid(p);
+    }
+
+    public void openNokAndClickGrid(PatientProfile p) {
+        boolean kinGridVisible = Boolean.TRUE.equals(page.evaluate("() => { const t=[...document.querySelectorAll('table')].find(x=>/relation|nationality|guarantor/i.test((x.querySelector('thead')||{}).innerText||'')); return t && t.offsetParent!==null && [...t.querySelectorAll('tbody tr')].some(r=>(r.textContent||'').trim()); }"));
+        if (!kinGridVisible) {
+            // Open the "Patient Information" accordion header — the exact control is //*[@id="headingTwo"]/a.
+            try {
+                page.locator("//*[@id='headingTwo']/a").first().click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(4000));
+            } catch (Exception e) {
+                // Fallback: click any element whose text is exactly "Patient Information".
+                page.evaluate("() => { const h=[...document.querySelectorAll('a,button,div,h3,h4,span,.panel-heading,.panel-title,.box-header')].find(x=>/^\\s*patient information\\s*$/i.test((x.textContent||'').replace(/\\s+/g,' ').trim())); if(h) h.click(); }");
+            }
+            waitForAngular(600);
+        }
+        Object rowClicked = page.evaluate("(a) => { const fam=(a[0]||'').toLowerCase(), nric=(a[1]||'');"
+                + " const kt=[...document.querySelectorAll('table')].find(x=>/relation|nationality|guarantor/i.test((x.querySelector('thead')||{}).innerText||''));"
+                + " if(!kt) return false; const row=[...kt.querySelectorAll('tbody tr')].find(r=>{ const tx=(r.textContent||''); const tl=tx.toLowerCase(); return (fam && tl.includes(fam)) || (nric && tx.replace(/\\s+/g,'').includes(nric)); }) || kt.querySelector('tbody tr'); if(!row) return false;"
+                // scope-call EditKinDetails($index) directly (the row's own ng-click) — the reliable trigger.
+                + " try{ const sc=angular.element(row).scope(); if(sc && typeof sc.EditKinDetails==='function'){ sc.$apply(()=>sc.EditKinDetails(sc.$index)); } }catch(e){}"
+                + " const cell=[...row.querySelectorAll('td')].find(td=>td.offsetParent!==null && (td.textContent||'').trim() && !td.querySelector('button,a')); if(cell){ cell.id='__kinRowSave'; return true; } return 'called'; }",
+                Arrays.asList(p.kinFamily, p.kinNric));
+        if (Boolean.TRUE.equals(rowClicked)) {
+            try { page.locator("#__kinRowSave").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000)); } catch (Exception ignore) {}
+            page.evaluate("()=>{const e=document.getElementById('__kinRowSave'); if(e) e.removeAttribute('id');}");
+        }
+        waitForAngular(700);
+    }
+
+    /**
+     * Dismiss the "Confirm! — Patient has previous unclosed episode." popup (and similar info confirms) by clicking
+     * its OK/Yes/Continue button. The app raises this during Save when the patient already has an open episode; if
+     * left up it blocks the "Do you want to Save" dialog and the save. Returns true if it clicked something.
+     */
+    private boolean dismissBlockingConfirm() {
+        return Boolean.TRUE.equals(page.evaluate("() => { const boxes=[...document.querySelectorAll('.ng-confirm-box,.jconfirm,.jconfirm-box,.modal,.sweet-alert')].filter(m=>m.offsetParent!==null);"
+                + " let clicked=false;"
+                // "The visit for the selected doctor is already exists, still do you want to continue?" (YES/NO)
+                // is a SECOND blocking confirm this matcher did not know about, so the save sat on it until the
+                // step timed out. It is an informational duplicate-visit warning — answering YES is correct.
+                + " boxes.forEach(box=>{ const txt=(box.textContent||'');"
+                + "  if(/unclosed episode|previous unclosed|already has|open episode"
+                + "     |visit for the selected doctor|still do you want to continue/i.test(txt)){"
+                + "   const ok=[...box.querySelectorAll('button,a')].find(b=>/^(ok|yes|continue|proceed)$/i.test((b.textContent||'').trim()) && b.offsetParent!==null);"
+                + "   if(ok){ ok.click(); clicked=true; } } });"
+                + " return clicked; }"));
+    }
+
+    public String clickSaveAwaitConfirm(PatientProfile p) {
+        // The NOK row can disappear before Save — re-ensure it's present, re-adding the kin if it's gone.
+        for (int attempt = 0; attempt < 5; attempt++) {
+            boolean kinPresent = Boolean.TRUE.equals(page.evaluate("(a)=>{ const fam=(a[0]||'').toLowerCase(), nric=(a[1]||'');"
+                    // Our kin matched by family/NRIC, OR ANY real row already in the kin/relation grid (existing patient).
+                    + " const kt=[...document.querySelectorAll('table')].find(x=>/relation|nationality|guarantor/i.test((x.querySelector('thead')||{}).innerText||''));"
+                    + " const anyRow = kt && [...kt.querySelectorAll('tbody tr')].some(r=>{ const tx=(r.textContent||'').trim(); return tx && !/no\\s*records|no\\s*data/i.test(tx); });"
+                    + " const mine = [...document.querySelectorAll('table tbody tr')].some(r=>{ const t=(r.textContent||''); const tl=t.toLowerCase(); return (fam && tl.includes(fam)) || (nric && t.replace(/\\s+/g,'').includes(nric)); });"
+                    + " return anyRow || mine; }",
+                    Arrays.asList(p.kinFamily, p.kinNric)));
+            if (kinPresent) break;
+            System.out.println("clickSaveAwaitConfirm: NOK row missing before Save — re-adding (attempt " + (attempt + 1) + ")");
+            addNextOfKin(p);
+        }
+        // Before Save, CHECK if the NOK form is empty (its Nationality got cleared) — if so, click the grid row to
+        // reload the kin's values back into the form (opens the "Patient Information" header first). Idempotent.
+        boolean nokEmpty = Boolean.TRUE.equals(page.evaluate("() => { let empty=true; document.querySelectorAll('*').forEach(el=>{ try{ const sc=angular.element(el).scope(); let x=sc; for(let i=0;i<15&&x;i++){ if(x.Registration && typeof x.Registration==='object'){ const v=x.Registration.NOKnationalid; if(v!==undefined && v!==null && v!==''){ empty=false; } } x=x.$parent; } }catch(e){} }); return empty; }"));
+        if (nokEmpty) {
+            System.out.println("clickSaveAwaitConfirm: NOK is empty before Save — clicking the grid to reload it.");
+            openNokAndClickGrid(p);
+        }
+        // Apply the captured field SNAPSHOT as PLAIN properties on every Registration/Visit object in the SAME
+        // tick as the Save click — no DOM change events, so no ng-change watcher fires and no field-reset cascade
+        // empties another field (the fix for the interdependent 'Please Enter/Select X' chain on this screen).
+        // Keys are "Registration.PrefixID" -> numeric model value / "Registration.KinName" -> text / "Visit.X".
+        final String saveJs = "(a) => { const snap=a.snap;"
+                + " window.__regToast=''; if(window.__rtObs) window.__rtObs.disconnect();"
+                + " window.__rtObs=new MutationObserver(()=>{ const el=document.querySelector('.toast-message'); const m=el?(el.textContent||'').trim():''; if(m && !window.__regToast) window.__regToast=m; });"
+                + " window.__rtObs.observe(document.body,{childList:true,subtree:true});"
+                + " const btns=[...document.querySelectorAll(\"button[ng-click='IUDRegistration();']\")]; const b=btns.find(x=>x.offsetParent!==null)||btns[0]; if(!b) return 'no-save-btn'; b.scrollIntoView({block:'center'});"
+                + " const seenR=new Set(), seenV=new Set();"
+                + " document.querySelectorAll('*').forEach(el=>{ try{ const sc=angular.element(el).scope(); let x=sc; for(let i=0;i<15&&x;i++){"
+                // Apply PATIENT fields only — NOT the kin form fields. The kin is already committed to the grid
+                // (KinDetailsList); re-filling the kin FORM makes it "partial" and the Save then re-validates it
+                // ('Please Enter Kin Name / Select Nationality for NOK'). An empty kin form + a grid row saves fine.
+                + "   if(x.Registration && typeof x.Registration==='object' && !seenR.has(x.Registration)){ seenR.add(x.Registration); const reg=x.Registration; reg.PassportExpirydate='31/12/2045'; for(const k in snap){ if(k.indexOf('Registration.')===0 && k.indexOf('Kin')<0 && k.indexOf('NOK')<0) reg[k.slice(13)]=snap[k]; } }"
+                + "   if(x.Visit && typeof x.Visit==='object' && !seenV.has(x.Visit)){ seenV.add(x.Visit); const vis=x.Visit; vis.TokenNo='1'; vis.SaveBtnEnable=1; for(const k in snap){ if(k.indexOf('Visit.')===0) vis[k.slice(6)]=snap[k]; } }"
+                + "   x=x.$parent; } }catch(e){} });"
+                + VISIT_TYPE_GUARD_JS
+                + " ['mousedown','mouseup','click'].forEach(t=>b.dispatchEvent(new MouseEvent(t,{bubbles:true,cancelable:true,view:window}))); return 'clicked'; }";
+        // Retry the Save on a RECOVERABLE field-reset validation ("Please Select/Enter …" — a digest race that can
+        // clear e.g. the Patient Title). On such a toast, re-assert the mandatory selects (real change so select2 +
+        // the validator see them), re-apply the snapshot and re-click Save. Give up after 3 attempts.
+        String lastToast = "";
+        for (int attempt = 0; attempt < 3; attempt++) {
+            page.evaluate(saveJs, java.util.Map.of("snap", snap));
+            lastToast = "";
+            for (int i = 0; i < 40; i++) {
+                // The "Patient has previous unclosed episode" confirm can pop up first — click OK and keep waiting.
+                if (dismissBlockingConfirm()) { System.out.println("clickSaveAwaitConfirm: clicked OK on 'previous unclosed episode' popup."); waitForAngular(500); continue; }
+                boolean dialogShown = Boolean.TRUE.equals(page.evaluate("() => [...document.querySelectorAll('.ng-confirm-box,.jconfirm,.modal')].some(m=>m.offsetParent!==null && /do you want to save/i.test(m.textContent||''))"));
+                if (dialogShown) return null;
+                Object bt = page.evaluate("() => window.__regToast || ''");
+                if (bt != null && !bt.toString().isEmpty()) { lastToast = bt.toString(); break; }
+                waitForAngular(500);
+            }
+            if (lastToast.isEmpty()) break; // no dialog and no toast — fall through to the message below
+            // "… Visit Type Not Allowed For this Patient!" is recoverable too — the CHOSEN Visit Type is refused
+            // for this patient (DSH refuses Cross Consultation), so move to a different one and save again rather
+            // than failing the run.
+            boolean visitTypeRefused = lastToast.toLowerCase().matches(".*visit\\s*type.*(not\\s*allow|no[t]?\\s*permitted).*");
+            boolean recoverable = lastToast.toLowerCase().matches(".*please\\s+(select|enter).*")
+                    || lastToast.toLowerCase().contains("mandatory") || visitTypeRefused;
+            if (!recoverable || attempt == 2) return lastToast;
+            System.out.println("clickSaveAwaitConfirm: recoverable validation '" + lastToast + "' — re-asserting fields & retrying (attempt " + (attempt + 1) + ")");
+            page.evaluate("() => { window.__regToast=''; document.querySelectorAll('.toast-message,.toast').forEach(e=>{ try{ e.remove(); }catch(x){} }); }");
+            if (visitTypeRefused) {
+                String vt = selectDifferentVisitType();
+                System.out.println("clickSaveAwaitConfirm: Visit Type refused — switched to \""
+                        + (vt.isEmpty() ? "(none available)" : vt) + "\"");
+            }
+            // Re-select the Patient Title (the observed flake) — punctuation-tolerant + verified so a cross-env
+            // text mismatch (e.g. "Mrs." vs "Mrs") still binds and the validator sees it.
+            setPrefixRobust(p.prefix);
+            waitForAngular(900);
+        }
+        return lastToast.isEmpty() ? "no dialog and no toast appeared" : lastToast;
+    }
+
+    /**
+     * Click Save on the confirm dialog and wait for success — confirmed by the "Saved Successfully"
+     * toast, the Registration Report tab, or the in-app "Consent Details" modal (any of which only
+     * appear after a successful save; the toast can fade on a slow site).
+     */
+    public SaveOutcome confirmSaveAndAwaitSuccess() {
+        page.evaluate("() => { const box=[...document.querySelectorAll('.ng-confirm-box,.jconfirm,.modal')].find(m=>m.offsetParent!==null && /do you want to save/i.test(m.textContent||''));"
+                + " const sv=[...(box||document).querySelectorAll('button')].find(b=>/^save$/i.test((b.textContent||'').trim()) && b.offsetParent!==null); if(sv) sv.click(); }");
+        SaveOutcome out = new SaveOutcome();
+        out.toast = "(toast faded)";
+        // Poll generously — the save can be slow. Success = the toast, OR any artifact that only appears
+        // after a successful save (Registration Report tab, either consent-form tab, or the modal).
+        for (int i = 0; i < 60 && !out.saved; i++) {
+            // The "Patient has previous unclosed episode" confirm can appear here too — click OK to let the save go.
+            dismissBlockingConfirm();
+            Object rt = page.evaluate("() => window.__regToast || ''");
+            String t = rt == null ? "" : rt.toString();
+            if (t.toLowerCase().contains("saved successfully")) { out.toast = t; out.saved = true; break; }
+            boolean artifact = page.context().pages().stream().anyMatch(p ->
+                    p.url().contains("RegistrationReport") || p.url().contains("nhisformstest"));
+            if (artifact) { out.saved = true; out.toast = t.isEmpty() ? "Registration saved (report/consent tab opened)" : t; break; }
+            boolean modalUp = Boolean.TRUE.equals(page.evaluate("() => /Consent Details/i.test((document.body&&document.body.innerText)||'') && [...document.querySelectorAll(\"button[ng-click='IUDconsentdetail()']\")].some(b=>b.offsetParent!==null)"));
+            if (modalUp) { out.saved = true; out.toast = t.isEmpty() ? "Registration saved (Consent Details modal shown)" : t; break; }
+            if (!t.isEmpty()) { out.toast = t; break; } // a non-success toast = a real error
+            waitForAngular(500);
+        }
+        return out;
+    }
+
+    // ---- post-save artifacts ---------------------------------------------
+
+    /** Wait for the in-app "Consent Details" (PERSONAL DATA NOTICE &amp; CONSENT) modal. */
+    public boolean waitConsentDetailsModal() {
+        try {
+            page.waitForFunction("() => /Consent Details/i.test(document.body.innerText) && [...document.querySelectorAll(\"button[ng-click='IUDconsentdetail()']\")].some(b=>b.offsetParent!==null)",
+                    null, new Page.WaitForFunctionOptions().setTimeout(10000));
+            return true;
+        } catch (Exception e) {
+            System.out.println("Consent Details modal did not appear");
+            return false;
+        }
+    }
+
+    /** Close the Consent Details modal (its Save only opens an empty PDPA document list). */
+    public void closeConsentDetailsModal() {
+        page.evaluate("() => { const c=[...document.querySelectorAll(\"button[ng-click='fnclear()']\")].find(x=>x.offsetParent!==null); if(c) c.click(); }");
+        waitForAngular(500);
+    }
+
+    /** Poll for an auto-opened tab whose URL contains {@code urlPart}. */
+    public Page findTab(String urlPart) {
+        for (int i = 0; i < 20; i++) {
+            Page found = page.context().pages().stream().filter(p -> p.url().contains(urlPart)).reduce((a, b) -> b).orElse(null);
+            if (found != null) return found;
+            waitForAngular(500);
+        }
+        return null;
+    }
+
+    /**
+     * Find the auto-opened <b>consent form</b> tab (Patient Registration Form) generically — its template id differs
+     * by environment (devhis {@code TH_EF_293}), so instead of a hardcoded id, match the document host / form
+     * signature: any tab that is NOT the main app page and NOT the PDF {@code RegistrationReport}, whose URL looks
+     * like the nhisforms document builder ({@code nhisform*}, {@code TH_EF*}, a {@code TemplateId} query, or a
+     * {@code /Create}//{@code /Edit/} document path). Returns the newest such tab, or null.
+     */
+    public Page findConsentFormTab() {
+        for (int i = 0; i < 20; i++) {
+            Page found = page.context().pages().stream()
+                    .filter(p -> p != page && !p.isClosed())
+                    .filter(p -> {
+                        String u = p.url().toLowerCase();
+                        if (u.contains("registrationreport") || u.isEmpty() || u.equals("about:blank")) return false;
+                        return u.contains("nhisform") || u.contains("th_ef") || u.contains("templateid")
+                                || u.contains("/create") || u.contains("/edit/") || u.contains("visitid=");
+                    })
+                    .reduce((a, b) -> b).orElse(null);
+            if (found != null) return found;
+            waitForAngular(500);
+        }
+        return null;
+    }
+
+    /**
+     * Capture the (PDF) Registration Report tab as PNG bytes — bring it to the front (a backgrounded
+     * PDF tab screenshots blank), capture, then restore the primary page. Returns null on failure.
+     */
+    public byte[] captureReportTab(Page reportTab) {
+        byte[] png = null;
+        try {
+            reportTab.bringToFront();
+            try { reportTab.waitForLoadState(); } catch (Exception ignore) {}
+            reportTab.waitForTimeout(2500);
+            png = reportTab.screenshot(new Page.ScreenshotOptions().setTimeout(12000));
+        } catch (Exception e) {
+            System.out.println("Registration Report screenshot: " + e.getMessage());
+        } finally {
+            try { page.bringToFront(); } catch (Exception ignore) {}
+        }
+        return png;
+    }
+
+    /** Submit the (pre-filled) Patient Registration Form consent tab: Submit -&gt; Yes -&gt; success. */
+    public boolean submitPatientForm(Page form) {
+        try { form.waitForLoadState(); } catch (Exception ignore) {}
+        form.waitForTimeout(1500);
+        form.evaluate("() => { const b=[...document.querySelectorAll('button,input[type=submit]')].find(x=>/^submit$/i.test((x.textContent||x.value||'').trim()) && x.offsetParent!==null); if(b){ b.scrollIntoView({block:'center'}); b.click(); } }");
+        boolean submitted = false;
+        try {
+            form.waitForFunction("() => [...document.querySelectorAll('button,a')].some(b=>/^yes$/i.test((b.textContent||'').trim()) && b.offsetParent!==null)",
+                    null, new Page.WaitForFunctionOptions().setTimeout(8000));
+            form.evaluate("() => { const y=[...document.querySelectorAll('button,a')].find(b=>/^yes$/i.test((b.textContent||'').trim()) && b.offsetParent!==null); if(y) y.click(); }");
+            form.waitForFunction("() => /form submitted successfully/i.test((document.body && document.body.innerText) || '') || /\\/Edit\\//.test(location.href)",
+                    null, new Page.WaitForFunctionOptions().setTimeout(15000));
+            submitted = true;
+        } catch (Exception e) {
+            System.out.println("Consent submit: " + e.getMessage());
+        }
+        // Dismiss the 'Form Submitted Successfully' dialog.
+        form.waitForTimeout(1000);
+        form.evaluate("() => { const ok=[...document.querySelectorAll('button,a')].find(b=>/^ok$/i.test((b.textContent||'').trim()) && b.offsetParent!==null); if(ok) ok.click(); }");
+        form.waitForTimeout(1000);
+        return submitted;
+    }
+
+    /** Full-page (long) screenshot of the Patient Registration Form. Returns PNG bytes, or null. */
+    public byte[] captureFullForm(Page form) {
+        byte[] png = null;
+        try {
+            form.bringToFront();
+            png = form.screenshot(new Page.ScreenshotOptions().setFullPage(true).setTimeout(20000));
+        } catch (Exception e) {
+            System.out.println("Patient Registration Form full-page screenshot: " + e.getMessage());
+        } finally {
+            try { page.bringToFront(); } catch (Exception ignore) {}
+        }
+        return png;
+    }
+
+    // ---- low-level helpers ------------------------------------------------
+
+    /** Select a select2/ng-options dropdown (by ng-model) to the option with the given visible text.
+     *  Also snapshots the resulting model value so Save can re-apply it as a plain property. */
+    private void setSel(String ngModel, String optionText) {
+        Object v = page.evaluate("([ng,txt])=>{const $=window.jQuery;const e=[...document.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')===ng);"
+                + "if(!e)return null;const o=[...e.querySelectorAll('option')].find(x=>x.textContent.trim()===txt);if(!o)return null;e.value=o.value;"
+                + "const c=angular.element(e).controller('ngModel');if(c){c.$setViewValue(o.value);c.$render();}"
+                + "if($){try{$(e).trigger('change');$(e).select2('val',o.value);}catch(err){}}e.dispatchEvent(new Event('change',{bubbles:true}));"
+                + "return (c && c.$modelValue!=null)?c.$modelValue:null;}",
+                Arrays.asList(ngModel, optionText));
+        snap(ngModel, v);
+    }
+
+    /**
+     * Set the Patient Title (<b>Registration.PrefixID</b>) robustly across environments. {@link #setSel} matches an
+     * option by EXACT visible text, but the Title options differ by env (e.g. devhis "Mrs." vs DSH "Mrs"), so an
+     * exact-text miss leaves PrefixID empty → Save is blocked by "Please Select Patient Title!". This waits for the
+     * dropdown to populate, then picks the option by punctuation-insensitive match ("mrs." ≈ "Mrs"), else a
+     * startsWith match, else the first real option — verifying the ng-model actually committed and snapshotting the
+     * bound value for the Save re-apply. Returns true once PrefixID holds a real value.
+     */
+    private boolean setPrefixRobust(String want) {
+        try {
+            page.waitForFunction("() => { const e=[...document.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')==='Registration.PrefixID'); return e && e.options.length>1; }",
+                    null, new Page.WaitForFunctionOptions().setTimeout(15000));
+        } catch (Exception ignore) { System.out.println("setPrefixRobust: Patient Title dropdown did not populate in time"); }
+        Object v = null;
+        for (int a = 0; a < 4 && v == null; a++) {
+            v = page.evaluate("(want)=>{ const $=window.jQuery; const norm=s=>(s||'').toLowerCase().replace(/[^a-z0-9]/g,'');"
+                    + " const e=[...document.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')==='Registration.PrefixID'); if(!e) return null;"
+                    + " const opts=[...e.options]; const w=norm(want);"
+                    + " let o=opts.find(x=>x.value && norm(x.textContent)===w)"
+                    + "   || opts.find(x=>x.value && norm(x.textContent) && (norm(x.textContent).startsWith(w) || w.startsWith(norm(x.textContent))))"
+                    + "   || opts.find(x=>x.value && !/^select$/.test(norm(x.textContent)));"
+                    + " if(!o) return null; e.value=o.value; const c=angular.element(e).controller('ngModel');"
+                    + " if(c){ c.$setViewValue(o.value); c.$render(); } if($){ try{ $(e).trigger('change'); $(e).select2('val',o.value); }catch(err){} }"
+                    + " e.dispatchEvent(new Event('change',{bubbles:true}));"
+                    + " return (c && c.$modelValue!=null && c.$modelValue!=='')?c.$modelValue:null; }", want);
+            if (v == null) waitForAngular(400);
+        }
+        snap("Registration.PrefixID", v);
+        return v != null;
+    }
+
+    /** Select a dropdown (by ng-model) to the option matching text (or first real option) via selectedIndex+change
+     *  — the ng-options-safe binding (proven in the IP Admission flow). Setting {@code $setViewValue(option.value)}
+     *  corrupts an ng-options select (its DOM value is "number:N"), so the model never actually binds. */
+    private void setSelTxt(String ngModel, String optionText) {
+        Object v = page.evaluate("([ng,txt])=>{ const e=[...document.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')===ng); if(!e) return null;"
+                + " let i=[...e.options].findIndex(o=>(o.textContent||'').trim().toLowerCase()===(''+txt).toLowerCase()); if(i<0) i=[...e.options].findIndex(o=>o.value && !/^-*\\s*select\\s*-*$/i.test((o.textContent||'').trim())); if(i<0) return null;"
+                + " e.selectedIndex=i; e.dispatchEvent(new Event('change',{bubbles:true})); const $=window.jQuery; if($){try{$(e).trigger('change');}catch(err){}} const c=angular.element(e).controller('ngModel'); return (c && c.$modelValue!=null)?c.$modelValue:null; }",
+                Arrays.asList(ngModel, optionText));
+        snap(ngModel, v);
+        waitForAngular(150);
+    }
+
+    /** Fill an input/textarea (by ng-model) via the Angular model. Also snapshots the value for Save re-apply. */
+    private void fillModel(String ngModel, String value) {
+        page.evaluate("([ng,v])=>{const e=[...document.querySelectorAll('input,textarea')].find(x=>x.getAttribute('ng-model')===ng&&(x.offsetParent!==null||!x.getAttribute('maxlength')));"
+                + "if(!e)return;const c=angular.element(e).controller('ngModel');e.value=v;if(c){c.$setViewValue(v);c.$render();}"
+                + "e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}));}",
+                Arrays.asList(ngModel, value));
+        snap(ngModel, value);
+    }
+}

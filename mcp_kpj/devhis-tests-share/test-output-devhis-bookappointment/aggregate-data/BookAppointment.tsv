@@ -1,0 +1,7 @@
+PASS	Book Appointment	TC04_BookAppointment	Login	Authenticated; Patient Dashboard	Logged in
+PASS	Book Appointment	TC04_BookAppointment	Open Book Appointment	Book Appointment form + master data loaded	Book Appointment page loaded
+PASS	Book Appointment	TC04_BookAppointment	Fill mandatory details	All mandatory fields accepted	Mandatory details filled
+FAIL	Book Appointment	TC04_BookAppointment	Select appointment slot	A slot is selected and From/To populated	No free slot found
+PASS	Book Appointment	TC04_BookAppointment	Add appointment to list	Appointment added to the booking list	Added (list size 1)
+PASS	Book Appointment	TC04_BookAppointment	Save & accept alert	Appointment saved; success/booking alert	Appointment Saved Successfully
+PASS	Book Appointment	TC04_BookAppointment	Appointment report tab	Report page is displayed	Report opened: https://devhis.sancyberhad.com/SQLReport/RegistrationReport/RegistrationReport.aspx?Appointmentid=275&LocationId=1&Isdirectprint=false&IsPatientSticker=true&userid=8&ClickedBtn=3&UserName=tieba

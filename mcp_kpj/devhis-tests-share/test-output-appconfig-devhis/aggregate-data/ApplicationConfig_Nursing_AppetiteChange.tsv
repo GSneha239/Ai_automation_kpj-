@@ -1,0 +1,2 @@
+PASS	Application Configuration - Nursing - Appetite Change	ApplicationConfig_Nursing_AppetiteChange	Login	Authenticated; Patient Dashboard	Logged in
+FAIL	Application Configuration - Nursing - Appetite Change	ApplicationConfig_Nursing_AppetiteChange	Open Appetite Change screen	The Appetite Change screen (inline-add form) is shown	WRONG PAGE - expected Appetite Change but the app opened: Welcome: Employee 1306:(KPJ) Last Login  @ https://devhis.sancyberhad.com/#/AppetiteChange | fields on screen: commonmaster.Code, StoreId

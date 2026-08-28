@@ -1,0 +1,4 @@
+PASS	Application Configuration - Nursing - Advise Master	ApplicationConfig_Nursing_AdviseMaster	Login	Authenticated; Patient Dashboard	Logged in
+PASS	Application Configuration - Nursing - Advise Master	ApplicationConfig_Nursing_AdviseMaster	Open Advise Master screen	The Advise Master screen (inline-add form) is shown	Opened Advise Welcome: Employee 1306:(KPJ) Last @ https://devhis.sancyberhad.com/#/AdviseMaster
+PASS	Application Configuration - Nursing - Advise Master	ApplicationConfig_Nursing_AdviseMaster	Enter Code and Remark	Code and Remark are entered	Code=AD74800 | Remark=Bed Rest
+FAIL	Application Configuration - Nursing - Advise Master	ApplicationConfig_Nursing_AdviseMaster	Click Submit & success toast	A '... saved successfully' success toast is shown	Submit not confirmed - server returned: "×KPJ PortalDescription already exists!"

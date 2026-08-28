@@ -1,0 +1,5 @@
+PASS	Application Configuration - Frequency Rehab	ApplicationConfig_FrequencyRehab	Login	Authenticated; Patient Dashboard	Logged in
+PASS	Application Configuration - Frequency Rehab	ApplicationConfig_FrequencyRehab	Open Frequency Rehab screen	The Frequency Rehab screen is shown	Opened https://devhis.sancyberhad.com/#/FrequencyRehab
+PASS	Application Configuration - Frequency Rehab	ApplicationConfig_FrequencyRehab	Enter Code + Remark	Code and Remark are entered	Code=FR601900 | Remark=Auto frequency rehab FR601900 | codeNg=commonmaster.Code | remNg=commonmaster.Description
+PASS	Application Configuration - Frequency Rehab	ApplicationConfig_FrequencyRehab	Click Submit & success toast	'Master Saved Successfully.' toast	×KPJ PortalMaster Saved Successfully.
+PASS	Application Configuration - Frequency Rehab	ApplicationConfig_FrequencyRehab	Change status to true & toast	'Status updated successfully.' toast	×KPJ PortalStatus updated successfully.×KPJ PortalMaster Saved Successfully.

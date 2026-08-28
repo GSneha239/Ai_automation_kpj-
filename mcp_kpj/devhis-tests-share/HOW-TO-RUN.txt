@@ -1,0 +1,180 @@
+========================================================================
+ DevHIS Playwright Test Runner - How to run (for a teammate)
+========================================================================
+
+You received these files (keep them together in ONE folder, e.g. C:\devhis-tests\):
+   - mcp-kpj-1.0.0-shaded.jar    (the whole test suite in one file)
+   - run.bat                     (a helper script)
+   - the run-*.bat helpers below (environment / module runners)
+   - HOW-TO-RUN.txt              (this file)
+
+------------------------------------------------------------------------
+ PREREQUISITES (one-time)
+------------------------------------------------------------------------
+1. Java (JDK 21). Check it's installed - open Command Prompt and run:
+       java -version
+   If it prints a version 21.x, you're good. If "not recognized", install
+   JDK 21 (e.g. Temurin / Oracle) and reopen Command Prompt.
+
+   NOTE: Maven is NOT required. Only Java.
+
+2. Network access to the environment you want to test (see below).
+   Use the office network / VPN if needed.
+
+------------------------------------------------------------------------
+ HOW TO RUN  (easiest)
+------------------------------------------------------------------------
+Just double-click  run.bat
+
+   - The FIRST run downloads the Chromium browser automatically
+     (one-time, needs internet). Later runs skip this.
+   - It then runs ALL flows. A browser opens and drives each screen.
+   - At the end it builds a consolidated FAILED-STEPS report (see below).
+
+To run ONE flow instead of all, open Command Prompt in the folder and type:
+       run.bat Emergency_page.EmergencyListView
+       run.bat Op_Page.RegistrationTest
+       run.bat Op_Page.Appointment.AppointmentListTest
+
+   NOTE: give the PACKAGE PATH, not just the class name. run.bat puts
+   "com.kpj.tests." in front of whatever you type, so:
+       run.bat EmergencyListView                    <-- WRONG, finds no tests
+       run.bat Emergency_page.EmergencyListView     <-- right
+
+------------------------------------------------------------------------
+ CHOOSING THE ENVIRONMENT
+------------------------------------------------------------------------
+There are three QA environments. Which one you hit depends on WHICH FILE you
+run - the URL and login are built into the wrapper:
+
+       run.bat        -> devhis   https://devhis.sancyberhad.com
+       run-klg.bat    -> KLG QA   https://klg-nhisqa.kpjhealth.com.my
+       run-dsh.bat    -> DSH QA   https://dsh-nhisqa.kpjhealth.com.my
+
+All three take the SAME optional flow argument, so the same flow can be run on
+any environment:
+
+       run.bat        Emergency_page.EmergencyListView      (devhis)
+       run-klg.bat    Emergency_page.EmergencyListView      (KLG)
+       run-dsh.bat    Emergency_page.EmergencyListView      (DSH)
+
+With no argument they run ALL flows on that environment.
+
+Results go to a SEPARATE folder per environment, so one run never clobbers
+another:   test-output\ (devhis),  test-output-klg\,  test-output-dsh\
+
+To send a run somewhere else, set OUTDIR first, in the SAME command line:
+
+       set OUTDIR=test-output-elv-klg & run-klg.bat Emergency_page.EmergencyListView
+
+   NOTE: a SINGLE-FLOW run does not clear old per-flow reports (only a full run
+   does), so that folder keeps reports from earlier flows unless you give each
+   run its own OUTDIR.
+
+   It must be https for KLG and DSH. Over plain http those hosts serve an IIS
+   error page, the app never loads, and every flow fails on a blank screen
+   rather than saying why.
+
+------------------------------------------------------------------------
+ RUN ONE MODULE (all of its flows) ON ONE ENVIRONMENT
+------------------------------------------------------------------------
+Double-click  run-<module>-<environment>.bat  - 8 modules x 3 environments:
+
+   MODULE           FILES                                 PACKAGE
+   OP               run-op-devhis|klg|dsh.bat             Op_Page
+   IP               run-ip-devhis|klg|dsh.bat             Ip
+   Emergency        run-emergency-devhis|klg|dsh.bat      Emergency_page
+   System Config    run-sysconfig-devhis|klg|dsh.bat      SystemConfiguration_page
+   Billing          run-billing-devhis|klg|dsh.bat        Billing_page
+   Nursing Station  run-nursing-devhis|klg|dsh.bat        NursingStation_page
+   Telemedicine     run-telemedicine-devhis|klg|dsh.bat   Telemedicine_page
+   App Config       run-appconfig-devhis|klg|dsh.bat      ApplicationConfiguration_page
+
+Each writes to its own folder:  test-output-<module>-<environment>\
+e.g.  run-ip-klg.bat  ->  test-output-ip-klg\reports\  +  FAILED_STEPS.html
+
+The module list and the environment URLs live ONCE in module-runner.bat - add a
+module there and all three environments follow. Do NOT run module-runner.bat
+directly.
+
+(The older run-op.bat / run-ip.bat / run-emergency.bat / run-appconfig.bat still
+work - they are the devhis-only versions and write to test-output-<module>\.)
+
+------------------------------------------------------------------------
+ RUN THE 6 CORE SCREENS ON ONE ENVIRONMENT
+------------------------------------------------------------------------
+   run-core-flows-devhis.bat  /  run-core-flows-klg.bat  /  run-core-flows-dsh.bat
+
+Runs OP Registration, OP Queue Management, IP Admission, Emergency Registration
+(Conscious + Unconscious) and System Configuration - User in ONE pass, into
+test-output-core-<environment>\ . The screen list lives once in
+core-flows-runner.bat.
+
+------------------------------------------------------------------------
+ HOW TO RUN  (manual, without the .bat files)
+------------------------------------------------------------------------
+Open Command Prompt in the folder with the jar, then:
+
+   First time only - install the browser:
+       java -cp mcp-kpj-1.0.0-shaded.jar com.microsoft.playwright.CLI install chromium
+
+   Run ALL flows:
+       java -jar mcp-kpj-1.0.0-shaded.jar -p com.kpj.tests -n ".*"
+
+   Run ONE flow:
+       java -jar mcp-kpj-1.0.0-shaded.jar -c com.kpj.tests.Emergency_page.EmergencyListView
+
+   Run ONE flow on a specific environment (the -D flags go BEFORE -jar):
+       java -Ddevhis.url=https://klg-nhisqa.kpjhealth.com.my -Ddevhis.user=Poovin ^
+            -Ddevhis.pass=Nhis@123 -Ddevhis.outdir=test-output-klg ^
+            -jar mcp-kpj-1.0.0-shaded.jar -c com.kpj.tests.Emergency_page.EmergencyListView
+
+   Run ONE MODULE (whole package):
+       java -jar mcp-kpj-1.0.0-shaded.jar -p com.kpj.tests.Ip -n ".*"
+
+   (Optional) run headless / faster - flags BEFORE -jar:
+       java -Dheadless=true -Dslowmo=0 -jar mcp-kpj-1.0.0-shaded.jar -p com.kpj.tests -n ".*"
+
+   Build the failed-steps report manually (the .bat files do this automatically):
+       java -Ddevhis.outdir=test-output-klg -cp mcp-kpj-1.0.0-shaded.jar com.kpj.core.ReportAggregator
+
+------------------------------------------------------------------------
+ WHERE ARE THE RESULTS?
+------------------------------------------------------------------------
+After a run (relative to the folder you ran it in):
+
+   1) Per-flow report (one HTML per screen, with a step table + screenshots):
+          <OUTDIR>\reports\<Page>.html
+      e.g. test-output-ip-klg\reports\IP_Admission.html
+
+   2) Consolidated FAILED-STEPS report (only the steps that FAILED, with the
+      page name, the step, what was expected, and the actual reason):
+          <OUTDIR>\FAILED_STEPS.html
+      Open it with:   start test-output-ip-klg\FAILED_STEPS.html
+
+   3) Pass/fail exit code (for CI pipelines):
+          <OUTDIR>\aggregate-exit.txt   ->  0 = all passed, 1 = failures
+      The .bat file itself also returns this as its exit code (0 / 1).
+
+   OUTDIR by runner:
+          run.bat                     test-output\
+          run-klg.bat / run-dsh.bat   test-output-klg\ / test-output-dsh\
+          run-<module>-<env>.bat      test-output-<module>-<env>\
+          run-core-flows-<env>.bat    test-output-core-<env>\
+
+------------------------------------------------------------------------
+ NOTES
+------------------------------------------------------------------------
+- The console output uses some odd box/`?` characters on Windows - that's
+  just cosmetic, the run is fine.
+- The tests log in and CREATE / EDIT data (new patient / appointment /
+  admission, cancellations, discharge dates, user accounts, etc.) - only run
+  against a TEST environment.
+- Some steps are data-dependent (e.g. Cancel needs a cancellable appointment;
+  IP Admission needs a vacant bed). If a step times out or reports "no eligible
+  row" / "no vacant bed", it is usually the server or the data, not the jar -
+  re-run that flow.
+- Environments differ in their master data (available titles, relationships,
+  occupations, payable types). A flow can pass on one environment and fail on
+  another for that reason alone; the run log says when a value was substituted.
+========================================================================

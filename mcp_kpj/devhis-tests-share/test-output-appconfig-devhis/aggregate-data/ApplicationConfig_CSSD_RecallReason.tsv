@@ -1,0 +1,4 @@
+PASS	Application Configuration - CSSD Configuration - Recall Reason	ApplicationConfig_CSSD_RecallReason	Login	Authenticated; Patient Dashboard	Logged in
+PASS	Application Configuration - CSSD Configuration - Recall Reason	ApplicationConfig_CSSD_RecallReason	Open Recall Reason screen	The Recall Reason screen is shown	Opened https://devhis.sancyberhad.com/#/RecallReasonList
+PASS	Application Configuration - CSSD Configuration - Recall Reason	ApplicationConfig_CSSD_RecallReason	Enter Code, Recall Reason	Code and Recall Reason are entered	Code=RR206200 | RecallReason=Auto recall reason RR206200
+PASS	Application Configuration - CSSD Configuration - Recall Reason	ApplicationConfig_CSSD_RecallReason	Click Save & success toast	'... saved successfully.' toast	×KPJ PortalRecall Reason Saved Successfully.

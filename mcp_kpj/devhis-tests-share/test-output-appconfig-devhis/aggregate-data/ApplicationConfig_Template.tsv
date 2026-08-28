@@ -1,0 +1,7 @@
+PASS	Application Configuration - Template	ApplicationConfig_Template	Login	Authenticated; Patient Dashboard	Logged in
+PASS	Application Configuration - Template	ApplicationConfig_Template	Open Template screen	The Template screen is shown	Opened https://devhis.sancyberhad.com/#/DischargeTemplateMaster
+PASS	Application Configuration - Template	ApplicationConfig_Template	Click Add	The Template add form opens	Add clicked
+PASS	Application Configuration - Template	ApplicationConfig_Template	Enter Code + Remark	Code and Remark are entered	Code=TP282300 | Remark=Auto template TP282300 | codeNg=discharge1.code | remNg=discharge1.description
+PASS	Application Configuration - Template	ApplicationConfig_Template	Select a template	A template is selected	Text Template
+PASS	Application Configuration - Template	ApplicationConfig_Template	Enter text	Text entered	Text entered into: CKEDITOR
+PASS	Application Configuration - Template	ApplicationConfig_Template	Click Submit & success toast	'... saved successfully.' toast	×KPJ PortalTemplate saved successfully.

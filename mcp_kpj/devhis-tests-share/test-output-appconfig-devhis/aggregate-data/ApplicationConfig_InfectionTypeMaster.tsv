@@ -1,0 +1,6 @@
+PASS	Application Configuration - Infection Type Master	ApplicationConfig_InfectionTypeMaster	Login	Authenticated; Patient Dashboard	Logged in
+PASS	Application Configuration - Infection Type Master	ApplicationConfig_InfectionTypeMaster	Open Infection Type Master screen	The Infection Type Master screen is shown	Opened https://devhis.sancyberhad.com/#/InfectionTypeMaster
+PASS	Application Configuration - Infection Type Master	ApplicationConfig_InfectionTypeMaster	Click Add	The add form opens	Add clicked
+PASS	Application Configuration - Infection Type Master	ApplicationConfig_InfectionTypeMaster	Enter Code, Remark, Field name, Control Binding	All fields are entered	Code=IT488300 | Remark=Auto infection IT488300 | Field=AutoField8300 | Binding=CheckBox | codeNg=infection.code | remNg=infection.description | fieldNg=infection.fieldname | bindNg=infection.bindingcontrol
+PASS	Application Configuration - Infection Type Master	ApplicationConfig_InfectionTypeMaster	Click Add (append field row)	The field row is added	Add clicked (AddTemplateDetails(infectionlist);)
+PASS	Application Configuration - Infection Type Master	ApplicationConfig_InfectionTypeMaster	Click Submit & success toast	'... saved successfully.' toast	×KPJ PortalInfection saved succesfully.

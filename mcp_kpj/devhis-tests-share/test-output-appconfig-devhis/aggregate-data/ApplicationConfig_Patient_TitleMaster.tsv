@@ -1,0 +1,5 @@
+PASS	Application Configuration - Patient - Title Master	ApplicationConfig_Patient_TitleMaster	Login	Authenticated; Patient Dashboard	Logged in
+PASS	Application Configuration - Patient - Title Master	ApplicationConfig_Patient_TitleMaster	Open Title Master screen	The Title Master list screen is shown	Opened Title Master Welcome: Employee 1306:(KPJ @ https://devhis.sancyberhad.com/#/title
+PASS	Application Configuration - Patient - Title Master	ApplicationConfig_Patient_TitleMaster	Click Add	The Title add form is shown	Add form opened (https://devhis.sancyberhad.com/#/add-title)
+PASS	Application Configuration - Patient - Title Master	ApplicationConfig_Patient_TitleMaster	Enter Gender, Code, Title	Gender, Code and Title are set	Gender=Ambiguous | Code=TI41100 | Title=Prof
+PASS	Application Configuration - Patient - Title Master	ApplicationConfig_Patient_TitleMaster	Click Submit & success toast	A '... saved successfully' success toast is shown	×KPJ PortalTitle Saved Successfully.

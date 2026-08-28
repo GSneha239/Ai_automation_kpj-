@@ -1,0 +1,5 @@
+PASS	Application Configuration - MRD - Box Master	ApplicationConfig_MRD_BoxMaster	Login	Authenticated; Patient Dashboard	Logged in
+PASS	Application Configuration - MRD - Box Master	ApplicationConfig_MRD_BoxMaster	Open Box Master screen	The Box Master list is shown	Opened Box Master Welcome: Employee 1306:(KPJ) Last  @ https://devhis.sancyberhad.com/#/BoxMasterList
+PASS	Application Configuration - MRD - Box Master	ApplicationConfig_MRD_BoxMaster	Click Add	The Box Master entry form is shown	Add form opened - Box Master Welcome: Employee 1306:(KPJ) Last  @ https://devhis.sancyberhad.com/#/add-BoxMaster
+PASS	Application Configuration - MRD - Box Master	ApplicationConfig_MRD_BoxMaster	Enter Row, Box Code and Remark	Row, Box Code and Remark are entered	Row=Archived Files Row [model=2] | BoxCode=BX74700 | Remark=Active Files Box
+FAIL	Application Configuration - MRD - Box Master	ApplicationConfig_MRD_BoxMaster	Click Submit & success toast	A '... saved successfully' success toast is shown	WRONG MESSAGE - expected a success message but the app showed: "×KPJ PortalCode already exist!"
