@@ -1,13 +1,16 @@
 # Maven build output
 target/
 
+# Generated JAR files
+*.jar
+
+# Executable distribution folder
+Executables/
+
 # All generated test output folders
 test-output*/
 **/test-output*/
 
-# Do not push executable/distribution folders
-Executables/
-devhis-tests-share/
 
 # IDE files
 .idea/
@@ -23,9 +26,6 @@ logs/
 
 # Playwright MCP local files
 .playwright-mcp/
-
-# Generated binaries
-*.jar
 
 # Generated Maven file
 dependency-reduced-pom.xml
