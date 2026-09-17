@@ -49,13 +49,13 @@ public class OutPatientQueueManagementTest extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Outpatient Queue Management (Signature / Change Doctor / New Case / Close Visit / Medico Legal / Consent)",
+        meta("OP - Outpatient Queue Management",
                 "OP > Outpatient Queue Management",
                 "One run exercising the Outpatient Queue Management actions: Attach Signature, Change Doctor, New Case, Close Visit, Medico Legal and Consent/Forms.");
 
         LoginPage loginPage = new LoginPage(page);
         loginPage.login(BASE, USER, PASS);
-        step("Login", "farisha / Tcare@123", "Authenticated; Patient Dashboard", "Logged in", "PASS");
+        step("Login", USER + " / " + PASS, "Authenticated; Patient Dashboard", "Logged in", "PASS");
 
         // Every section runs through runSection so its popup is ALWAYS closed afterwards — pass, fail, early
         // return or exception. A modal (or just its backdrop) left on screen intercepts the next section's clicks:

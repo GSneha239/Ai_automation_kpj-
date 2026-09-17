@@ -27,7 +27,7 @@ public class Shift extends DevHisBase {
     /** DevHIS only builds the nav menu for an outpatient counter. Override with {@code -Dcounter=}. */
     public static final String COUNTER_FOR_MENU = "OPD-B-01";
 
-    public Shift() { super("ApplicationConfiguration_Shift"); }
+    public Shift() { super("ApplicationConfiguration_General_Shift"); }
 
     public static void main(String[] args) {
         Shift t = new Shift();
@@ -39,7 +39,7 @@ public class Shift extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Shift", "Application Configuration > General > Shift",
+        meta("Application Configuration - General - Shift", "Application Configuration > General > Shift",
                 "&#9888; Creates a REAL shift: Add, enter Code, Remark, From Time and To Time, select the "
                         + "Cell Colour, Submit.");
 

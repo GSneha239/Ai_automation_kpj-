@@ -1,4 +1,0 @@
-PASS	Application Configuration - MRD - File Type	ApplicationConfig_MRD_FileType	Login	Authenticated; Patient Dashboard	Logged in
-PASS	Application Configuration - MRD - File Type	ApplicationConfig_MRD_FileType	Open File Type screen	The File Type screen (inline-add form) is shown	Opened File Type Welcome: Employee 1306:(KPJ) Last L @ https://devhis.sancyberhad.com/#/FileType
-PASS	Application Configuration - MRD - File Type	ApplicationConfig_MRD_FileType	Enter Code and Remark	Code and Remark are entered	Code=FT06800 | Remark=Consent Documents | Form Name: already "File Type"
-PASS	Application Configuration - MRD - File Type	ApplicationConfig_MRD_FileType	Click Submit & success toast	A '... saved successfully' success toast is shown	×KPJ PortalMaster Saved Successfully.

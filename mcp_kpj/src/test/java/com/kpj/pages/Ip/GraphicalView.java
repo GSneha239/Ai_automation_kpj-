@@ -114,6 +114,14 @@ public class GraphicalView extends BasePage {
     /** Select the first DISCHARGED (yellow) bed. Returns its title text, or null if the board has none. */
     public String selectDischargedBed() { return selectBedByStatus(2, 0); }
 
+    /** Extract the bed name from a board title ({@code "Bed: DC-26\nRoom Type: DAY CARE\nWard: DAY CARE"} →
+     *  {@code "DC-26"}). Returns null if the title doesn't match the expected format. */
+    public static String bedNameFromTitle(String title) {
+        if (title == null) return null;
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("Bed:\\s*([^\\n]+)").matcher(title);
+        return m.find() ? m.group(1).trim() : null;
+    }
+
     /** How many distinct vacant beds to try in {@link #selectVacantBedAndClickAdmission()} before giving up.
      *  Kept small (not exhaustive): live investigation (Chrome DevTools, same bed, same click sequence)
      *  showed this is NOT a per-bed data difference — the Admission button's {@code ng-disabled} gate

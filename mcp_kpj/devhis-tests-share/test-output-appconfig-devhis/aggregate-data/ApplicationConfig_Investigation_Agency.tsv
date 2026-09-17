@@ -1,5 +1,0 @@
-PASS	Application Configuration - Investigation - Agency	ApplicationConfig_Investigation_Agency	Login	Authenticated; Patient Dashboard	Logged in
-PASS	Application Configuration - Investigation - Agency	ApplicationConfig_Investigation_Agency	Open Agency screen	The Agency screen is shown	Opened Agency Welcome: Employee 1306:(KPJ) Last @ https://devhis.sancyberhad.com/?_cb=1.2.18#/AgencyMaster
-PASS	Application Configuration - Investigation - Agency	ApplicationConfig_Investigation_Agency	Open the add form	The Code / Remark form is available	inline-add (form already on screen)
-PASS	Application Configuration - Investigation - Agency	ApplicationConfig_Investigation_Agency	Enter Code and Remark	Code and Remark are entered	Code=AG64100 | Remark=Radiology Centre | [models: commonmaster.Code / commonmaster.Description]
-PASS	Application Configuration - Investigation - Agency	ApplicationConfig_Investigation_Agency	Click Submit & success toast	A '... saved successfully' success toast is shown	×KPJ PortalMaster Saved Successfully.

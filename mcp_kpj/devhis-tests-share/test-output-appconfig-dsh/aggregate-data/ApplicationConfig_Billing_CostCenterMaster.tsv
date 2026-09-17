@@ -1,3 +1,0 @@
-PASS	Application Configuration - Billing - Cost Centre	ApplicationConfig_Billing_CostCenterMaster	Login	Authenticated; Patient Dashboard	Logged in
-PASS	Application Configuration - Billing - Cost Centre	ApplicationConfig_Billing_CostCenterMaster	Open Cost Centre screen	The Cost Centre screen is shown	Opened https://dsh-nhisqa.kpjhealth.com.my/?_cb=1.3.1#/CostCenterMaster
-FAIL	Application Configuration - Billing - Cost Centre	ApplicationConfig_Billing_CostCenterMaster	Click Add	The Cost Centre add form opens	Add did NOT open

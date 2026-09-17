@@ -30,7 +30,7 @@ public class UnitParameter extends DevHisBase {
     /** DevHIS only builds the nav menu for an outpatient counter. Override with {@code -Dcounter=}. */
     public static final String COUNTER_FOR_MENU = "OPD-B-01";
 
-    public UnitParameter() { super("ApplicationConfiguration_UnitParameter"); }
+    public UnitParameter() { super("ApplicationConfiguration_Inventory_UnitParameter"); }
 
     public static void main(String[] args) {
         UnitParameter t = new UnitParameter();
@@ -42,7 +42,7 @@ public class UnitParameter extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Unit Parameter", "Application Configuration > Inventory > Unit Parameter",
+        meta("Application Configuration - Inventory - Unit Parameter", "Application Configuration > Inventory > Unit Parameter",
                 "&#9888; Creates a REAL unit parameter: enter Code and Remark, then Submit.");
 
         String counter = System.getProperty("counter", COUNTER_FOR_MENU);

@@ -31,7 +31,7 @@ public class CityDistrict extends DevHisBase {
     /** DevHIS only builds the nav menu for an outpatient counter. Override with {@code -Dcounter=}. */
     public static final String COUNTER_FOR_MENU = "OPD-B-01";
 
-    public CityDistrict() { super("ApplicationConfiguration_CityDistrict"); }
+    public CityDistrict() { super("ApplicationConfiguration_General_CityDistrict"); }
 
     public static void main(String[] args) {
         CityDistrict t = new CityDistrict();
@@ -43,7 +43,7 @@ public class CityDistrict extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("City/District", "Application Configuration > General > City/District",
+        meta("Application Configuration - General - City/District", "Application Configuration > General > City/District",
                 "&#9888; Creates a REAL city/district: Add, select Country, State and District, enter the "
                         + "Code and City/District, Submit.");
 

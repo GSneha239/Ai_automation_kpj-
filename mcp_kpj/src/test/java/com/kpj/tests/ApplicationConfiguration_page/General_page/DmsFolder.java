@@ -30,7 +30,7 @@ public class DmsFolder extends DevHisBase {
     /** DevHIS only builds the nav menu for an outpatient counter. Override with {@code -Dcounter=}. */
     public static final String COUNTER_FOR_MENU = "OPD-B-01";
 
-    public DmsFolder() { super("ApplicationConfiguration_DmsFolder"); }
+    public DmsFolder() { super("ApplicationConfiguration_General_DmsFolder"); }
 
     public static void main(String[] args) {
         DmsFolder t = new DmsFolder();
@@ -42,7 +42,7 @@ public class DmsFolder extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("DMS Folder", "Application Configuration > General > DMS Folder",
+        meta("Application Configuration - General - DMS Folder", "Application Configuration > General > DMS Folder",
                 "&#9888; Creates a REAL DMS folder: enter the Folder Name, set the Colour, Submit.");
 
         String counter = System.getProperty("counter", COUNTER_FOR_MENU);

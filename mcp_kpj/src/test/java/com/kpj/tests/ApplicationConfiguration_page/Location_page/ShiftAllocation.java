@@ -32,7 +32,7 @@ public class ShiftAllocation extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Application Configuration - Shift Allocation",
+        meta("Application Configuration - Location - Shift Allocation",
                 "Application Configuration > Location > Shift Allocation",
                 "Add a shift allocation: Location, Shift, Opening Balance, one Day, Submit.");
 

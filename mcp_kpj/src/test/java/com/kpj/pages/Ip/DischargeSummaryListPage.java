@@ -89,10 +89,21 @@ public class DischargeSummaryListPage extends BasePage {
                 java.util.Map.of("from", from, "to", to));
         waitForAngular(500);
         page.evaluate("() => { const b=[...document.querySelectorAll('button')].find(x=>/^search$/i.test((x.textContent||'').trim()) && x.offsetParent!==null); if(b) b.click(); }");
-        try {
-            page.waitForFunction("() => { let n=0; document.querySelectorAll('*').forEach(el=>{ try{ const s=angular.element(el).scope(); if(s&&s.grid&&s.grid.options&&s.grid.options.data) n=Math.max(n,s.grid.options.data.length);}catch(e){} }); return n>0; }",
-                    null, new Page.WaitForFunctionOptions().setTimeout(15000));
-        } catch (Exception ignore) { }
+        // Retry the search before accepting an empty grid — a slow/loaded server can intermittently return an
+        // empty result on the first attempt even when the date range genuinely has data (verified live
+        // 10/09/2026: the same 1-month range returned real rows), same pattern as
+        // OutPatientQueueManagementPage.searchQueue() and BedboardOccupancyListPage.searchOneMonthToToday().
+        String gridHasRows = "() => { let n=0; document.querySelectorAll('*').forEach(el=>{ try{ const s=angular.element(el).scope(); if(s&&s.grid&&s.grid.options&&s.grid.options.data) n=Math.max(n,s.grid.options.data.length);}catch(e){} }); return n>0; }";
+        for (int attempt = 0; attempt < 3; attempt++) {
+            try {
+                page.waitForFunction(gridHasRows, null, new Page.WaitForFunctionOptions().setTimeout(20000));
+                break;
+            } catch (Exception ignore) {
+                System.out.println("doSearch: grid empty (attempt " + (attempt + 1) + "/3) — re-searching");
+                page.evaluate("() => { const b=[...document.querySelectorAll('button')].find(x=>/^search$/i.test((x.textContent||'').trim()) && x.offsetParent!==null); if(b) b.click(); }");
+                waitForAngular(1500);
+            }
+        }
         waitForAngular(800);
     }
 

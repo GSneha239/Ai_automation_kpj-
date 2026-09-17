@@ -1,7 +1,0 @@
-PASS	Application Configuration - Bed	ApplicationConfig_Bed	Login	Authenticated; Patient Dashboard	Logged in
-PASS	Application Configuration - Bed	ApplicationConfig_Bed	Open Bed screen	The Bed Master screen (#/BedMaster) is shown	Opened https://devhis.sancyberhad.com/#/BedMaster
-PASS	Application Configuration - Bed	ApplicationConfig_Bed	Click Add	The Bed Master add form opens	Add form opened
-PASS	Application Configuration - Bed	ApplicationConfig_Bed	Fill the details	The bed details are filled	Code=AB206800 | BedNo=Auto Bed AB206800 | Location=KPJ | Ward=4er3 | BedClass=AutoRoom3900 | RoomType=Close Observation Unit | Dept=Anaesthesiology & Critical Care | SubDept=Anesthesiology | BedType=AutoBedType0100 | Room=Auto room RM087700 | BedCharge=AB001 - Thorascopic Oesophageal Mobilisation via Mediastinum | NursingCharge=AB001 - Thorascopic Oesophageal Mobilisation via Mediastinum
-PASS	Application Configuration - Bed	ApplicationConfig_Bed	Select the checkbox	The checkbox is ticked	Checkbox ticked
-PASS	Application Configuration - Bed	ApplicationConfig_Bed	Select an amenity	At least one amenity is selected	Amenity ticked: Bedsheet
-PASS	Application Configuration - Bed	ApplicationConfig_Bed	Click Submit & success toast	'Bed Saved Successfully.' toast	×KPJ PortalBed saved successfully.

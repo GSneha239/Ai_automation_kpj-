@@ -28,7 +28,7 @@ public class Procedure extends DevHisBase {
     /** DevHIS only builds the nav menu for an outpatient counter. Override with {@code -Dcounter=}. */
     public static final String COUNTER_FOR_MENU = "OPD-B-01";
 
-    public Procedure() { super("ApplicationConfiguration_Procedure"); }
+    public Procedure() { super("ApplicationConfiguration_OTConfiguration_Procedure"); }
 
     public static void main(String[] args) {
         Procedure t = new Procedure();
@@ -40,7 +40,7 @@ public class Procedure extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Procedure", "Application Configuration > OT Configuration > Procedure",
+        meta("Application Configuration - OT Configuration - Procedure", "Application Configuration > OT Configuration > Procedure",
                 "&#9888; Creates a REAL item: enter the Service Code and Name, select Group and Sub "
                         + "Group, tick a pricing policy, enter the HSN Code, Submit.");
 

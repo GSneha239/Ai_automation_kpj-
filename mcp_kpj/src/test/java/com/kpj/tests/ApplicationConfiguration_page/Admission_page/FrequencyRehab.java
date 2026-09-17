@@ -19,7 +19,7 @@ public class FrequencyRehab extends DevHisBase {
     /** How many times to re-enter fresh details when the server says the Code / Remark already exists. */
     private static final int MAX_ATTEMPTS = 40;
 
-    public FrequencyRehab() { super("ApplicationConfig_FrequencyRehab"); }
+    public FrequencyRehab() { super("ApplicationConfig_Admission_FrequencyRehab"); }
 
     public static void main(String[] args) {
         FrequencyRehab t = new FrequencyRehab();
@@ -31,7 +31,7 @@ public class FrequencyRehab extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Application Configuration - Frequency Rehab", "Application Configuration > Admission > Frequency Rehab",
+        meta("Application Configuration - Admission - Frequency Rehab", "Application Configuration > Admission > Frequency Rehab",
                 "Add a Frequency Rehab: enter Code + Remark, Submit; then change a record's Status to true.");
 
         LoginPage loginPage = new LoginPage(page);

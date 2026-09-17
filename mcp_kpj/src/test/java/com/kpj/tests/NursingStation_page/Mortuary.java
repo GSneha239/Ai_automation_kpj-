@@ -98,7 +98,7 @@ public class Mortuary extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Mortuary", "Nursing Station > Mortuary",
+        meta("Nursing Station - Mortuary", "Nursing Station > Mortuary",
                 "&#9888; Creates a REAL mortuary record: Add, search the patient by MRN, enter cabin no, "
                         + "relationship, in/handover date times, handover to, template, Add the row, Save.");
 

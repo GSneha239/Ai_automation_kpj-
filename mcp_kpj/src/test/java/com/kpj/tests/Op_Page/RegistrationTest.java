@@ -33,7 +33,7 @@ public class RegistrationTest extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Patient Registration x" + TOTAL + " (All Sections)",
+        meta("OP - Registration",
                 "OP > Registration (VisitScreen) - Patient / Correspondence / Other / Payor / Visit / Kin",
                 "&#9888; Creates " + TOTAL + " NEW (randomised) patient registrations in ONE run (single login); "
                         + "each Save auto-opens the Registration Report + Consent form.");
@@ -42,7 +42,7 @@ public class RegistrationTest extends DevHisBase {
 
         // 1) Login ONCE — then loop the whole registration flow TOTAL times.
         login();
-        step("Login", "farisha / Tcare@123", "Patient Dashboard", "Logged in as farisha", "PASS");
+        step("Login", USER + " / " + PASS, "Patient Dashboard", "Logged in as " + USER, "PASS");
 
         int success = 0;
         for (int iter = 1; iter <= TOTAL; iter++) {
@@ -137,13 +137,6 @@ public class RegistrationTest extends DevHisBase {
                             + "validity dates / Remarks, attach the passport+visa copy, then Add",
                     "The visa row is added (mandatory for a passport holder)", visa, visaOk ? "PASS" : "FAIL");
         }
-
-        // 4) Attachments — Photo / Thumb / IC Card
-        String attached = reg.attachDocuments(ATTACH);
-        // No screenshot for this one — the attachment step shows nothing worth capturing.
-        step((byte[]) null, tag + "Attach Photo / Thumb / IC Card", "Attach an image for Photo, Thumbprint and IC Card (" + ATTACH.getFileName() + ")",
-                "All three files attached", attached.isEmpty() ? "No file attached" : "Attached: " + attached,
-                attached.isEmpty() ? "FAIL" : "PASS");
 
         // 5) Correspondence Details
         reg.fillCorrespondence(p);

@@ -31,7 +31,7 @@ public class ProviderClassification extends DevHisBase {
     /** DevHIS only builds the nav menu for an outpatient counter. Override with {@code -Dcounter=}. */
     public static final String COUNTER_FOR_MENU = "OPD-B-01";
 
-    public ProviderClassification() { super("ApplicationConfiguration_ProviderClassification"); }
+    public ProviderClassification() { super("ApplicationConfiguration_General_ProviderClassification"); }
 
     public static void main(String[] args) {
         ProviderClassification t = new ProviderClassification();
@@ -43,7 +43,7 @@ public class ProviderClassification extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Provider Classification", "Application Configuration > General > Provider Classification",
+        meta("Application Configuration - General - Provider Classification", "Application Configuration > General > Provider Classification",
                 "&#9888; Creates a REAL provider classification: Add, enter Code and Provider "
                         + "Classification, select the Service, Submit.");
 

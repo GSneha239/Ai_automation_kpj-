@@ -32,7 +32,7 @@ public class KitMaster extends DevHisBase {
     /** DevHIS only builds the nav menu for an outpatient counter. Override with {@code -Dcounter=}. */
     public static final String COUNTER_FOR_MENU = "OPD-B-01";
 
-    public KitMaster() { super("ApplicationConfiguration_KitMaster"); }
+    public KitMaster() { super("ApplicationConfiguration_Inventory_KitMaster"); }
 
     public static void main(String[] args) {
         KitMaster t = new KitMaster();
@@ -44,7 +44,7 @@ public class KitMaster extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("KIT Master", "Application Configuration > Inventory > KIT Master",
+        meta("Application Configuration - Inventory - KIT Master", "Application Configuration > Inventory > KIT Master",
                 "&#9888; Creates a REAL kit: Add, enter KIT Code and KIT Name, then in KIT Information "
                         + "select a Drug Name and Quantity, Add the line, Save.");
 

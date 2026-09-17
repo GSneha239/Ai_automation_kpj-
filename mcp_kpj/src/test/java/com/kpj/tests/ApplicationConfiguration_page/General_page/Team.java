@@ -30,7 +30,7 @@ public class Team extends DevHisBase {
     /** DevHIS only builds the nav menu for an outpatient counter. Override with {@code -Dcounter=}. */
     public static final String COUNTER_FOR_MENU = "OPD-B-01";
 
-    public Team() { super("ApplicationConfiguration_Team"); }
+    public Team() { super("ApplicationConfiguration_General_Team"); }
 
     public static void main(String[] args) {
         Team t = new Team();
@@ -42,7 +42,7 @@ public class Team extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Team", "Application Configuration > General > Team",
+        meta("Application Configuration - General - Team", "Application Configuration > General > Team",
                 "&#9888; Creates a REAL team: Add, enter Code and Description, Submit.");
 
         String counter = System.getProperty("counter", COUNTER_FOR_MENU);

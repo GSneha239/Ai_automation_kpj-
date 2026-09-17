@@ -7,7 +7,7 @@ import com.kpj.pages.LoginPage;
  * TC17 - Emergency &gt; <b>Emergency Visits</b> (route {@code #/QueueManagement}).
  *
  * <p>Emergency Visits is the SAME queue screen as OP Outpatient Queue Management, reached from the Emergency
- * menu. This test reuses the queue page object (via {@link com.kpj.pages.Emegency_Page.EmergencyVisits}, which
+ * menu. This test reuses the queue page object (via {@link com.kpj.pages.Emergency_page.EmergencyVisits}, which
  * extends {@code OutPatientQueueManagementPage}) and exercises the core emergency-queue actions:</p>
  * <ol>
  *   <li><b>Generate Queue</b> — select a today patient, open Generate Queue, assign/change the queue → toast.</li>
@@ -17,8 +17,13 @@ import com.kpj.pages.LoginPage;
  */
 public class EmergencyVisits extends DevHisBase {
 
-    private static final String FROM_DATE = "01/06/2026";
-    private static final String TO_DATE   = "31/07/2026";
+    // The search window MUST be relative to today, not a fixed date — a hardcoded window goes stale and
+    // returns an EMPTY grid once "today" moves past it (this one was "01/06/2026"-"31/07/2026", which by
+    // 09/09/2026 was 40+ days in the past, causing every queue-selection step here to fail with "No patient
+    // in the queue"). Same fix pattern already used in OutPatientQueueManagementTest.
+    private static final java.time.format.DateTimeFormatter DMY = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy");
+    private static final String FROM_DATE = java.time.LocalDate.now().minusMonths(1).format(DMY);
+    private static final String TO_DATE   = java.time.LocalDate.now().format(DMY);
     /** Signature image attached in the Attach Signature section. */
     private static final java.nio.file.Path SIGNATURE =
             java.nio.file.Paths.get("C:\\Users\\Siva Sankar\\Downloads\\sinature.jpeg");
@@ -35,12 +40,12 @@ public class EmergencyVisits extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Emergency Visits", "Emergency > Emergency Visits",
+        meta("Emergency - Emergency Visits", "Emergency > Emergency Visits",
                 "Emergency queue (#/QueueManagement): Generate Queue, New Case and Patient Task on emergency visits.");
 
         LoginPage loginPage = new LoginPage(page);
         loginPage.login(BASE, USER, PASS);
-        step("Login", "farisha / Tcare@123", "Authenticated; Patient Dashboard", "Logged in", "PASS");
+        step("Login", USER + " / " + PASS, "Authenticated; Patient Dashboard", "Logged in", "PASS");
 
         sectionAttachSignature();
         sectionChangeDoctor();
@@ -60,7 +65,7 @@ public class EmergencyVisits extends DevHisBase {
 
     // ===== Return MRD File =====
     private void sectionReturnMrd() {
-        com.kpj.pages.Emegency_Page.EmergencyVisits qm = open();
+        com.kpj.pages.Emergency_page.EmergencyVisits qm = open();
         qm.searchQueue(FROM_DATE, TO_DATE);
         step("Return MRD · Open Emergency Visits & search", "Emergency → Emergency Visits; 1-month range + Search",
                 "Emergency visits are listed", "Queue searched", "PASS");
@@ -88,7 +93,7 @@ public class EmergencyVisits extends DevHisBase {
 
     // ===== Fall Risk Assessment =====
     private void sectionFallRisk() {
-        com.kpj.pages.Emegency_Page.EmergencyVisits qm = open();
+        com.kpj.pages.Emergency_page.EmergencyVisits qm = open();
         qm.searchQueue(FROM_DATE, TO_DATE);
         step("Fall Risk · Open Emergency Visits & search", "Emergency → Emergency Visits; 1-month range + Search",
                 "Emergency visits are listed", "Queue searched", "PASS");
@@ -116,7 +121,7 @@ public class EmergencyVisits extends DevHisBase {
 
     // ===== Request MRD File =====
     private void sectionRequestMrd() {
-        com.kpj.pages.Emegency_Page.EmergencyVisits qm = open();
+        com.kpj.pages.Emergency_page.EmergencyVisits qm = open();
         qm.searchQueue(FROM_DATE, TO_DATE);
         step("Request MRD · Open Emergency Visits & search", "Emergency → Emergency Visits; 1-month range + Search",
                 "Emergency visits are listed", "Queue searched", "PASS");
@@ -182,7 +187,7 @@ public class EmergencyVisits extends DevHisBase {
 
     // ===== View Details =====
     private void sectionViewDetails() {
-        com.kpj.pages.Emegency_Page.EmergencyVisits qm = open();
+        com.kpj.pages.Emergency_page.EmergencyVisits qm = open();
         qm.searchQueue(FROM_DATE, TO_DATE);
         step("View Details · Open Emergency Visits & search", "Emergency → Emergency Visits; 1-month range + Search",
                 "Emergency visits are listed", "Queue searched", "PASS");
@@ -218,7 +223,7 @@ public class EmergencyVisits extends DevHisBase {
 
     // ===== View Consent =====
     private void sectionViewConsent() {
-        com.kpj.pages.Emegency_Page.EmergencyVisits qm = open();
+        com.kpj.pages.Emergency_page.EmergencyVisits qm = open();
         qm.searchQueue(FROM_DATE, TO_DATE);
         step("View Consent · Open Emergency Visits & search", "Emergency → Emergency Visits; 1-month range + Search",
                 "Emergency visits are listed", "Queue searched", "PASS");
@@ -283,7 +288,7 @@ public class EmergencyVisits extends DevHisBase {
 
     // ===== Change Doctor =====
     private void sectionChangeDoctor() {
-        com.kpj.pages.Emegency_Page.EmergencyVisits qm = open();
+        com.kpj.pages.Emergency_page.EmergencyVisits qm = open();
         qm.searchQueue(FROM_DATE, TO_DATE);
         step("Change Doctor · Open Emergency Visits & search", "Emergency → Emergency Visits; 1-month range + Search",
                 "Emergency visits are listed", "Queue searched", "PASS");
@@ -311,7 +316,7 @@ public class EmergencyVisits extends DevHisBase {
 
     // ===== Consent / Forms =====
     private void sectionConsentForms() {
-        com.kpj.pages.Emegency_Page.EmergencyVisits qm = open();
+        com.kpj.pages.Emergency_page.EmergencyVisits qm = open();
         qm.searchQueue(FROM_DATE, TO_DATE);
         step("Consent/Forms · Open Emergency Visits & search", "Emergency → Emergency Visits; 1-month range + Search",
                 "Emergency visits are listed", "Queue searched", "PASS");
@@ -423,7 +428,7 @@ public class EmergencyVisits extends DevHisBase {
 
     // ===== Attach Signature =====
     private void sectionAttachSignature() {
-        com.kpj.pages.Emegency_Page.EmergencyVisits qm = open();
+        com.kpj.pages.Emergency_page.EmergencyVisits qm = open();
         qm.searchQueue(FROM_DATE, TO_DATE);
         step("Attach Signature · Open Emergency Visits & search", "Emergency → Emergency Visits; 1-month range + Search",
                 "Emergency visits are listed", "Queue searched", "PASS");
@@ -446,7 +451,7 @@ public class EmergencyVisits extends DevHisBase {
 
     // ===== Close Visit =====
     private void sectionCloseVisit() {
-        com.kpj.pages.Emegency_Page.EmergencyVisits qm = open();
+        com.kpj.pages.Emergency_page.EmergencyVisits qm = open();
         qm.searchQueue(FROM_DATE, TO_DATE);
         step("Close Visit · Open Emergency Visits & search", "Emergency → Emergency Visits; 1-month range + Search",
                 "Emergency visits are listed", "Queue searched", "PASS");
@@ -478,8 +483,8 @@ public class EmergencyVisits extends DevHisBase {
 
     /** A fresh Emergency Visits page navigated via the Emergency menu. Before navigating, defensively CLOSE any
      *  popup a previous section may have left open (so a leftover modal can't intercept the next tab's clicks). */
-    private com.kpj.pages.Emegency_Page.EmergencyVisits open() {
-        com.kpj.pages.Emegency_Page.EmergencyVisits qm = new com.kpj.pages.Emegency_Page.EmergencyVisits(page);
+    private com.kpj.pages.Emergency_page.EmergencyVisits open() {
+        com.kpj.pages.Emergency_page.EmergencyVisits qm = new com.kpj.pages.Emergency_page.EmergencyVisits(page);
         qm.dismissAnyModal();   // close any leftover popup before moving to the next tab
         qm.navigateTo(BASE);
         return qm;
@@ -487,7 +492,7 @@ public class EmergencyVisits extends DevHisBase {
 
     // ===== Generate Queue =====
     private void sectionGenerateQueue() {
-        com.kpj.pages.Emegency_Page.EmergencyVisits qm = open();
+        com.kpj.pages.Emergency_page.EmergencyVisits qm = open();
         // Generate Queue only works for CURRENT-DATE patients — search today only.
         String today = java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"));
         qm.searchQueue(today, today);
@@ -526,7 +531,7 @@ public class EmergencyVisits extends DevHisBase {
 
     // ===== New Case =====
     private void sectionNewCase() {
-        com.kpj.pages.Emegency_Page.EmergencyVisits qm = open();
+        com.kpj.pages.Emergency_page.EmergencyVisits qm = open();
         qm.searchQueue(FROM_DATE, TO_DATE);
         step("New Case · Open Emergency Visits & search", "Emergency → Emergency Visits; 1-month range + Search",
                 "Emergency visits are listed", "Queue searched", "PASS");
@@ -559,7 +564,7 @@ public class EmergencyVisits extends DevHisBase {
 
     // ===== Patient Task =====
     private void sectionPatientTask() {
-        com.kpj.pages.Emegency_Page.EmergencyVisits qm = open();
+        com.kpj.pages.Emergency_page.EmergencyVisits qm = open();
         qm.searchQueue(FROM_DATE, TO_DATE);
         step("Patient Task · Open Emergency Visits & search", "Emergency → Emergency Visits; 1-month range + Search",
                 "Emergency visits are listed", "Queue searched", "PASS");

@@ -1,4 +1,0 @@
-PASS	Application Configuration - Room Amenities	ApplicationConfig_RoomAmenities	Login	Authenticated; Patient Dashboard	Logged in
-PASS	Application Configuration - Room Amenities	ApplicationConfig_RoomAmenities	Open Room Amenities screen	The Room Amenities screen is shown	Opened https://devhis.sancyberhad.com/#/ROOMAMENITIES
-PASS	Application Configuration - Room Amenities	ApplicationConfig_RoomAmenities	Enter Code + Remark	Code and Remark are entered	Code=RA724800 | Remark=Auto room amenity RA724800 | codeNg=commonmaster.Code | remNg=commonmaster.Description
-PASS	Application Configuration - Room Amenities	ApplicationConfig_RoomAmenities	Click Submit & success toast	'... saved successfully.' toast	×KPJ PortalMaster Saved Successfully.

@@ -92,10 +92,12 @@ public class InvestigationTemplate extends DevHisBase {
                         + (detOk ? "" : "\n" + ag.describeEditors()),
                 detOk ? "PASS" : "FAIL");
 
-        boolean dropOk = !ag.lastGender.isEmpty() && !ag.lastDoctor.isEmpty();
-        step(page, "Select Gender and Pathologist/Radiologist",
-                "Select a value in the Gender and Pathologist/Radiologist drop-downs",
-                "Both drop-downs have a value selected", drops, dropOk ? "PASS" : "FAIL");
+        // Pathologist/Radiologist is not a mandatory field on this form (Submit succeeds without it —
+        // confirmed live), so only Gender is required for this step to pass.
+        boolean dropOk = !ag.lastGender.isEmpty();
+        step(page, "Select Gender", "Select a value in the Gender drop-down "
+                        + "(Pathologist/Radiologist is optional — attempted, but not required to pass)",
+                "The Gender drop-down has a value selected", drops, dropOk ? "PASS" : "FAIL");
 
         // The API can confirm the save while the UI still shows a wrong toast — say so explicitly rather than
         // leaving a bare "not confirmed", and do NOT flip the step to PASS: no success toast IS the defect here.

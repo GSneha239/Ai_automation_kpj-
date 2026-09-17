@@ -1,4 +1,0 @@
-PASS	Application Configuration - Patient - Patient Status	ApplicationConfig_Patient_PatientStatus	Login	Authenticated; Patient Dashboard	Logged in
-PASS	Application Configuration - Patient - Patient Status	ApplicationConfig_Patient_PatientStatus	Open Patient Status screen	The Patient Status screen (inline-add form) is shown	Opened Patient Status Welcome: Employee 1306:(K @ https://devhis.sancyberhad.com/#/PatientStatus
-PASS	Application Configuration - Patient - Patient Status	ApplicationConfig_Patient_PatientStatus	Enter Code and Remark	Code and Remark are entered	Code=PS03500 | Remark=Under Observation
-PASS	Application Configuration - Patient - Patient Status	ApplicationConfig_Patient_PatientStatus	Click Submit & success toast	A '... saved successfully' success toast is shown	×KPJ PortalMaster Saved Successfully.

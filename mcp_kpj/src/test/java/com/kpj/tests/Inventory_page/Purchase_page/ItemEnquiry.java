@@ -55,7 +55,7 @@ public class ItemEnquiry extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Item Enquiry", "Inventory > Purchase > Item Enquiry",
+        meta("Inventory - Purchase - Item Enquiry", "Inventory > Purchase > Item Enquiry",
                 "&#9888; Creates a REAL item enquiry: New, Get Items, search and select an item, "
                         + "select supplier, add terms and condition, enter quantity/remarks, Save.");
 

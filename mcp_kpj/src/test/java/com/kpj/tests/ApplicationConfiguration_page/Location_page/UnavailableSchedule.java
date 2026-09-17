@@ -31,7 +31,7 @@ public class UnavailableSchedule extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Application Configuration - Unavailable Schedule",
+        meta("Application Configuration - Location - Unavailable Schedule",
                 "Application Configuration > Location > Unavailable Schedule",
                 "Add an unavailable schedule: Schedule Type, Location, Department, Payable, Modality, Start/End Time, Add, Submit.");
 

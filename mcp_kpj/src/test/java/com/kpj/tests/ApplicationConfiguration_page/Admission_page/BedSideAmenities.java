@@ -17,7 +17,7 @@ import com.kpj.pages.LoginPage;
  */
 public class BedSideAmenities extends DevHisBase {
 
-    public BedSideAmenities() { super("ApplicationConfig_BedSideAmenities"); }
+    public BedSideAmenities() { super("ApplicationConfig_Admission_BedSideAmenities"); }
 
     public static void main(String[] args) {
         BedSideAmenities t = new BedSideAmenities();
@@ -29,7 +29,7 @@ public class BedSideAmenities extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Application Configuration - Bed Side Amenities", "Application Configuration > Admission > Bed Side Amenities",
+        meta("Application Configuration - Admission - Bed Side Amenities", "Application Configuration > Admission > Bed Side Amenities",
                 "Add a Bed Side Amenity: enter Code + Remark, tick a record in the table, Submit.");
 
         LoginPage loginPage = new LoginPage(page);

@@ -32,7 +32,7 @@ public class EmailTemplate extends DevHisBase {
     /** DevHIS only builds the nav menu for an outpatient counter. Override with {@code -Dcounter=}. */
     public static final String COUNTER_FOR_MENU = "OPD-B-01";
 
-    public EmailTemplate() { super("ApplicationConfiguration_EmailTemplate"); }
+    public EmailTemplate() { super("ApplicationConfiguration_General_EmailTemplate"); }
 
     public static void main(String[] args) {
         EmailTemplate t = new EmailTemplate();
@@ -44,7 +44,7 @@ public class EmailTemplate extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("E-mail Template", "Application Configuration > General > E-mail Template",
+        meta("Application Configuration - General - E-mail Template", "Application Configuration > General > E-mail Template",
                 "&#9888; Creates a REAL e-mail template: Add, enter the Code, Template Name and Subject, "
                         + "fill the template body, Save.");
 

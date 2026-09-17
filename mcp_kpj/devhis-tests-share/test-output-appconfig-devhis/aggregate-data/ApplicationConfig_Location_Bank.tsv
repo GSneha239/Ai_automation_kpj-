@@ -1,6 +1,0 @@
-PASS	Application Configuration - Location - Bank	ApplicationConfig_Location_Bank	Login	Authenticated; Patient Dashboard	Logged in
-PASS	Application Configuration - Location - Bank	ApplicationConfig_Location_Bank	Open Bank screen	The Bank screen is shown	Opened Room No Welcome: Employee 1306:(KPJ) Las @ https://devhis.sancyberhad.com/#/CABIN
-PASS	Application Configuration - Location - Bank	ApplicationConfig_Location_Bank	Select the Form Name	The screen is editing the Bank master	Form Name = Bank (of 177 masters)
-PASS	Application Configuration - Location - Bank	ApplicationConfig_Location_Bank	Click Add	The Code / Remark form is available	inline-add (form already on screen)
-PASS	Application Configuration - Location - Bank	ApplicationConfig_Location_Bank	Enter Code and Remark	Code and Remark are entered and match the table's format	Code=HLB | Remark=Hong Leong Bank Berhad | [models: commonmaster.Code / commonmaster.Description]  [table uses abbreviations ([SBI, RM23501, RM23502, RM23503]) - adding another bank in the same style: HLB / Hong Leong Bank Berhad]
-PASS	Application Configuration - Location - Bank	ApplicationConfig_Location_Bank	Click Submit & success toast	A '... saved successfully' success toast is shown	×KPJ PortalMaster Saved Successfully.

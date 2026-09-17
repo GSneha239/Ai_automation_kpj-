@@ -29,12 +29,6 @@ public class InvestigationTemplate extends BasePage {
     private String menuHref = "";
     public byte[] toastPng;
 
-    /** Template names that read like genuine configuration rather than machine noise. */
-    private static final String[] NAMES = {
-            "Full Blood Count Report", "Urine Analysis Report", "Chest X-Ray Report",
-            "Ultrasound Abdomen Report", "Liver Function Report", "Thyroid Profile Report"
-    };
-
     /** Remarks — a short note a person would actually type on this screen. */
     private static final String[] REMARKS = {
             "Standard investigation reporting", "For routine outpatient screening",
@@ -250,8 +244,15 @@ public class InvestigationTemplate extends BasePage {
                 ? String.format("%06d", Math.abs((System.nanoTime() + attempt * 7919L) % 1000000))
                 : "IV" + String.format("%05d", Math.abs((System.nanoTime() + attempt * 7919L) % 100000));
         lastCode = code;
-        lastName = NAMES[(int) (Math.abs(System.nanoTime() / 1000 + attempt) % NAMES.length)];
-        lastRemark = REMARKS[(int) (Math.abs(System.nanoTime() / 1000 + attempt) % REMARKS.length)];
+        // Name used to cycle through a fixed 6-entry NAMES pool — on this shared, long-lived QA
+        // environment all 6 are already used up from prior runs, so every "already exists" retry just
+        // re-hit the same already-taken names instead of finding a fresh one. Generate a genuinely
+        // unique name per attempt instead, the same way Code already does.
+        lastName = "Auto Template " + String.format("%06d", Math.abs((System.nanoTime() + attempt * 7919L) % 1000000));
+        // Same reasoning as Name above: a fixed 6-entry REMARKS pool runs dry on a shared, long-lived QA
+        // environment. Keep a readable base phrase but make it unique per attempt.
+        lastRemark = REMARKS[(int) (Math.abs(System.nanoTime() / 1000 + attempt) % REMARKS.length)]
+                + " " + String.format("%06d", Math.abs((System.nanoTime() + attempt * 7919L) % 1000000));
         Object r = page.evaluate("(a) => { const A=window.angular;" + FIND_FIELDS + SET_DESC
                 + " const set=(e,v)=>{ if(!e) return '(no field)'; commit(e,v); return v; };"
                 + " const cd=set(codeEl, a.code); const nm=set(nameEl, a.name);"

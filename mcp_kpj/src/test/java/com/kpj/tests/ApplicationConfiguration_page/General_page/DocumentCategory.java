@@ -30,7 +30,7 @@ public class DocumentCategory extends DevHisBase {
     /** DevHIS only builds the nav menu for an outpatient counter. Override with {@code -Dcounter=}. */
     public static final String COUNTER_FOR_MENU = "OPD-B-01";
 
-    public DocumentCategory() { super("ApplicationConfiguration_DocumentCategory"); }
+    public DocumentCategory() { super("ApplicationConfiguration_General_DocumentCategory"); }
 
     public static void main(String[] args) {
         DocumentCategory t = new DocumentCategory();
@@ -42,7 +42,7 @@ public class DocumentCategory extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Document Category", "Application Configuration > General > Document Category",
+        meta("Application Configuration - General - Document Category", "Application Configuration > General > Document Category",
                 "&#9888; Creates a REAL document category: enter Code and Remark, then Submit.");
 
         String counter = System.getProperty("counter", COUNTER_FOR_MENU);
@@ -75,7 +75,22 @@ public class DocumentCategory extends DevHisBase {
 
         addSummary("List screen controls", tor.describeControls());
         addSummary("Add", tor.openFormIfNeeded());
-        addSummary("Form controls", tor.describeControls());
+        String formControls = tor.describeControls();
+        addSummary("Form controls", formControls);
+
+        // The form that actually opened may only carry Code (+ maybe Store) — no Remark, no MIMS
+        // GUID/Description, no MIMS Type. Rather than mechanically fail once per missing field, stop here
+        // and report it as the one real problem it is: the app opens the wrong (an incomplete) page.
+        // Nothing is entered anywhere on a form already known to be wrong.
+        if (!tor.hasExpectedFields()) {
+            step(page, "Form has the expected fields", "Check for Remark / MIMS GUID / MIMS Description before entering anything",
+                    "The form carries Code, Remark, MIMS GUID, MIMS Description and MIMS Type",
+                    "FAILS — opens the WRONG (an incomplete) page: Remark/MIMS fields are missing. "
+                        + "Form controls: " + formControls,
+                    "FAIL");
+            addSummary("Result", "FAILED — wrong/incomplete page (Remark/MIMS fields missing)");
+            return;
+        }
 
         // 2) Code + Remark
         String entry = tor.enterDetails(code, remark);

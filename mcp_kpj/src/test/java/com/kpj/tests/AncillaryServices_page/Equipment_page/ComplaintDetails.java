@@ -71,7 +71,7 @@ public class ComplaintDetails extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Equipment Complaint Details", "Ancillary Services > Equipment/Asset > Complaint Details",
+        meta("Ancillary Services - Equipment/Asset - Complaint Details", "Ancillary Services > Equipment/Asset > Complaint Details",
                 "&#9888; Creates a REAL equipment complaint: New, pick Location/Store/Equipment, fill the "
                         + "complaint details, dates and times, Add, Save.");
 

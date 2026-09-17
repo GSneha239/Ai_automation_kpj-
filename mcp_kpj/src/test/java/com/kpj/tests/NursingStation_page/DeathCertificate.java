@@ -45,7 +45,7 @@ public class DeathCertificate extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Death Certificate", "Nursing Station > Death Certificate",
+        meta("Nursing Station - Death Certificate", "Nursing Station > Death Certificate",
                 "&#9888; Creates a REAL death certificate: search the patient by MRN, pick the template, "
                         + "fill the template body, pick Department + Doctor, authenticate and Save.");
 

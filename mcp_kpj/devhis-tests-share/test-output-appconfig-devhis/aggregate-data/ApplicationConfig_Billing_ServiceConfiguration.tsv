@@ -1,3 +1,0 @@
-PASS	Application Configuration - Billing - Service Configuration	ApplicationConfig_Billing_ServiceConfiguration	Login	Authenticated; Patient Dashboard	Logged in
-PASS	Application Configuration - Billing - Service Configuration	ApplicationConfig_Billing_ServiceConfiguration	Open Service Configuration screen	The Service Configuration screen is shown	Opened https://devhis.sancyberhad.com/?_cb=1.2.18#/ServiceConfiguration
-FAIL	Application Configuration - Billing - Service Configuration	ApplicationConfig_Billing_ServiceConfiguration	Click Add	The Service Configuration add form opens	Add did NOT open

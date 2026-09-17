@@ -19,6 +19,17 @@ import com.microsoft.playwright.Page;
  * rather than read once. The <b>Location Details</b> rows and the rights checkboxes are real-clicked so their
  * ng-change handlers fire.</p>
  *
+ * <p><b>Every Payable candidate is picked RANDOMLY, never the first/next in list order</b> (confirmed live
+ * 2026-09-17). The app rejects a Payable that already has a user account IMMEDIATELY on selection — a toast, and
+ * the field snaps back to "--Select--" — and several Payable Types have as few as 1-2 Payables TOTAL (Consultant,
+ * Contractor, Radiologist, Refentity), which on this heavily-reused QA environment are typically ALL already
+ * claimed (e.g. Consultant's own two options, "AJAY PAYABLE" and "PayorConsultant", were both taken). Picking the
+ * first option — what every tester's tooling, this one included, always defaulted to — hits exactly that exhausted
+ * front of the list; a random pick from deep in a large list (e.g. "Vendor 1500" of Vendor's ~800) commits cleanly.
+ * When a Payable Type's own list is exhausted of untried candidates, the flow switches to a different Payable Type
+ * rather than failing (see {@link #changePayableTypeUntilPayableSelects()} and its use in
+ * {@link #submitAndGetToast()}).</p>
+ *
  * <p>This screen creates a LOGIN ACCOUNT. The password is a throwaway test value used only on this QA
  * environment; it is not a credential for anything else.</p>
  */
@@ -137,7 +148,17 @@ public class UserPage extends BasePage {
                 + "     if(e && e.tagName==='SELECT' && [...e.options].some(o=>o.value && !/^-*\\s*select\\s*-*$/i.test(norm(o.textContent)))) break;"
                 + "     await sleep(400); }"
                 + "   if(!e || e.tagName!=='SELECT') return '(no select)';"
-                + "   const i=[...e.options].findIndex(o=>o.value && !/^-*\\s*select\\s*-*$/i.test(norm(o.textContent))); if(i<0) return '(no options)';"
+                // RANDOM, not the FIRST real option. Confirmed live (2026-09-17): the app rejects a Payable that
+                // already has a user account IMMEDIATELY on selection (a toast, and the field snaps back to
+                // "--Select--") — and the first option in every list is the one every tester's tooling (this one
+                // included) has always defaulted to, so it is almost always already taken: Consultant's first
+                // option "AJAY PAYABLE" already has a user, so does its only other option "PayorConsultant", so
+                // does Vendor's first option "Vendor 1" — while a random pick like "Vendor 1500" committed cleanly
+                // on the first try. A random pick spreads the load across the whole list instead of hammering the
+                // same handful of well-trodden entries.
+                + "   const real=[...e.options].filter(o=>o.value && !/^-*\\s*select\\s*-*$/i.test(norm(o.textContent)));"
+                + "   if(!real.length) return '(no options)'; const opt=real[Math.floor(Math.random()*real.length)];"
+                + "   const i=[...e.options].indexOf(opt);"
                 + "   e.selectedIndex=i; e.dispatchEvent(new Event('change',{bubbles:true})); try{A.element(e).triggerHandler('change');}catch(x){} if($){try{$(e).trigger('change');}catch(x){}}"
                 + "   await sleep(500); return norm(e.options[i].textContent); };"
                 // Payable Type FIRST — it drives the Payable list.
@@ -431,6 +452,28 @@ public class UserPage extends BasePage {
                         + " return 'checked='+e.checked+' model='+mv; }");
                 ticked++;
                 out.append("table").append(i).append(":ticked[ng=").append(ngModel).append(" ").append(after).append("] ");
+                // The SAME ROW can carry a second checkbox that only becomes enabled once the row is ticked —
+                // confirmed live on Inventory Details (PO / PR Approval Level): the row tick alone still gets
+                // "Please Select At least One Record!" from Submit; the row's "Default" checkbox must be ticked
+                // too. Tick every other now-enabled, un-ticked checkbox in that row (real click, so ng-change fires).
+                waitForAngular(300);
+                for (int extra = 0; extra < 3; extra++) {
+                    boolean more = Boolean.TRUE.equals(page.evaluate("() => { document.querySelectorAll('#__invCb2').forEach(e=>e.removeAttribute('id'));"
+                            + " const cb=document.getElementById('__invCb'); const row=cb?cb.closest('tr'):null; if(!row) return false;"
+                            + " const o=[...row.querySelectorAll('input[type=checkbox]')].find(x=>x!==cb && x.offsetParent!==null && !x.disabled && !x.checked);"
+                            + " if(!o) return false; o.id='__invCb2'; return true; }"));
+                    if (!more) break;
+                    Object ng2 = page.evaluate("() => { const e=document.getElementById('__invCb2'); return e?(e.getAttribute('ng-model')||'(no ng-model)'):'?'; }");
+                    try {
+                        page.locator("#__invCb2").click(new com.microsoft.playwright.Locator.ClickOptions().setForce(true).setTimeout(6000));
+                        Object after2 = page.evaluate("() => { const e=document.getElementById('__invCb2'); return e?('checked='+e.checked):'gone'; }");
+                        out.append("+row-checkbox[ng=").append(ng2).append(" ").append(after2).append("] ");
+                    } catch (Exception e) {
+                        out.append("+row-checkbox-click-failed[ng=").append(ng2).append("] ");
+                    }
+                    page.evaluate("() => { const e=document.getElementById('__invCb2'); if(e) e.removeAttribute('id'); }");
+                    waitForAngular(300);
+                }
             } catch (Exception e) {
                 out.append("table").append(i).append(":click-failed[ng=").append(ngModel).append("] ");
             }
@@ -506,7 +549,11 @@ public class UserPage extends BasePage {
                     + "   if (!table) continue;"
                     + "   const rows=[...table.querySelectorAll('tbody tr')].filter(r=>{ const tx=norm(r.textContent); return tx && !/no (records|data)/i.test(tx); });"
                     + "   if (!rows.length) return {found:true, rows:0};"
-                    + "   const cb=[...table.querySelectorAll('tbody input[type=checkbox]')].find(x=>x.offsetParent!==null && !x.checked && !x.disabled);"
+                    + "   const all=[...table.querySelectorAll('tbody input[type=checkbox]')].filter(x=>x.offsetParent!==null);"
+                    + "   const cb=all.find(x=>!x.checked && !x.disabled);"
+                    // Nothing left to tick because every checkbox is already ticked (or locked): the records are
+                    // ALREADY selected — report that and skip, rather than calling it "no checkbox found".
+                    + "   if (!cb && all.length) return {found:true, rows:rows.length, already:true, checked:all.filter(x=>x.checked).length, locked:all.filter(x=>x.disabled&&!x.checked).length};"
                     + "   if (!cb) return {found:true, rows:rows.length, noCheckbox:true};"
                     + "   cb.id='__rfsCb'; return {found:true, rows:rows.length, tagged:true};"
                     + " }"
@@ -516,7 +563,15 @@ public class UserPage extends BasePage {
             Object rowsObj = m.get("rows");
             int rows = rowsObj instanceof Number ? ((Number) rowsObj).intValue() : -1;
             if (rows == 0) { out.append(name).append(": (no data)\n"); continue; }
-            if (!Boolean.TRUE.equals(m.get("tagged"))) { out.append(name).append(": ").append(rows).append(" row(s) but no checkbox found\n"); continue; }
+            if (Boolean.TRUE.equals(m.get("already"))) {
+                int locked = m.get("locked") instanceof Number ? ((Number) m.get("locked")).intValue() : 0;
+                int checked = m.get("checked") instanceof Number ? Math.min(((Number) m.get("checked")).intValue(), rows) : 0;
+                out.append(name).append(": records already selected (").append(checked).append(" of ").append(rows)
+                        .append(" row(s) ticked").append(locked > 0 ? ", " + locked + " locked" : "")
+                        .append(") — skipped\n");
+                continue;
+            }
+            if (!Boolean.TRUE.equals(m.get("tagged"))) { out.append(name).append(": ").append(rows).append(" row(s) but no checkbox found (no checkbox input in any row)\n"); continue; }
             try {
                 page.locator("#__rfsCb").click(new com.microsoft.playwright.Locator.ClickOptions().setForce(true).setTimeout(6000));
                 out.append(name).append(": ticked (").append(rows).append(" row(s))\n");
@@ -554,8 +609,12 @@ public class UserPage extends BasePage {
         Object opt = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
                 + " document.querySelectorAll('#__edpidSel').forEach(e=>e.removeAttribute('id'));"
                 + " const e=[...document.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')==='UserDetailsModified.EDPID' && x.offsetParent!==null);"
-                + " if(!e) return ''; const o=[...e.options].find(o=>o.value && !/^-*\\s*select\\s*-*$/i.test(norm(o.textContent)));"
-                + " if(!o) return ''; e.id='__edpidSel'; return o.value; }");
+                + " if(!e) return '';"
+                // RANDOM, not the first option — see the note in fillUserDetails' pick(): the front of every list
+                // is what everyone's tooling always tries first, so it is the part most likely already exhausted.
+                + " const real=[...e.options].filter(o=>o.value && !/^-*\\s*select\\s*-*$/i.test(norm(o.textContent)));"
+                + " if(!real.length) return ''; const o=real[Math.floor(Math.random()*real.length)];"
+                + " e.id='__edpidSel'; return o.value; }");
         String value = opt == null ? "" : opt.toString();
         if (value.isEmpty()) return "";
         try {
@@ -606,8 +665,14 @@ public class UserPage extends BasePage {
                 + " if(!e) return []; const cur=e.value;"
                 + " return [...e.options].filter(o=>o.value && !/^-*\\s*select\\s*-*$/i.test(norm(o.textContent)) && o.value!==cur)"
                 + "   .map(o=>o.value+'\\u0001'+norm(o.textContent)); }");
-        java.util.List<?> types = (list instanceof java.util.List) ? (java.util.List<?>) list : java.util.Collections.emptyList();
+        java.util.List<Object> types = new java.util.ArrayList<>(
+                (list instanceof java.util.List) ? (java.util.List<?>) list : java.util.Collections.emptyList());
         if (types.isEmpty()) return "";
+        // Shuffle rather than walk in DOM (alphabetical) order — the small-list types sort first (Consultant,
+        // Contractor, Radiologist, Refentity all have just 1-2 Payables total, ALL of which are typically already
+        // claimed — confirmed live 2026-09-17) and would otherwise be tried, and each waited out to an 8s timeout,
+        // before ever reaching a big list like Doctor/Government Panel/Vendor that actually has room.
+        java.util.Collections.shuffle(types);
 
         for (Object t : types) {
             String[] parts = String.valueOf(t).split("", 2);
@@ -683,7 +748,9 @@ public class UserPage extends BasePage {
                 // which is why 20 attempts all appeared to fail. $setViewValue writes the model itself.
                 + " for(let k=0;k<20;k++){ e=e0(); if(e){ const rs=[...e.options].map((o,i)=>({o,i}))"
                 + "     .filter(x=>x.o.value && !/^-*\\s*select\\s*-*$/i.test(norm(x.o.textContent)));"
-                + "   if(rs.length){ const pick=rs[0];"
+                // RANDOM, not rs[0] — same reasoning as pick()/selectPayableForReal(): the first option is the one
+                // most likely already claimed.
+                + "   if(rs.length){ const pick=rs[Math.floor(Math.random()*rs.length)];"
                 + "     e.value=pick.o.value; e.selectedIndex=pick.i;"
                 + "     try{ const c=A.element(e).controller('ngModel'); if(c){ c.$setViewValue(e.value); c.$render(); } }catch(x){}"
                 + "     e.dispatchEvent(new Event('change',{bubbles:true}));"
@@ -756,11 +823,44 @@ public class UserPage extends BasePage {
         // Payable can be cleared by its own async reload after step 4 — re-assert it before the save.
         ensurePayableSelected();
         String toast = "";
-        for (int attempt = 0; attempt < 3; attempt++) {
+        java.util.Set<String> payablesTried = new java.util.LinkedHashSet<>();
+        // 12, not 6 — confirmed live (2026-09-17) that several Payable Types (Consultant, Contractor, Radiologist,
+        // Refentity) have as few as 1-2 Payables TOTAL, all of them typically already claimed, so exhausting one
+        // type's whole list and needing to switch types (below) is the common case here, not a rare edge.
+        for (int attempt = 0; attempt < 12; attempt++) {
             toast = clickSubmitAndReadToast();
             // Judge on ALL the toasts: the app pairs "saved successfully" with "already created for <Payable>",
             // and the reported toast is the success one, which would hide the rejection from this check.
-            if (!userNameTaken(lastToasts.isEmpty() ? toast : lastToasts)) return toast;
+            String all = lastToasts.isEmpty() ? toast : lastToasts;
+            if (payableTaken(all)) {
+                // "already exists / already created for <Payable>": the DOCTOR chosen as Payable already has a user.
+                // The Payable list holds many doctors — change the Payable to a different doctor and submit again
+                // (the Login ID is fine; a new one would not help).
+                String was = payableCurrent();
+                payablesTried.add(was);
+                String next = selectDifferentPayable(payablesTried);
+                if (next.isEmpty()) {
+                    // This Payable Type's own list is exhausted of untried candidates (confirmed live: Consultant's
+                    // only two options, "AJAY PAYABLE" and "PayorConsultant", were BOTH already taken) — jump to a
+                    // DIFFERENT Payable Type instead of giving up on the whole flow.
+                    String switched = changePayableTypeUntilPayableSelects();
+                    if (switched.isEmpty()) {
+                        com.kpj.core.Reasons.add("Payable '" + was + "' already has a user (app: \"" + toast + "\") and no other Payable/Payable Type combination could be selected");
+                        return toast;
+                    }
+                    System.out.println("submitAndGetToast: \"" + toast + "\" — Payable \"" + was + "\" already has a user and its Payable Type's list is exhausted; " + switched);
+                    payablesTried.clear();
+                    payablesTried.add(payableCurrent());
+                    waitForAngular(800);
+                    continue;
+                }
+                System.out.println("submitAndGetToast: \"" + toast + "\" — Payable \"" + was + "\" already has a user; retrying with Payable \"" + next + "\"");
+                lastPayable = next;
+                com.kpj.core.Reasons.add("Payable '" + was + "' already has a user (app: \"" + toast + "\") - changed the Payable to doctor '" + next + "' and re-submitted");
+                waitForAngular(800);
+                continue;
+            }
+            if (!userNameTaken(all)) return toast;
             String taken = lastLoginId;
             lastLoginId = newLoginId();
             boolean set = setLoginId(lastLoginId);
@@ -770,6 +870,44 @@ public class UserPage extends BasePage {
             waitForAngular(800);
         }
         return toast;
+    }
+
+    /** True when the app says the chosen PAYABLE (doctor/employee) already has a user — not the login name. */
+    private static boolean payableTaken(String toast) {
+        String t = toast == null ? "" : toast.toLowerCase();
+        return t.contains("already created")
+                || (t.contains("already") && t.contains("exist") && (t.contains("payable") || t.contains("doctor") || t.contains("employee") || t.contains("edp")));
+    }
+
+    /**
+     * Select a Payable doctor DIFFERENT from every one in {@code exclude} (by visible text) — the next real option
+     * after the current one, wrapping round — with a real selectOption so the model binds. Returns the text of the
+     * doctor now committed, or "" when none could be selected.
+     */
+    private String selectDifferentPayable(java.util.Set<String> exclude) {
+        String excludeJson = "[" + exclude.stream().map(s -> "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"") + "\"")
+                .reduce((a, b) -> a + "," + b).orElse("") + "]";
+        Object opt = page.evaluate("(exJson) => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const ex=new Set(JSON.parse(exJson));"
+                + " document.querySelectorAll('#__edpidSel').forEach(e=>e.removeAttribute('id'));"
+                + " const e=[...document.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')==='UserDetailsModified.EDPID' && x.offsetParent!==null);"
+                + " if(!e) return '';"
+                // RANDOM among the untried candidates, not "the next one in list order" — walking forward
+                // deterministically means every run tries the SAME handful of doctors right after whichever one it
+                // started on, so that little neighbourhood gets exhausted just as fast as the front of the list did.
+                + " const candidates=[...e.options].filter(o=>o.value && !/^-*\\s*select\\s*-*$/i.test(norm(o.textContent)) && !ex.has(norm(o.textContent)));"
+                + " if(!candidates.length) return ''; const pick=candidates[Math.floor(Math.random()*candidates.length)];"
+                + " e.id='__edpidSel'; return pick.value; }", excludeJson);
+        String value = opt == null ? "" : opt.toString();
+        if (value.isEmpty()) return "";
+        try {
+            page.locator("#__edpidSel").selectOption(new com.microsoft.playwright.options.SelectOption().setValue(value),
+                    new com.microsoft.playwright.Locator.SelectOptionOptions().setTimeout(8000));
+        } catch (Exception e) {
+            System.out.println("selectDifferentPayable: selectOption failed - " + e.getMessage());
+        }
+        page.evaluate("() => { const e=document.getElementById('__edpidSel'); if(e) e.removeAttribute('id'); }");
+        waitForAngular(900);
+        return payableCurrent();
     }
 
     /** One Submit click: fire it, clear the confirm, and return the toast the app raised. */

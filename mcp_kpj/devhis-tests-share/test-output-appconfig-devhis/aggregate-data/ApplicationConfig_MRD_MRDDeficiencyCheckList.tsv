@@ -1,4 +1,0 @@
-PASS	Application Configuration - MRD - MRD Deficiency CheckList	ApplicationConfig_MRD_MRDDeficiencyCheckList	Login	Authenticated; Patient Dashboard	Logged in
-PASS	Application Configuration - MRD - MRD Deficiency CheckList	ApplicationConfig_MRD_MRDDeficiencyCheckList	Open MRD Deficiency CheckList screen	The MRD Deficiency CheckList screen (inline-add form) is shown	Opened MRD Deficiency CheckList Welcome: Employee 13 @ https://devhis.sancyberhad.com/#/MRDdeficiencyCheckList
-PASS	Application Configuration - MRD - MRD Deficiency CheckList	ApplicationConfig_MRD_MRDDeficiencyCheckList	Enter Code and Remark	Code and Remark are entered	Code=DC33400 | Remark=Missing Discharge Summary | Form Name: already "MRD Deficiency CheckList"
-PASS	Application Configuration - MRD - MRD Deficiency CheckList	ApplicationConfig_MRD_MRDDeficiencyCheckList	Click Submit & success toast	A '... saved successfully' success toast is shown	×KPJ PortalMaster Saved Successfully.

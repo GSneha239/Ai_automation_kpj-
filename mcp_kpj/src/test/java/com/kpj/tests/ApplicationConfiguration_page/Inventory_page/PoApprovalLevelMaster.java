@@ -26,7 +26,7 @@ public class PoApprovalLevelMaster extends DevHisBase {
     /** DevHIS only builds the nav menu for an outpatient counter. Override with {@code -Dcounter=}. */
     public static final String COUNTER_FOR_MENU = "OPD-B-01";
 
-    public PoApprovalLevelMaster() { super("ApplicationConfiguration_PoApprovalLevelMaster"); }
+    public PoApprovalLevelMaster() { super("ApplicationConfiguration_Inventory_PoApprovalLevelMaster"); }
 
     public static void main(String[] args) {
         PoApprovalLevelMaster t = new PoApprovalLevelMaster();
@@ -38,7 +38,7 @@ public class PoApprovalLevelMaster extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("PO Approval Level Master", "Application Configuration > Inventory > PO Approval Level Master",
+        meta("Application Configuration - Inventory - PO Approval Level Master", "Application Configuration > Inventory > PO Approval Level Master",
                 "&#9888; Creates a REAL PO approval level: select the level, enter Min and Max, Submit.");
 
         String counter = System.getProperty("counter", COUNTER_FOR_MENU);

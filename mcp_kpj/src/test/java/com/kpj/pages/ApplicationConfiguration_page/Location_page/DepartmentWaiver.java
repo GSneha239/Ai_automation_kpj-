@@ -158,6 +158,64 @@ public class DepartmentWaiver extends BasePage {
         return true;
     }
 
+    /**
+     * Best-effort read of the Department values already sitting in the LIST screen's grid — call this
+     * BEFORE clicking Add. Every one of those departments already has at least one waiver on this
+     * environment, so picking a Department that is NOT in this set gives Submit its best chance of
+     * succeeding on the first attempt instead of blindly retrying "Waiver already exist!" combinations.
+     * Never fails the flow; returns an empty set if the grid holds nothing or no Department-shaped
+     * column is found.
+     */
+    public java.util.Set<String> existingDepartmentsInList() {
+        Object r = page.evaluate("() => { let best=-1, arr=null;"
+                + " document.querySelectorAll('*').forEach(el=>{ try{"
+                + "   const s=window.angular.element(el).scope(); if(!s) return;"
+                + "   const scan=a=>{ if(Array.isArray(a) && a.length && typeof a[0]==='object'"
+                + "        && Object.keys(a[0]).some(k=>/depart/i.test(k)) && a.length>best){ best=a.length; arr=a; } };"
+                + "   if(s.grid && s.grid.options && s.grid.options.data) scan(s.grid.options.data);"
+                + "   for(const k of Object.keys(s)){ try{ scan(s[k]); }catch(e){} } }catch(e){} });"
+                + " const out=[], seen=new Set();"
+                // Prefer a NAME field (e.g. "DepartmentName", holding readable text like "PHYSIOTHERAPIST")
+                // over an ID field (e.g. "DepartmentID", holding a number) — matching on plain /depart/i
+                // picked DepartmentID first (a number, never equal to any dropdown option's text), which
+                // made the whole exclusion silently a no-op.
+                + " if(arr){ for(const row of arr){"
+                + "   const key=Object.keys(row).find(k=>/depart.*name/i.test(k)) || Object.keys(row).find(k=>/depart/i.test(k) && !/id$/i.test(k));"
+                + "   const v=key && row[key] && String(row[key]).trim();"
+                + "   if(v && !seen.has(v)){ seen.add(v); out.push(v); } } }"
+                + " return out; }");
+        java.util.Set<String> set = new java.util.LinkedHashSet<>();
+        if (r instanceof java.util.List) for (Object o : (java.util.List<?>) r) if (o != null) set.add(o.toString());
+        System.out.println("DepartmentWaiver: " + set.size() + " department(s) already in the list -> " + set);
+        return set;
+    }
+
+    /**
+     * Select the first Department option whose text is NOT in {@code exclude} (falls back to the first
+     * real option at all if every option is already taken, or the select is empty).
+     */
+    public String selectDepartmentAvoiding(java.util.Set<String> exclude) {
+        int count = optionCount("deptwaiver.DepartmentID");
+        for (int i = 0; i < count; i++) {
+            String candidate = peekNth("deptwaiver.DepartmentID", i);
+            if (!candidate.isEmpty() && !exclude.contains(candidate)) {
+                lastDepartment = selectNth("deptwaiver.DepartmentID", i);
+                return lastDepartment;
+            }
+        }
+        lastDepartment = selectField("deptwaiver.DepartmentID", "^department");
+        return lastDepartment;
+    }
+
+    /** The text of the {@code index}-th real option, without selecting it. */
+    private String peekNth(String ngModel, int index) {
+        Object t = page.evaluate("([m,n]) => { const s=[...document.querySelectorAll('select')].find(x=>(x.getAttribute('ng-model')||'')===m);"
+                + " if(!s) return '';"
+                + " const real=[...s.options].filter(o=>o.value && !/^-*\\s*select|^\\s*$/i.test((o.textContent||'').trim()));"
+                + " return n<real.length ? (real[n].textContent||'').trim() : ''; }", java.util.Arrays.asList(ngModel, index));
+        return t == null ? "" : t.toString();
+    }
+
     /** Click the list screen's <b>Add</b>. */
     public boolean clickAdd() {
         boolean tagged = false;
@@ -381,9 +439,19 @@ public class DepartmentWaiver extends BasePage {
 
     /** Select <b>Location</b>, <b>Department</b>, <b>Pricing Policy</b> and <b>Service</b>, in cascade order. */
     public String selectAll() {
+        return selectAll(java.util.Collections.emptySet());
+    }
+
+    /**
+     * As above, but Department picks the first option NOT already in {@code excludeDepartments} —
+     * see {@link #existingDepartmentsInList()} / {@link #selectDepartmentAvoiding(java.util.Set)}.
+     */
+    public String selectAll(java.util.Set<String> excludeDepartments) {
         // "LocationaID" is the app's own spelling.
         lastLocation = selectField("deptwaiver.LocationaID", "^location");
-        lastDepartment = selectField("deptwaiver.DepartmentID", "^department");
+        lastDepartment = excludeDepartments.isEmpty()
+                ? selectField("deptwaiver.DepartmentID", "^department")
+                : selectDepartmentAvoiding(excludeDepartments);
         lastPricingPolicy = selectField("deptwaiver.TariffID", "pricing\\s*policy|tariff");
         lastService = selectField("deptwaiver.ServiceID", "^service(?!\\s*rate)");
         return "Location=" + or(lastLocation) + " | Department=" + or(lastDepartment)

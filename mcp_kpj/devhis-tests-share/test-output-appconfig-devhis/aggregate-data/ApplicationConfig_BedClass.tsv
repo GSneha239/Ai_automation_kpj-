@@ -1,7 +1,0 @@
-PASS	Application Configuration - Bed Class	ApplicationConfig_BedClass	Login	Authenticated; Patient Dashboard	Logged in
-PASS	Application Configuration - Bed Class	ApplicationConfig_BedClass	Open Bed Class screen	The Bed Class list (Bed Class Code / Room Type) is shown	Opened https://devhis.sancyberhad.com/#/BedClassMaster
-PASS	Application Configuration - Bed Class	ApplicationConfig_BedClass	Click Add	The Bed Class add form opens	Add form opened
-PASS	Application Configuration - Bed Class	ApplicationConfig_BedClass	Fill the details	Bed Class Code and Room Type are filled	BedClassCode=BC598400 | RoomType=AutoRoom8400
-PASS	Application Configuration - Bed Class	ApplicationConfig_BedClass	Select the Location	A location row is selected	Selected: KPJ
-PASS	Application Configuration - Bed Class	ApplicationConfig_BedClass	Select a checkbox	A pricing policy row is selected	Selected: SELFPAY / CASH CUSTOMER
-PASS	Application Configuration - Bed Class	ApplicationConfig_BedClass	Click Submit & success toast	'Bed Class saved successfully.' toast	×KPJ PortalBed Class Details saved successfully.

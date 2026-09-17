@@ -95,11 +95,22 @@ public class BedboardOccupancyListPage extends BasePage {
                 java.util.Map.of("from", fromStr, "to", toStr));
         waitForAngular(500);
         page.evaluate("() => { const b=[...document.querySelectorAll('button')].find(x=>/^search$/i.test((x.textContent||'').trim()) && x.offsetParent!==null); if(b) b.click(); }");
-        // Wait for grid rows to load.
-        try {
-            page.waitForFunction("() => { let n=0; document.querySelectorAll('*').forEach(el=>{ try{ const s=angular.element(el).scope(); if(s&&s.grid&&s.grid.options&&s.grid.options.data) n=Math.max(n,s.grid.options.data.length);}catch(e){} }); return n>0; }",
-                    null, new Page.WaitForFunctionOptions().setTimeout(20000));
-        } catch (Exception ignore) { System.out.println("searchOneMonthToToday: no grid rows appeared"); }
+        // Wait for grid rows to load — and RE-SEARCH if it comes back empty (same pattern as
+        // OutPatientQueueManagementPage.searchQueue()): a slow/loaded server can intermittently return an empty
+        // result on the first attempt even though the date range genuinely has data — verified live 10/09/2026
+        // that this exact range/logic returns real rows (95 patients), so a single 20s wait with no retry was
+        // too quick to accept "0 rows" as final.
+        String gridHasRows = "() => { let n=0; document.querySelectorAll('*').forEach(el=>{ try{ const s=angular.element(el).scope(); if(s&&s.grid&&s.grid.options&&s.grid.options.data) n=Math.max(n,s.grid.options.data.length);}catch(e){} }); return n>0; }";
+        for (int attempt = 0; attempt < 3; attempt++) {
+            try {
+                page.waitForFunction(gridHasRows, null, new Page.WaitForFunctionOptions().setTimeout(20000));
+                break;
+            } catch (Exception ignore) {
+                System.out.println("searchOneMonthToToday: grid empty (attempt " + (attempt + 1) + "/3) — re-searching");
+                page.evaluate("() => { const b=[...document.querySelectorAll('button')].find(x=>/^search$/i.test((x.textContent||'').trim()) && x.offsetParent!==null); if(b) b.click(); }");
+                waitForAngular(1500);
+            }
+        }
         waitForAngular(800);
         return fromStr + " -> " + toStr;
     }

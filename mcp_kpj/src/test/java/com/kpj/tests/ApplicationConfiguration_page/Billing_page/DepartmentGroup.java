@@ -67,14 +67,18 @@ public class DepartmentGroup extends DevHisBase {
         outer:
         for (int d = 1; d <= maxDepts; d++) {
             String dsel = dg.selectDepartmentOrdinal(d);
-            if (dsel.startsWith("(")) break;
+            // realSelectOrdinal()'s failure placeholders are exactly "(no-opt)", "(no)" and "(err)" — a
+            // blanket "starts with (" check is too broad: the real Department master list includes an
+            // entry literally named "(NAMA DR) MR C/N", and that false-failed here before Group was ever
+            // selected or Submit ever clicked (0 combination attempts, no toast).
+            if (isPlaceholder(dsel)) break;
             dept = dsel;
             for (int g = 1; g <= maxGroups; g++) {
                 String gsel = dg.selectGroupOrdinal(g);
-                if (gsel.startsWith("(")) break;
+                if (isPlaceholder(gsel)) break;
                 group = gsel;
                 if (!selStepDone) {
-                    boolean selOk = !dept.startsWith("(") && !group.startsWith("(");
+                    boolean selOk = !isPlaceholder(dept) && !isPlaceholder(group);
                     step(page, "Select Department and Group", "Select a Department and a Group",
                             "Department and Group are selected", "Department=" + dept + " | Group=" + group,
                             selOk ? "PASS" : "FAIL");
@@ -95,11 +99,14 @@ public class DepartmentGroup extends DevHisBase {
         String actual = toast == null || toast.isEmpty() ? "No toast appeared"
                 : (ok ? toast : (exists ? "Still 'already exists' after trying " + used + " Department x Group combination(s): \"" + toast + "\""
                                         : "Save not confirmed — server returned: \"" + toast + "\""));
-        step(page, "Click Submit & success toast (retry other Department x Group combos on 'exists')",
-                "Click Submit (fnIUDDepartmentGroup); if the combination already exists, try the next Department x Group combination and Submit again",
-                "'... saved successfully.' toast",
-                (used > 1 && ok ? "(after " + used + " combination attempts, saved as Department=" + dept + " / Group=" + group + ") " : "") + actual,
-                ok ? "PASS" : "FAIL");
+        String submitStepTitle = "Click Submit & success toast (retry other Department x Group combos on 'exists')";
+        String submitStepExpected = "Click Submit (fnIUDDepartmentGroup); if the combination already exists, try the next Department x Group combination and Submit again";
+        String submitStepActual = (used > 1 && ok ? "(after " + used + " combination attempts, saved as Department=" + dept + " / Group=" + group + ") " : "") + actual;
+        if (dg.toastPng != null && dg.toastPng.length > 0) {
+            step(dg.toastPng, submitStepTitle, submitStepExpected, "'... saved successfully.' toast", submitStepActual, ok ? "PASS" : "FAIL");
+        } else {
+            step(page, submitStepTitle, submitStepExpected, "'... saved successfully.' toast", submitStepActual, ok ? "PASS" : "FAIL");
+        }
 
         // 4) Check the table
         if (ok) {
@@ -117,5 +124,11 @@ public class DepartmentGroup extends DevHisBase {
         addSummary("Department", dg.lastDepartment);
         addSummary("Combination attempts", String.valueOf(used));
         addSummary("Result", ok ? toast : "Not confirmed (\"" + toast + "\")");
+    }
+
+    /** True only for {@code realSelectOrdinal}'s actual failure placeholders — never a real option's text,
+     *  even one (like "(NAMA DR) MR C/N") that happens to start with a literal "(". */
+    private static boolean isPlaceholder(String v) {
+        return v == null || v.equals("(no-opt)") || v.equals("(no)") || v.equals("(err)");
     }
 }

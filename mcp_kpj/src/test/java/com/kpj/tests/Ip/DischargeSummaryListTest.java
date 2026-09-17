@@ -30,7 +30,7 @@ public class DischargeSummaryListTest extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Discharge Summary List (ReferralLetter/Medical Report)", "IP > Discharge Summary List",
+        meta("IP - Discharge Summary List", "IP > Discharge Summary List",
                 "Open Discharge Summary List, search a 1-month range ending today, select a patient, "
                         + "ReferralLetter/Medical Report -> tick a field -> Submit -> success toast.");
 

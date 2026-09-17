@@ -30,7 +30,7 @@ public class ItemClassMaster extends DevHisBase {
     /** DevHIS only builds the nav menu for an outpatient counter. Override with {@code -Dcounter=}. */
     public static final String COUNTER_FOR_MENU = "OPD-B-01";
 
-    public ItemClassMaster() { super("ApplicationConfiguration_ItemClassMaster"); }
+    public ItemClassMaster() { super("ApplicationConfiguration_Inventory_ItemClassMaster"); }
 
     public static void main(String[] args) {
         ItemClassMaster t = new ItemClassMaster();
@@ -42,7 +42,7 @@ public class ItemClassMaster extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Item Class Master", "Application Configuration > Inventory > Item Class Master",
+        meta("Application Configuration - Inventory - Item Class Master", "Application Configuration > Inventory > Item Class Master",
                 "&#9888; Creates a REAL item class: enter Code and Remark, then Submit.");
 
         String counter = System.getProperty("counter", COUNTER_FOR_MENU);

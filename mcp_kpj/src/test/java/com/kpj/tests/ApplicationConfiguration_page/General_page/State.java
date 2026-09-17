@@ -28,7 +28,7 @@ public class State extends DevHisBase {
     /** DevHIS only builds the nav menu for an outpatient counter. Override with {@code -Dcounter=}. */
     public static final String COUNTER_FOR_MENU = "OPD-B-01";
 
-    public State() { super("ApplicationConfiguration_State"); }
+    public State() { super("ApplicationConfiguration_General_State"); }
 
     public static void main(String[] args) {
         State t = new State();
@@ -40,7 +40,7 @@ public class State extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("State", "Application Configuration > General > State",
+        meta("Application Configuration - General - State", "Application Configuration > General > State",
                 "&#9888; Creates a REAL state: Add, enter Code and State, select the Country, Submit.");
 
         String counter = System.getProperty("counter", COUNTER_FOR_MENU);

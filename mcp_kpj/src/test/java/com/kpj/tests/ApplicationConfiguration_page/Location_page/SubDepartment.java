@@ -30,7 +30,7 @@ public class SubDepartment extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Application Configuration - Sub Department",
+        meta("Application Configuration - Location - Sub Department",
                 "Application Configuration > Location > Sub Department",
                 "Add a sub department: Code, Sub Department, Department, Default HOD, Time Slot(Min), Submit.");
 

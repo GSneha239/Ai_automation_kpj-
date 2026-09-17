@@ -44,7 +44,7 @@ public class RadiologyResultEntryAdminAuth extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Radiology Result Entry Admin Auth", "Investigation > Radiology > Result Entry Admin Auth",
+        meta("Investigation - Radiology - Result Entry Admin Auth", "Investigation > Radiology > Result Entry Admin Auth",
                 "Search a date range, tick a record, open the Report tab and print the Result Entry "
                         + "Report. Nothing is saved.");
 

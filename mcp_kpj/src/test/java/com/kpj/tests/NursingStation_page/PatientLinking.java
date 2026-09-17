@@ -46,7 +46,7 @@ public class PatientLinking extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Patient Linking", "Nursing Station > Patient Linking",
+        meta("Nursing Station - Patient Linking", "Nursing Station > Patient Linking",
                 "&#9888; Creates a REAL patient link: search a patient and a linked patient by MRN, pick a "
                         + "relationship for each, Add, Save.");
 

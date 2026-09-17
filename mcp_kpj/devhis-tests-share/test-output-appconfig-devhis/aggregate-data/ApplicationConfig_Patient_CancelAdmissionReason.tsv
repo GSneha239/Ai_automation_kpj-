@@ -1,4 +1,0 @@
-PASS	Application Configuration - Patient - Cancel Admission Reason	ApplicationConfig_Patient_CancelAdmissionReason	Login	Authenticated; Patient Dashboard	Logged in
-PASS	Application Configuration - Patient - Cancel Admission Reason	ApplicationConfig_Patient_CancelAdmissionReason	Open Cancel Admission Reason screen	The screen is shown	Opened https://devhis.sancyberhad.com/#/CancelAdmission
-PASS	Application Configuration - Patient - Cancel Admission Reason	ApplicationConfig_Patient_CancelAdmissionReason	Enter Code, Remark	Code and Remark are entered	prefix=commonmaster | Code=CAR53800 | Remark=Auto cancel admission reason CAR53800
-PASS	Application Configuration - Patient - Cancel Admission Reason	ApplicationConfig_Patient_CancelAdmissionReason	Click Submit & success toast	'... saved successfully' toast	×KPJ PortalMaster Saved Successfully.

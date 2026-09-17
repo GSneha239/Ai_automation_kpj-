@@ -1,8 +1,0 @@
-PASS	Application Configuration - Patient - Cluster	ApplicationConfig_Patient_Cluster	Login	Authenticated; Patient Dashboard	Logged in
-PASS	Application Configuration - Patient - Cluster	ApplicationConfig_Patient_Cluster	Open Cluster screen	The Cluster list screen is shown	Opened https://devhis.sancyberhad.com/#/ClusterMasterList
-PASS	Application Configuration - Patient - Cluster	ApplicationConfig_Patient_Cluster	Click Add	The Cluster add form is shown	Add form opened (https://devhis.sancyberhad.com/#/add-ClusterMaster)
-PASS	Application Configuration - Patient - Cluster	ApplicationConfig_Patient_Cluster	Enter Code and Remark	Code and Remark are set on the form	Code=CL58300 | Remark=Womens Health Cluster
-PASS	Application Configuration - Patient - Cluster	ApplicationConfig_Patient_Cluster	Enter the doctor	The doctor is entered	Typed "Demo Doctor" | field="Demo Doctor" | picked suggestion "3262 :  Demo Doctor" | ClusterDoctorId=3262
-PASS	Application Configuration - Patient - Cluster	ApplicationConfig_Patient_Cluster	Click Add	A doctor row is added to the Select / Doctor Name / Delete grid	grid rows 0 -> 1
-PASS	Application Configuration - Patient - Cluster	ApplicationConfig_Patient_Cluster	Select the doctor's checkbox in the table	The doctor row is selected	Demo Doctor (checked=true)
-PASS	Application Configuration - Patient - Cluster	ApplicationConfig_Patient_Cluster	Click Submit & success toast	A '... saved successfully' success toast is shown	×KPJ PortalCluster Added Successfully.

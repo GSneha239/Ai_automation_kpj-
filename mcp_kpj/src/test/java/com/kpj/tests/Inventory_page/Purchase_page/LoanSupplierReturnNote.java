@@ -52,7 +52,7 @@ public class LoanSupplierReturnNote extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Loan Supplier Return Note", "Inventory > Purchase > Loan Supplier Return Note",
+        meta("Inventory - Purchase - Loan Supplier Return Note", "Inventory > Purchase > Loan Supplier Return Note",
                 "&#9888; Creates a REAL loan supplier return note: New, select Supplier, Search Item, "
                         + "search a transaction date range, select a transaction and its items, enter "
                         + "Return Qty (Pack), Save.");

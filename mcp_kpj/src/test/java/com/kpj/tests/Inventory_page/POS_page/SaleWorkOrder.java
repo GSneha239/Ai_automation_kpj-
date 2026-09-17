@@ -53,7 +53,7 @@ public class SaleWorkOrder extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Sale Work Order", "Inventory > POS > Sale Work Order",
+        meta("Inventory - POS - Sale Work Order", "Inventory > POS > Sale Work Order",
                 "Search by date range, select a Sale Work Order row, tick the Drug Details item, then "
                         + "[Print] click Print and verify PDF generation, then [Print Drug Label] click "
                         + "Print Drug Label and verify the drug label PDF is generated.");

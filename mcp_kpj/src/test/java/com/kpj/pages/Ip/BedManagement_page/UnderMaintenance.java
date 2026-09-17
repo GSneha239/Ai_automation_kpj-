@@ -138,6 +138,80 @@ public class UnderMaintenance extends BasePage {
         return null;
     }
 
+    /**
+     * Select a SPECIFIC bed by name (e.g. "DC-26") rather than accepting whatever bed a blind combo
+     * search finds first — for the Graphical View entry point, where a specific bed was already clicked
+     * on the board. Keeps the pre-filled Ward as-is and iterates ONLY Room Type options until
+     * {@code targetBedName} appears in either the Census or Non-Census list, then ticks its checkbox.
+     *
+     * <p>Confirmed live: Graphical View's "Under Maintenance" action pre-fills Ward correctly (it matches
+     * the clicked bed) but Room Type does NOT — e.g. clicking bed DC-26 (tooltip "Room Type: DAY CARE,
+     * Ward: DAY CARE") landed on this form with Room Type pre-set to an unrelated value, whose combo
+     * legitimately returned zero beds. DC-26 only appears once Room Type is corrected to "DAY CARE" — the
+     * bed's actual room type. {@link #selectWardRoomTypeUntilBeds()} + {@link #selectFirstBed()} (built for
+     * the standalone screen, which starts with an EMPTY Ward/Room Type) would happily search past this and
+     * mark a completely different bed under maintenance instead of the one actually clicked.</p>
+     *
+     * <p>Returns the selected row's text on success, or null (see {@link #lastNoBedReason}) if the target
+     * bed never appeared in any Room Type list for the pre-filled Ward, or was rejected when selected.</p>
+     */
+    public String selectSpecificBed(String targetBedName) {
+        lastNoBedReason = "";
+        if (targetBedName == null || targetBedName.isBlank()) {
+            lastNoBedReason = "no target bed name given";
+            return null;
+        }
+        Object found = page.evaluate("async (target) => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const A=window.angular;"
+                + " const rtSel=document.querySelector(\"select[ng-model='undermaintenance.BedClassID']\"); if(!rtSel) return {found:false, error:'no Room Type select'};"
+                + " const opts=[...rtSel.options].map((o,i)=>({i,t:norm(o.textContent)})).filter(o=>o.t && o.t!=='--Select--');"
+                + " const findRow=()=>{ const tables=[...document.querySelectorAll('table')].filter(x=>{ const h=((x.querySelector('thead')||{}).innerText||'').toLowerCase(); return /select/.test(h) && /\\bbed\\b/.test(h) && /ward/.test(h); });"
+                + "   for(const t of tables){ const rows=[...t.querySelectorAll('tbody tr')].filter(r=>r.querySelector('input[type=checkbox],input[type=radio]'));"
+                + "     for(const row of rows){ if(norm(row.textContent).toUpperCase().includes(target.toUpperCase())) return row; } } return null; };"
+                + " for(const rt of opts){ rtSel.selectedIndex=rt.i; rtSel.dispatchEvent(new Event('change',{bubbles:true})); try{A.element(rtSel).triggerHandler('change');}catch(e){} if(window.jQuery){try{jQuery(rtSel).trigger('change');}catch(e){}}"
+                + "   for(let poll=0; poll<8; poll++){ await new Promise(res=>setTimeout(res,700)); if(findRow()) return {found:true, roomType:rt.t}; } }"
+                + " return {found:false, tried:opts.length}; }", targetBedName);
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> fm = found instanceof java.util.Map ? (java.util.Map<String, Object>) found : java.util.Collections.emptyMap();
+        if (!Boolean.TRUE.equals(fm.get("found"))) {
+            lastNoBedReason = "bed '" + targetBedName + "' did not appear in any Room Type list for the pre-filled Ward ("
+                    + fm.getOrDefault("tried", "?") + " room type(s) tried)"
+                    + (fm.get("error") != null ? " — " + fm.get("error") : "");
+            System.out.println("selectSpecificBed: " + lastNoBedReason);
+            return null;
+        }
+        // Room Type is now the one that surfaces the target bed — tick its checkbox.
+        Object r = page.evaluate("(target) => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const A=window.angular;"
+                + " const tables=[...document.querySelectorAll('table')].filter(x=>{ const h=((x.querySelector('thead')||{}).innerText||'').toLowerCase(); return /select/.test(h) && /\\bbed\\b/.test(h) && /ward/.test(h); });"
+                + " for(const t of tables){ const rows=[...t.querySelectorAll('tbody tr')].filter(r=>r.querySelector('input[type=checkbox],input[type=radio]'));"
+                + "   const row=rows.find(r=>norm(r.textContent).toUpperCase().includes(target.toUpperCase())); if(!row) continue;"
+                + "   const cb=row.querySelector('input[type=checkbox],input[type=radio]');"
+                + "   if(cb.disabled) return { skipped:true, text: norm(row.textContent).slice(0,60) };"
+                + "   const c=A.element(cb).controller('ngModel'); cb.checked=true; if(c){ c.$setViewValue(true); c.$render(); } cb.dispatchEvent(new Event('change',{bubbles:true})); try{A.element(cb).triggerHandler('change');}catch(e){} if(window.jQuery){try{jQuery(cb).trigger('change');}catch(e){}}"
+                + "   return { skipped:false, text: norm(row.textContent).slice(0,60) }; }"
+                + " return null; }", targetBedName);
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> m = r instanceof java.util.Map ? (java.util.Map<String, Object>) r : null;
+        if (m == null) {
+            lastNoBedReason = "bed '" + targetBedName + "' row disappeared before it could be selected";
+            System.out.println("selectSpecificBed: " + lastNoBedReason);
+            return null;
+        }
+        String text = String.valueOf(m.get("text"));
+        if (Boolean.TRUE.equals(m.get("skipped"))) {
+            lastNoBedReason = "bed '" + targetBedName + "' row is disabled: " + text;
+            System.out.println("selectSpecificBed: " + lastNoBedReason);
+            return null;
+        }
+        waitForAngular(500);
+        String alert = dismissAnyAlert();
+        if (!alert.isEmpty()) {
+            lastNoBedReason = "bed '" + targetBedName + "' rejected: " + (alert.length() > 100 ? alert.substring(0, 100) : alert);
+            System.out.println("selectSpecificBed: " + lastNoBedReason);
+            return null;
+        }
+        return text;
+    }
+
     /** Enter the <b>Remark</b> ({@code undermaintenance.remark}). */
     public void enterRemark(String remark) {
         page.evaluate("(v) => { const e=document.querySelector('#multiBedAllocationRemarks') || [...document.querySelectorAll('textarea,input')].find(x=>x.getAttribute('ng-model')==='undermaintenance.remark'); if(!e) return; const c=angular.element(e).controller('ngModel'); e.value=v; if(c){c.$setViewValue(v);c.$render();} e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true})); }", remark);
@@ -205,6 +279,38 @@ public class UnderMaintenance extends BasePage {
         if (res.bed == null) {
             res.failReason = "A bed list generated (" + res.combo + ") but no bed row could be selected from it"
                     + (lastNoBedReason.isEmpty() ? "" : " — " + lastNoBedReason);
+            return res;
+        }
+
+        enterRemark(remark);
+        res.toast = saveAndGetToast();
+        res.ok = res.toast != null && (res.toast.toLowerCase().contains("mainten") || res.toast.toLowerCase().contains("success")
+                || res.toast.toLowerCase().contains("saved") || res.toast.toLowerCase().contains("added"));
+        if (!res.ok) {
+            res.failReason = res.toast == null || res.toast.isEmpty()
+                    ? "Save (IUDBedUnderMaitenance()) produced no toast at all for bed " + res.bed
+                    : "Save rejected bed " + res.bed + ": \"" + res.toast + "\"";
+        }
+        return res;
+    }
+
+    /**
+     * Same outcome as {@link #markBedUnderMaintenance}, but for the Graphical View entry point: marks the
+     * SPECIFIC bed the caller already picked on the board ({@code targetBedName}, e.g. "DC-26") under
+     * maintenance, instead of accepting whichever bed a blind Ward/Room Type combo search happens to find
+     * first. See {@link #selectSpecificBed} for why the blind search is unsafe here — Room Type is
+     * pre-filled WRONG for the clicked bed, so it can find and mark a different bed entirely.
+     */
+    public MaintenanceResult markSpecificBedUnderMaintenance(String targetBedName, String dateFrom, String dateExpected, String remark) {
+        MaintenanceResult res = new MaintenanceResult();
+        ensureDates(dateFrom, dateExpected);
+
+        res.bed = selectSpecificBed(targetBedName);
+        res.bedsOk = res.bed != null;
+        res.combo = "target bed=" + targetBedName;
+        if (!res.bedsOk) {
+            res.failReason = "Bed '" + targetBedName + "' could not be selected: "
+                    + (lastNoBedReason.isEmpty() ? "not found in any Room Type list for the pre-filled Ward" : lastNoBedReason);
             return res;
         }
 

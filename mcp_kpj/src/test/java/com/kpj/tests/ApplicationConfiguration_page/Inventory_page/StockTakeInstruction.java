@@ -26,7 +26,7 @@ public class StockTakeInstruction extends DevHisBase {
     /** DevHIS only builds the nav menu for an outpatient counter. Override with {@code -Dcounter=}. */
     public static final String COUNTER_FOR_MENU = "OPD-B-01";
 
-    public StockTakeInstruction() { super("ApplicationConfiguration_StockTakeInstruction"); }
+    public StockTakeInstruction() { super("ApplicationConfiguration_Inventory_StockTakeInstruction"); }
 
     public static void main(String[] args) {
         StockTakeInstruction t = new StockTakeInstruction();
@@ -38,7 +38,7 @@ public class StockTakeInstruction extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Stock Take Instruction", "Application Configuration > Inventory > Stock Take Instruction",
+        meta("Application Configuration - Inventory - Stock Take Instruction", "Application Configuration > Inventory > Stock Take Instruction",
                 "&#9888; Creates a REAL stock take instruction: Add, enter Code and Description, Submit.");
 
         String counter = System.getProperty("counter", COUNTER_FOR_MENU);

@@ -176,8 +176,12 @@ public class InterpretationTemplate extends BasePage {
         // code inserts once and then breaks every later save that touches the existing rows.
         String code = String.format("%06d", Math.abs((System.nanoTime() + attempt * 7919L) % 1000000));
         lastCode = code;
-        lastName = NAMES[(int) (Math.abs(System.nanoTime() / 1000 + attempt) % NAMES.length)];
-        lastRemark = REMARKS[(int) (Math.abs(System.nanoTime() / 1000 + attempt) % REMARKS.length)];
+        // Both Name and Description are unique-constrained on the server ("Name already exist" / "Description
+        // already exist"), and the dev database has long since exhausted every combination of the 6 base
+        // phrases below. Appending the already-unique `code` guarantees a fresh Name/Remark every attempt
+        // while keeping the phrase readable, instead of retrying the same handful of fixed strings forever.
+        lastName = NAMES[(int) (Math.abs(System.nanoTime() / 1000 + attempt) % NAMES.length)] + " " + code;
+        lastRemark = REMARKS[(int) (Math.abs(System.nanoTime() / 1000 + attempt) % REMARKS.length)] + " " + code;
         Object r = page.evaluate("(a) => { const A=window.angular;" + FIND_FIELDS + SET_DESC
                 + " const set=(e,v)=>{ if(!e) return '(no field)'; commit(e,v); return v; };"
                 + " const cd=set(codeEl, a.code); const nm=set(nameEl, a.name);"

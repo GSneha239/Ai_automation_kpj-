@@ -83,7 +83,7 @@ public class BirthCertificate extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Birth Certificate", "Nursing Station > Birth Certificate",
+        meta("Nursing Station - Birth Certificate", "Nursing Station > Birth Certificate",
                 "Issue a birth certificate: search the patient by MRN, pick the template, fill the child "
                         + "details and template body, pick Department + Doctor, authenticate and Save.");
 
@@ -148,6 +148,19 @@ public class BirthCertificate extends DevHisBase {
         boolean attached = bc.patientAttached();
 
         if (!attached) {
+            // Prefer MRNs already accepted by THIS screen's own certificate list (harvestMrnsFromList) —
+            // those patients are guaranteed to be the right type (deceased inpatient) this screen's query
+            // requires. discoverMrns()'s general patient-search popup only surfaces LIVING outpatients,
+            // which this screen's query can never match — it stays only as a last-resort diagnostic.
+            java.util.List<String> harvested = bc.harvestMrnsFromList();
+            addSummary("MRNs harvested from this screen's own list", harvested.isEmpty() ? "(none found)" : harvested.toString());
+            if (!harvested.isEmpty()) {
+                searchResult = bc.searchPatientTryingMrns(harvested);
+                attached = bc.patientAttached();
+            }
+        }
+
+        if (!attached) {
             java.util.List<String> discovered = bc.discoverMrns(6);
             addSummary("MRNs offered by the patient lookup", discovered.isEmpty() ? "(none found)" : discovered.toString());
             if (!discovered.isEmpty()) {
@@ -166,6 +179,13 @@ public class BirthCertificate extends DevHisBase {
                          : "No patient attached with any MRN. Tried: " + bc.mrnAttempts
                            + ". Last result: " + searchResult,
                 attached ? "PASS" : "FAIL");
+        // Stop here on no patient — continuing without one lets Save click through and answer with a
+        // success-shaped response anyway (no real patient behind it), producing a confusing "Save passed
+        // but no report was generated" result far downstream instead of one clean, accurate failure here.
+        if (!attached) {
+            addSummary("Result", "FAILED — no patient attached for any tried MRN (pass a valid one with -Dmrn=...)");
+            return;
+        }
 
         // 4) Certificate template
         String template = bc.selectTemplate();

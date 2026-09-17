@@ -30,7 +30,7 @@ public class TypeOfReturn extends DevHisBase {
     /** DevHIS only builds the nav menu for an outpatient counter. Override with {@code -Dcounter=}. */
     public static final String COUNTER_FOR_MENU = "OPD-B-01";
 
-    public TypeOfReturn() { super("ApplicationConfiguration_TypeOfReturn"); }
+    public TypeOfReturn() { super("ApplicationConfiguration_Inventory_TypeOfReturn"); }
 
     public static void main(String[] args) {
         TypeOfReturn t = new TypeOfReturn();
@@ -42,7 +42,7 @@ public class TypeOfReturn extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Type of Return", "Application Configuration > Inventory > Type of Return",
+        meta("Application Configuration - Inventory - Type of Return", "Application Configuration > Inventory > Type of Return",
                 "&#9888; Creates a REAL type of return: enter Code and Remark, then Submit.");
 
         String counter = System.getProperty("counter", COUNTER_FOR_MENU);

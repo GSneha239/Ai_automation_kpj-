@@ -30,7 +30,7 @@ public class DepartmentWaiver extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Application Configuration - Department Waiver",
+        meta("Application Configuration - Location - Department Waiver",
                 "Application Configuration > Location > Department Waiver",
                 "Add a department waiver: Location, Department, Pricing Policy, Service, Waiver Days, Service Rate, Emergency Rate, Submit.");
 
@@ -53,6 +53,12 @@ public class DepartmentWaiver extends DevHisBase {
             return;
         }
 
+        // Read which Departments already have a waiver BEFORE Add is clicked (the list screen's own grid) —
+        // every one of them will answer "Waiver already exist!" on Submit no matter which Service is tried,
+        // so picking a Department NOT already in this list gives Submit its best shot at succeeding first try.
+        java.util.Set<String> existingDepts = dw.existingDepartmentsInList();
+        addSummary("Departments already in the list", existingDepts.isEmpty() ? "(none found)" : existingDepts.toString());
+
         boolean added = dw.clickAdd() && dw.addFormOpen();
         step(page, "Click Add", "Click Add", "The add form opens",
                 added ? "Add form opened" : "Add did NOT open", added ? "PASS" : "FAIL");
@@ -62,8 +68,8 @@ public class DepartmentWaiver extends DevHisBase {
             return;
         }
 
-        // 3) Location, Department, Pricing Policy, Service
-        String sel = dw.selectAll();
+        // 3) Location, Department, Pricing Policy, Service — Department avoids every one already in the list.
+        String sel = dw.selectAll(existingDepts);
         boolean selOk = !sel.contains("(not set)");
         step(page, "Select Location, Department, Pricing Policy, Service",
                 "Choose the Location, Department, Pricing Policy and Service",

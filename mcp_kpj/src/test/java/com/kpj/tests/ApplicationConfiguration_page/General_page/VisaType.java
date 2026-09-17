@@ -28,7 +28,7 @@ public class VisaType extends DevHisBase {
     /** DevHIS only builds the nav menu for an outpatient counter. Override with {@code -Dcounter=}. */
     public static final String COUNTER_FOR_MENU = "OPD-B-01";
 
-    public VisaType() { super("ApplicationConfiguration_VisaType"); }
+    public VisaType() { super("ApplicationConfiguration_General_VisaType"); }
 
     public static void main(String[] args) {
         VisaType t = new VisaType();
@@ -40,7 +40,7 @@ public class VisaType extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Visa Type", "Application Configuration > General > Visa Type",
+        meta("Application Configuration - General - Visa Type", "Application Configuration > General > Visa Type",
                 "&#9888; Creates a REAL visa type: enter Code and Visa Type, then Submit.");
 
         String counter = System.getProperty("counter", COUNTER_FOR_MENU);

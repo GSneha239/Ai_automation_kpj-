@@ -1,6 +1,0 @@
-PASS	Application Configuration - Billing - Currency Master	ApplicationConfig_Billing_CurrencyMaster	Login	Authenticated; Patient Dashboard	Logged in
-PASS	Application Configuration - Billing - Currency Master	ApplicationConfig_Billing_CurrencyMaster	Open Currency Master screen	The Currency Master screen is shown	Opened https://devhis.sancyberhad.com/?_cb=1.2.18#/CurrencyMaster
-PASS	Application Configuration - Billing - Currency Master	ApplicationConfig_Billing_CurrencyMaster	Click Add	The Currency Master add form opens	Add clicked (https://devhis.sancyberhad.com/?_cb=1.2.18#/add-CurrencyMaster)
-PASS	Application Configuration - Billing - Currency Master	ApplicationConfig_Billing_CurrencyMaster	Enter Code, Remark, Percentage, Higher/Lower Denomination	All fields are entered	Code=CUR06000 | Remark=Auto currency CUR06000 | Percentage=10 | HigherDenomination=100 | LowerDenomination=1
-PASS	Application Configuration - Billing - Currency Master	ApplicationConfig_Billing_CurrencyMaster	Click Submit & success toast	'... saved successfully.' toast	×KPJ PortalCurrency Saved Successfully.
-PASS	Application Configuration - Billing - Currency Master	ApplicationConfig_Billing_CurrencyMaster	Check the list table for the added row	The newly added Currency Master row is shown in the table	Found in table: CUR06000Auto currency CUR06000101001 True

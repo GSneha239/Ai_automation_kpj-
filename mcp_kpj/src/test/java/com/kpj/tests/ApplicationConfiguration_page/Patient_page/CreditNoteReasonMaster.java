@@ -33,7 +33,7 @@ public class CreditNoteReasonMaster extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Application Configuration - Patient - CreditNote Reason Master",
+        meta("Application Configuration - Patient - CreditNoteReasonMaster",
                 "Application Configuration > Patient > CreditNoteReasonMaster",
                 "Add a CreditNote Reason: enter Code + Remark, Submit; wait for the success toast. On "
                         + "'already exists', change the details and Submit again.");

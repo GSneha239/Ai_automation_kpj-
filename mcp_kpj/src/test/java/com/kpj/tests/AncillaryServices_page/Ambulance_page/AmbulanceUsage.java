@@ -43,7 +43,7 @@ public class AmbulanceUsage extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Ambulance Usage", "Ancillary Services > Ambulance > Ambulance Usage",
+        meta("Ancillary Services - Ambulance - Ambulance Usage", "Ancillary Services > Ambulance > Ambulance Usage",
                 "&#9888; Creates a REAL ambulance usage record: select Vehicle Type, search the patient by MRN, "
                         + "select Vehicle + Driver, Save.");
 

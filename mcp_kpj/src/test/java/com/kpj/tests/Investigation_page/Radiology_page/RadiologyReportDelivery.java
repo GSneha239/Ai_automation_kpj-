@@ -46,7 +46,7 @@ public class RadiologyReportDelivery extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Radiology Report Delivery", "Investigation > Radiology > Radiology Report Delivery",
+        meta("Investigation - Radiology - Radiology Report Delivery", "Investigation > Radiology > Radiology Report Delivery",
                 "&#9888; Marks a REAL radiology report delivered: search by MRN and date range, tick a "
                         + "record, click Delivered.");
 

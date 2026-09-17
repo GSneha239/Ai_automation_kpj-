@@ -34,7 +34,7 @@ public class Payor extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Application Configuration - Billing - Payor", "Application Configuration > Billing > Payor (Receivable Master)",
+        meta("Application Configuration - Billing - Payor (Receivable Master)", "Application Configuration > Billing > Payor (Receivable Master)",
                 "Add a Payor: Add, enter Payor Type + Payable Code + Payor + Primary Phone No + E-mail + Primary Contact Person, Submit, then check the table.");
 
         LoginPage loginPage = new LoginPage(page);

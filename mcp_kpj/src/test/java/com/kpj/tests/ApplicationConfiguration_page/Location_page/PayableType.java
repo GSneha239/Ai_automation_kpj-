@@ -29,7 +29,7 @@ public class PayableType extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Application Configuration - Payable Type",
+        meta("Application Configuration - Location - Payable Type",
                 "Application Configuration > Location > Payable Type",
                 "Add a payable type: Code, Remark, tick Refentity, Submit.");
 

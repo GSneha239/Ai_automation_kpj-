@@ -31,7 +31,7 @@ public class Department extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Application Configuration - Department", "Application Configuration > Location > Department",
+        meta("Application Configuration - Location - Department", "Application Configuration > Location > Department",
                 "Add a Department: Code, Department, Store, Department Location Details, Case Template line, Submit.");
 
         LoginPage loginPage = new LoginPage(page);

@@ -32,7 +32,7 @@ public class AreaTown extends DevHisBase {
     /** DevHIS only builds the nav menu for an outpatient counter. Override with {@code -Dcounter=}. */
     public static final String COUNTER_FOR_MENU = "OPD-B-01";
 
-    public AreaTown() { super("ApplicationConfiguration_AreaTown"); }
+    public AreaTown() { super("ApplicationConfiguration_General_AreaTown"); }
 
     public static void main(String[] args) {
         AreaTown t = new AreaTown();
@@ -44,7 +44,7 @@ public class AreaTown extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Area/Town", "Application Configuration > General > Area/Town",
+        meta("Application Configuration - General - Area/Town", "Application Configuration > General > Area/Town",
                 "&#9888; Creates a REAL area/town: Add, select the City/District, enter the Code and "
                         + "Area/Town, Submit.");
 

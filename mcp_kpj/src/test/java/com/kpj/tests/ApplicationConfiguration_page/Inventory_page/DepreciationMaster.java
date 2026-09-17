@@ -33,7 +33,7 @@ public class DepreciationMaster extends DevHisBase {
     /** DevHIS only builds the nav menu for an outpatient counter. Override with {@code -Dcounter=}. */
     public static final String COUNTER_FOR_MENU = "OPD-B-01";
 
-    public DepreciationMaster() { super("ApplicationConfiguration_DepreciationMaster"); }
+    public DepreciationMaster() { super("ApplicationConfiguration_Inventory_DepreciationMaster"); }
 
     public static void main(String[] args) {
         DepreciationMaster t = new DepreciationMaster();
@@ -45,7 +45,7 @@ public class DepreciationMaster extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Depreciation Master", "Application Configuration > Inventory > Depreciation Master",
+        meta("Application Configuration - Inventory - Depreciation Master", "Application Configuration > Inventory > Depreciation Master",
                 "&#9888; Creates a REAL depreciation record: Add, enter the code and description, select "
                         + "the depreciation name, click Add Depreciation, build the formula from "
                         + "the mathematical symbols, Submit.");

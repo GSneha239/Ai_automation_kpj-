@@ -113,6 +113,20 @@
                                     </sources>
                                 </configuration>
                             </execution>
+                            <!-- Bundle src/test/resources (e.g. attachments/placeholder.png) into the MAIN
+                                 artifact too, so the shaded jar carries it the same way mvn exec:java does. -->
+                            <execution>
+                                <id>add-flow-resources</id>
+                                <phase>generate-resources</phase>
+                                <goals><goal>add-resource</goal></goals>
+                                <configuration>
+                                    <resources>
+                                        <resource>
+                                            <directory>src/test/resources</directory>
+                                        </resource>
+                                    </resources>
+                                </configuration>
+                            </execution>
                         </executions>
                     </plugin>
                     <!-- Shade the main artifact (now incl. flow classes) + all deps into one runnable jar. -->

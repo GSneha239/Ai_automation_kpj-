@@ -20,7 +20,7 @@ public class RoomAmenities extends DevHisBase {
     /** How many times to re-enter fresh details when the server says the code / remark already exists. */
     private static final int MAX_ATTEMPTS = 40;
 
-    public RoomAmenities() { super("ApplicationConfig_RoomAmenities"); }
+    public RoomAmenities() { super("ApplicationConfig_Admission_RoomAmenities"); }
 
     public static void main(String[] args) {
         RoomAmenities t = new RoomAmenities();
@@ -32,7 +32,7 @@ public class RoomAmenities extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Application Configuration - Room Amenities", "Application Configuration > Admission > Room Amenities",
+        meta("Application Configuration - Admission - Room Amenities", "Application Configuration > Admission > Room Amenities",
                 "Add a Room Amenity: enter Code + Remark, Submit.");
 
         LoginPage loginPage = new LoginPage(page);

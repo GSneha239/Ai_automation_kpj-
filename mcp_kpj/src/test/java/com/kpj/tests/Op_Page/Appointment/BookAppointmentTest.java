@@ -32,7 +32,7 @@ public class BookAppointmentTest extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Book Appointment",
+        meta("OP - Appointment - Book Appointment",
                 "OP > Appointment > Book Appointment",
                 "⚠ This test creates a NEW appointment; on save the appointment report opens in another tab.");
 
@@ -41,7 +41,7 @@ public class BookAppointmentTest extends DevHisBase {
 
         // 1) Authenticate
         loginPage.login(BASE, USER, PASS);
-        step("Login", "farisha / Tcare@123", "Authenticated; Patient Dashboard", "Logged in", "PASS");
+        step("Login", USER + " / " + PASS, "Authenticated; Patient Dashboard", "Logged in", "PASS");
 
         // 2) Navigate to Book Appointment
         bookPage.navigateTo(BASE);

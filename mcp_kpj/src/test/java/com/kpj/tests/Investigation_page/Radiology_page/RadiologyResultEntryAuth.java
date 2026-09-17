@@ -43,7 +43,7 @@ public class RadiologyResultEntryAuth extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Result Entry Authentication", "Investigation > Radiology > Result Entry Authentication",
+        meta("Investigation - Radiology - Result Entry Authentication", "Investigation > Radiology > Result Entry Authentication",
                 "Search a date range, tick a record, open the Report tab and print the Result Entry "
                         + "Report. Nothing is saved.");
 

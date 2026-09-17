@@ -29,7 +29,7 @@ public class RouteMaster extends DevHisBase {
     /** DevHIS only builds the nav menu for an outpatient counter. Override with {@code -Dcounter=}. */
     public static final String COUNTER_FOR_MENU = "OPD-B-01";
 
-    public RouteMaster() { super("ApplicationConfiguration_RouteMaster"); }
+    public RouteMaster() { super("ApplicationConfiguration_General_RouteMaster"); }
 
     public static void main(String[] args) {
         RouteMaster t = new RouteMaster();
@@ -41,7 +41,7 @@ public class RouteMaster extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Route Master", "Application Configuration > General > Route Master",
+        meta("Application Configuration - General - Route Master", "Application Configuration > General > Route Master",
                 "&#9888; Creates a REAL route: enter Code, Remark, Instruction, Statutory Code, Statutory "
                         + "Description, Route Instruction and MIMS Description, then Submit.");
 

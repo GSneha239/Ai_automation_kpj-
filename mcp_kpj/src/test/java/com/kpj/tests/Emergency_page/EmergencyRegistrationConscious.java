@@ -37,14 +37,14 @@ public class EmergencyRegistrationConscious extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Emergency Registration (Conscious)", "Emergency > Emergency Registration (Conscious)",
+        meta("Emergency - Emergency Registration (Conscious)", "Emergency > Emergency Registration (Conscious)",
                 "&#9888; Registers a conscious emergency patient (same form as OP Registration) with ALL sections filled; "
                         + "on Save the app auto-opens the Registration Report + Consent form.");
 
         // The conscious emergency registration is the SAME form as OP Registration, so its page object EXTENDS
         // RegistrationPage — referenced by its fully-qualified name (this test class shares the simple name).
-        com.kpj.pages.Emegency_Page.EmergencyRegistrationConscious reg =
-                new com.kpj.pages.Emegency_Page.EmergencyRegistrationConscious(page);
+        com.kpj.pages.Emergency_page.EmergencyRegistrationConscious reg =
+                new com.kpj.pages.Emergency_page.EmergencyRegistrationConscious(page);
         // Same switch as OP Registration: -Ddevhis.nationality=<adjectival name> registers a FOREIGN patient
         // (Passport + Visa Details); omitted, it stays Malaysian on a New IC.
         String wantNationality = System.getProperty("devhis.nationality", "").trim();
@@ -54,7 +54,7 @@ public class EmergencyRegistrationConscious extends DevHisBase {
 
         // 1) Login
         login();
-        step("Login", "farisha / Tcare@123", "Patient Dashboard", "Logged in as farisha", "PASS");
+        step("Login", USER + " / " + PASS, "Patient Dashboard", "Logged in as " + USER, "PASS");
 
         // 2) Open Emergency > Emergency Registration (Conscious) — reuses the OP Registration form.
         boolean masterLoaded = reg.open(BASE);

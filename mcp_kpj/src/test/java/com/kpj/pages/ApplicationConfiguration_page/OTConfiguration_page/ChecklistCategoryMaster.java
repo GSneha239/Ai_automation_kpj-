@@ -212,6 +212,26 @@ public class ChecklistCategoryMaster extends BasePage {
     }
 
     /**
+     * True when this form actually carries the fields the flow expects (Remark, MIMS GUID, MIMS
+     * Description, MIMS Type) beyond just Code — i.e. this really is the intended entry form and not some
+     * other, simpler screen that happens to render at the same route.
+     *
+     * <p>Checked WITHOUT writing anything: probing by typing into whichever field is present would corrupt
+     * a genuinely different (wrong) screen's own data.</p>
+     */
+    public boolean hasExpectedFields() {
+        Object r = page.evaluate("() => {" + JS
+                + " const boxes=[...document.querySelectorAll('input,textarea')].filter(vis)"
+                + "   .filter(e=>e.type!=='hidden' && e.type!=='checkbox' && e.type!=='radio')"
+                + "   .filter(e=>!/search|colFilter|row\\.entity|pagination/i.test(ngOf(e)+' '+(e.placeholder||'')));"
+                + " const hasRemark=boxes.some(e=>/^(remark|remarks|description|name)$/i.test(tail(e))"
+                + "   || /(remark|description|name)$/i.test(tail(e)));"
+                + " const hasMimsGuid=boxes.some(e=>/mimsguid|guid/i.test(tail(e)+' '+(e.placeholder||'')));"
+                + " return hasRemark || hasMimsGuid; }");
+        return Boolean.TRUE.equals(r);
+    }
+
+    /**
      * Enter <b>Code</b> and <b>Remark</b>.
      *
      * <p>The Remark box is searched for among the boxes NOT already claimed by the Code, and by the

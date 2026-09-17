@@ -20,7 +20,7 @@ public class TherapyType extends DevHisBase {
     /** How many times to re-enter fresh details when the server says the code / therapy type already exists. */
     private static final int MAX_ATTEMPTS = 40;
 
-    public TherapyType() { super("ApplicationConfig_TherapyType"); }
+    public TherapyType() { super("ApplicationConfig_Admission_TherapyType"); }
 
     public static void main(String[] args) {
         TherapyType t = new TherapyType();
@@ -32,7 +32,7 @@ public class TherapyType extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Application Configuration - Therapy Type", "Application Configuration > Admission > Therapy Type",
+        meta("Application Configuration - Admission - Therapy Type", "Application Configuration > Admission > Therapy Type",
                 "Add a Therapy Type: enter Code + Therapy Type, Submit.");
 
         LoginPage loginPage = new LoginPage(page);

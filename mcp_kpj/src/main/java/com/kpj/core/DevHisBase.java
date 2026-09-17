@@ -44,13 +44,14 @@ public abstract class DevHisBase {
     //   1) JVM system property   -Ddevhis.url=... -Ddevhis.user=... -Ddevhis.pass=...
     //   2) environment variable  DEVHIS_URL / DEVHIS_USER / DEVHIS_PASS
     //   3) config.properties     (path in -Ddevhis.config=..., else ./config.properties, else next to the jar)
-    //   4) the built-in default  (the original devhis.sancyberhad.com / farisha)
+    //   4) the built-in default  (devhis.sancyberhad.com / tieba - farisha is rejected on devhis since 2026-09-03;
+    //      tieba's password was reset to Tieba@123 on 2026-09-10)
     private static final java.util.Properties FILE_PROPS = loadProps();
 
     public static final String BASE = cfg("devhis.url", "https://devhis.sancyberhad.com").replaceAll("/+$", "");
     public static final String DASHBOARD = BASE + "/#/PatientDashboard";
-    public static final String USER = cfg("devhis.user", "farisha");
-    public static final String PASS = cfg("devhis.pass", "Tcare@123");
+    public static final String USER = cfg("devhis.user", "tieba");
+    public static final String PASS = cfg("devhis.pass", "Tieba@123");
     public static final String COUNTER = null;
     // Some environments (e.g. KS QA) serve a "Local Login" form with a mandatory Organization/Department
     // select that must be chosen BEFORE the Login button will authenticate — confirmed live: without it,
@@ -112,11 +113,34 @@ public abstract class DevHisBase {
                 System.out.println("DevHisBase: attachment image [" + index + "] = " + pick);
                 return pick;
             }
-            System.out.println("DevHisBase: no image in " + ATTACH_DIR + " - attachment steps will FAIL");
         } catch (Exception e) {
-            System.out.println("DevHisBase: cannot read " + ATTACH_DIR + " (" + e + ") - attachment steps will FAIL");
+            System.out.println("DevHisBase: cannot read " + ATTACH_DIR + " (" + e + ")");
         }
+        // Still no image (the Screenshots-folder default is empty, or missing, on this machine): fall back
+        // to a real image bundled with the repo itself, so upload steps do not depend on any particular
+        // machine's Pictures\Screenshots folder happening to have a file in it.
+        Path bundled = extractBundledPlaceholder();
+        if (bundled != null) {
+            System.out.println("DevHisBase: no image in " + ATTACH_DIR + " - using the bundled placeholder " + bundled);
+            return bundled;
+        }
+        System.out.println("DevHisBase: no image in " + ATTACH_DIR + " and the bundled placeholder could not be extracted - attachment steps will FAIL");
         return ATTACH_DIR.resolve("missing-attachment.png");
+    }
+
+    /** Copies {@code attachments/placeholder.png} (src/test/resources) out to a real temp file — Playwright's
+     *  file-upload input needs an actual filesystem path, not a classpath resource stream. */
+    private static Path extractBundledPlaceholder() {
+        try (java.io.InputStream in = DevHisBase.class.getClassLoader().getResourceAsStream("attachments/placeholder.png")) {
+            if (in == null) return null;
+            Path tmp = Files.createTempFile("mcp-kpj-placeholder-", ".png");
+            Files.copy(in, tmp, StandardCopyOption.REPLACE_EXISTING);
+            tmp.toFile().deleteOnExit();
+            return tmp;
+        } catch (Exception e) {
+            System.out.println("DevHisBase: could not extract the bundled placeholder image - " + e.getMessage());
+            return null;
+        }
     }
 
     public final String testId;
@@ -152,6 +176,7 @@ public abstract class DevHisBase {
     }
 
     public void start() {
+        Reasons.clear(); // a prior test in the same JVM must not leak its pending reasons into this one
         if (attached) return; // shared browser already provided
         pw = Playwright.create();
         browser = pw.chromium().launch(launchOptions());
@@ -457,7 +482,7 @@ public abstract class DevHisBase {
                 }
             } catch (Exception ignore) {}
         }
-        steps.add(new String[]{String.valueOf(shotCount), name, desc, expected, actual, status, b64});
+        steps.add(new String[]{String.valueOf(shotCount), name, desc, expected, Reasons.appendTo(actual), status, b64});
         System.out.printf("  %2d [%-6s] %s%n", shotCount, status, name);
     }
     /** Convenience: step on the primary page. */
@@ -557,7 +582,7 @@ public abstract class DevHisBase {
     public void step(byte[] png, String name, String desc, String expected, String actual, String status) {
         shotCount++;
         String b64 = (png != null && png.length > 0) ? java.util.Base64.getEncoder().encodeToString(png) : "";
-        steps.add(new String[]{String.valueOf(shotCount), name, desc, expected, actual, status, b64});
+        steps.add(new String[]{String.valueOf(shotCount), name, desc, expected, Reasons.appendTo(actual), status, b64});
         System.out.printf("  %2d [%-6s] %s%n", shotCount, status, name);
     }
 
@@ -578,7 +603,7 @@ public abstract class DevHisBase {
             }
         } catch (Exception ignore) {}
         steps.add(new String[]{String.valueOf(shotCount), "ERROR", "Unexpected error during the test",
-                "Test completes", "FAILED: " + e.getMessage(), "FAIL", b64});
+                "Test completes", Reasons.appendTo("FAILED: " + e.getMessage()), "FAIL", b64});
     }
 
     /**

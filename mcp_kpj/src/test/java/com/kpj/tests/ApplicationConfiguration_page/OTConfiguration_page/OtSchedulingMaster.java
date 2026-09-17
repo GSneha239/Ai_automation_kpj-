@@ -32,7 +32,7 @@ public class OtSchedulingMaster extends DevHisBase {
     /** DevHIS only builds the nav menu for an outpatient counter. Override with {@code -Dcounter=}. */
     public static final String COUNTER_FOR_MENU = "OPD-B-01";
 
-    public OtSchedulingMaster() { super("ApplicationConfiguration_OtSchedulingMaster"); }
+    public OtSchedulingMaster() { super("ApplicationConfiguration_OTConfiguration_OtSchedulingMaster"); }
 
     public static void main(String[] args) {
         OtSchedulingMaster t = new OtSchedulingMaster();
@@ -44,7 +44,7 @@ public class OtSchedulingMaster extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("OT Scheduling Master", "Application Configuration > OT Configuration > OT Scheduling Master",
+        meta("Application Configuration - OT Configuration - OT Scheduling Master", "Application Configuration > OT Configuration > OT Scheduling Master",
                 "&#9888; Creates a REAL OT schedule: Add, select the OT Theatre and OT Table, enter the "
                         + "Start and End Time, tick the day, Add the line, then Submit.");
 

@@ -32,12 +32,12 @@ public class Admission extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("IP Admission", "IP > Admission",
+        meta("IP - Admission", "IP > Admission",
                 "Admit an inpatient (full IPD admission) via the IP menu, then generate the admission report.");
 
         LoginPage loginPage = new LoginPage(page);
         loginPage.login(BASE, USER, PASS);
-        step("Login", "farisha / Tcare@123", "Authenticated; Patient Dashboard", "Logged in", "PASS");
+        step("Login", USER + " / " + PASS, "Authenticated; Patient Dashboard", "Logged in", "PASS");
 
         com.kpj.pages.Ip.Admission ip = new com.kpj.pages.Ip.Admission(page);
 
@@ -177,7 +177,12 @@ public class Admission extends DevHisBase {
         step(page, "Save admission", "Click Save (IUDAdmission); wait for the toast",
                 "'Patient Admitted Successfully.' toast", actual, ok ? "PASS" : "FAIL");
         if (!clearedLog.isEmpty()) addSummary("Field(s) cleared after entry (app wipe)", clearedLog);
-        if (!ok) return;
+
+        // Check for report tabs regardless of the toast verdict above: a rejection toast does not prove no
+        // tab opened, and the later report tabs open several seconds after Save, so a tab that HASN'T
+        // appeared yet at this point is not evidence either way. Returning early here on any "FAIL" toast
+        // was silently dropping that evidence for every run that reached this point. The 12s wait below now
+        // always runs; a genuine failure just costs those extra seconds rather than losing the tabs.
 
         // Save opens the report tab(s) — the later ones open a few seconds after save, so wait, then capture.
         page.waitForTimeout(12000);

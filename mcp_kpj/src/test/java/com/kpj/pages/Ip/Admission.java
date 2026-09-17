@@ -9,7 +9,7 @@ import com.microsoft.playwright.Page;
  * <p>Reached by CLICKING the menu tab (IP → Admission), not a direct URL. The form is the SAME IPD
  * admission form as Emergency Admission (verified live 2026-07-14: {@code Registration.*} patient fields +
  * {@code Admission.*} cascade + Save {@code IUDAdmission();} → "Patient Admitted Successfully."), so the
- * fill logic mirrors {@code com.kpj.pages.Emegency_Page.Emergency_Admission}. Save runs the data-driven
+ * fill logic mirrors {@code com.kpj.pages.Emergency_page.Emergency_Admission}. Save runs the data-driven
  * validation {@code ValidationListAdmission} requiring, in order: Patient Name/Gender, Admission Location,
  * Department, Doctor, Admission Type, Patient Source, Bed Class, Ward, Billing Class, Bed (Bed is SKIPPED
  * when {@code Admission.NonPresenceAdmission} is truthy), plus {@code Admission.AdmissionPurposeID}.</p>
@@ -161,7 +161,7 @@ public class Admission extends BasePage {
             page.waitForFunction("() => { const s=[...document.querySelectorAll('select')].find(x=>(x.getAttribute('ng-model')||'')==='Registration.NationalityID');"
                     + " return !!(s && s.options.length>1); }",
                     null, new com.microsoft.playwright.Page.WaitForFunctionOptions().setTimeout(20000));
-        } catch (Exception ignore) { System.out.println("fillPatientSection: the Nationality list did not populate in time"); }
+        } catch (Exception ignore) { System.out.println("fillPatientSection: the Nationality list did not populate in time"); com.kpj.core.Reasons.add("the Nationality dropdown did not populate (no options loaded in time)"); }
         String natSet = selectNationalityVerified("Registration.NationalityID", nationality());
         System.out.println("fillPatientSection: Nationality = " + natSet);
         waitForAngular(800);
@@ -171,7 +171,7 @@ public class Admission extends BasePage {
         try {
             page.waitForFunction("() => { const e=[...document.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')==='Registration.ICCardTypeID'); return e && e.options.length>1; }",
                     null, new com.microsoft.playwright.Page.WaitForFunctionOptions().setTimeout(15000));
-        } catch (Exception ignore) { System.out.println("fillPatientSection: ICCardType dropdown did not populate in time"); }
+        } catch (Exception ignore) { System.out.println("fillPatientSection: ICCardType dropdown did not populate in time"); com.kpj.core.Reasons.add("the IC Card Type dropdown did not populate (no options loaded in time)"); }
         for (int a = 0; a < 4; a++) {
             boolean set = Boolean.TRUE.equals(page.evaluate("(want) => { const e=[...document.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')==='Registration.ICCardTypeID'); if(!e) return false; const c=angular.element(e).controller('ngModel'); const v=c?c.$modelValue:null; return v!=null && v!=='' && new RegExp(want.replace(/\\s+/g,'\\\\s*'),'i').test(((e.options[e.selectedIndex]||{}).textContent)||''); }", idType()));
             if (set) break;
@@ -464,7 +464,7 @@ public class Admission extends BasePage {
         try {
             page.waitForFunction("() => { let ok=false; document.querySelectorAll('*').forEach(el=>{ if(ok)return; try{ const s=angular.element(el).scope(); if(s && Array.isArray(s.drpDoctor) && s.drpDoctor.length) ok=true; }catch(e){} }); return ok; }",
                     null, new Page.WaitForFunctionOptions().setTimeout(12000));
-        } catch (Exception ignore) { System.out.println("fillAdmissionSection: doctor list not loaded in time"); }
+        } catch (Exception ignore) { System.out.println("fillAdmissionSection: doctor list not loaded in time"); com.kpj.core.Reasons.add("the Doctor dropdown did not load (no options loaded in time)"); }
         waitForAngular(600);
         Object rest = page.evaluate("() => { const e=document.querySelector(\"select[ng-model='Admission.DepartmentID']\") || document.querySelector(\"select[ng-model='Admission.AdmissionLocationID']\"); const sc=angular.element(e).scope(); let s=sc, adm=null, vis=null; for(let i=0;i<15&&s;i++){ if(!adm&&s.Admission)adm=s.Admission; if(!vis&&s.Visit)vis=s.Visit; s=s.$parent; }"
                 + " let drd=null; document.querySelectorAll('*').forEach(el=>{ try{ const s2=angular.element(el).scope(); if(s2 && !drd && Array.isArray(s2.drpDoctor) && s2.drpDoctor.length) drd=s2.drpDoctor; }catch(e){} });"
@@ -517,7 +517,7 @@ public class Admission extends BasePage {
                 + "    out.push(lab.replace(/\\*/g,'').trim()+'='+(chosen(e)||'(did not bind)')); });"
                 + " return out.join(', '); }");
         String s = r == null ? "" : r.toString();
-        if (!s.isEmpty()) { System.out.println("bindEmptyMandatorySelects: " + s); waitForAngular(900); }
+        if (!s.isEmpty()) { System.out.println("bindEmptyMandatorySelects: " + s); com.kpj.core.Reasons.add("mandatory dropdown(s) had no value after the fill - " + s + (s.contains("(no options)") ? " ['(no options)' = that list is EMPTY on this environment]" : " [bound to the first option]")); waitForAngular(900); }
         return s;
     }
 
@@ -766,7 +766,7 @@ public class Admission extends BasePage {
         // silently-unbound Department (fillAdmissionSection()'s hardcoded scope assignment can fail to bind, same
         // shape as the Doctor field's own bug) is exactly what produces "Please Select Department First Then
         // Doctor !", seen live 2026-08-24 on an otherwise identical run to one that passed.
-        System.out.println("saveAdmission: re-assert " + ensureDepartmentSelected());
+        { String d = ensureDepartmentSelected(); System.out.println("saveAdmission: re-assert " + d); if (d.contains("(no options)") || d.contains("(no select)")) com.kpj.core.Reasons.add("the Department dropdown is EMPTY (no options loaded), so Department - and the Doctor that cascades from it - cannot be set"); }
         // Doctor is the one admission field the later sections can drop (expanding Additional Doctors reloads the
         // doctor dropdowns, and so does the Department re-bind above) — re-assert it here, or Save answers
         // "Please Select Doctor!".
@@ -776,7 +776,7 @@ public class Admission extends BasePage {
         // EMERGENCY, seen live 2026-08-24) have no doctors attached at all — walk departments until one yields a
         // selectable doctor, same fallback already used below for bindEmptyMandatorySelects()'s own rebind.
         if (doctorAfterDept.toLowerCase().contains("no options") || doctorAfterDept.toLowerCase().contains("=(")) {
-            System.out.println("saveAdmission: " + walkDepartmentForDoctor());
+            { String walk = walkDepartmentForDoctor(); System.out.println("saveAdmission: " + walk); com.kpj.core.Reasons.add(walk.contains("NO department has a doctor") ? "the Doctor dropdown is EMPTY for every Department - no department has a doctor attached on this environment" : "the Doctor dropdown had no selectable doctor for the chosen Department - walked the departments: " + walk.replace("walkDepartmentForDoctor: ", "")); }
         }
         // Bind the mandatory dropdowns HERE, not during the fill. Selecting a vacant bed / flipping to Non-Presence
         // re-renders the Admission section and drops Registration Department, AttendingDoctor and Encounter Type —
@@ -794,7 +794,7 @@ public class Admission extends BasePage {
             // coin flip and ALLIED HEALTH lost it. Walk the departments until one leaves a selectable doctor, the
             // same way RegistrationPage.ensureDoctorByChangingDepartment() does.
             if (again.toLowerCase().contains("no options") || again.toLowerCase().contains("=(")) {
-                System.out.println("saveAdmission: " + walkDepartmentForDoctor());
+                { String walk = walkDepartmentForDoctor(); System.out.println("saveAdmission: " + walk); com.kpj.core.Reasons.add(walk.contains("NO department has a doctor") ? "the Doctor dropdown is EMPTY for every Department - no department has a doctor attached on this environment" : "the Doctor dropdown had no selectable doctor for the chosen Department - walked the departments: " + walk.replace("walkDepartmentForDoctor: ", "")); }
             }
         }
         // Before saving, CHECK every mandatory patient field and fill ONLY the ones that are empty (filling a
@@ -1117,6 +1117,7 @@ public class Admission extends BasePage {
         if ("FIRST-OPTION-FALLBACK".equals(how)) {
             System.out.println("setSelLike: WARNING " + ngModel + " has no option like \"" + wanted
                     + "\" — fell back to the first option \"" + text + "\" (WRONG DATA will be saved)");
+            com.kpj.core.Reasons.add("the " + ngModel.replaceAll("^\\w+\\.", "").replaceAll("ID$", "") + " dropdown has no option like \"" + wanted + "\" on this environment - its FIRST option \"" + text + "\" was selected instead");
         } else if (!"exact".equals(how)) {
             System.out.println("setSelLike: " + ngModel + " \"" + wanted + "\" matched \"" + text + "\" (" + how + ")");
         }

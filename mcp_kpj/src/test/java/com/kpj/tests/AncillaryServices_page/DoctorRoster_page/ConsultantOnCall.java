@@ -40,7 +40,7 @@ public class ConsultantOnCall extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Consultant On Call", "Ancillary Services > Doctor Roster > Consultant On Call",
+        meta("Ancillary Services - Doctor Roster - Consultant On Call", "Ancillary Services > Doctor Roster > Consultant On Call",
                 "&#9888; Creates a REAL consultant on-call roster: New Roster, pick dates + department, "
                         + "pick doctor + duty + consultation room, Add, Save.");
 

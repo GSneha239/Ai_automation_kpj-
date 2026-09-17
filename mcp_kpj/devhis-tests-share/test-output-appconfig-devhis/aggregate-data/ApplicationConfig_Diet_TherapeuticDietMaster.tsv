@@ -1,4 +1,0 @@
-PASS	Application Configuration - Diet and Nutrition - Therapeutic Diet Master	ApplicationConfig_Diet_TherapeuticDietMaster	Login	Authenticated; Patient Dashboard	Logged in
-PASS	Application Configuration - Diet and Nutrition - Therapeutic Diet Master	ApplicationConfig_Diet_TherapeuticDietMaster	Open Therapeutic Diet Master screen	The screen is shown	Opened https://devhis.sancyberhad.com/#/TherapeuticDietMaster
-PASS	Application Configuration - Diet and Nutrition - Therapeutic Diet Master	ApplicationConfig_Diet_TherapeuticDietMaster	Enter Code, Remark	Code and Remark are entered	Code=TD150900 | Remark=Auto therapeutic diet TD150900
-PASS	Application Configuration - Diet and Nutrition - Therapeutic Diet Master	ApplicationConfig_Diet_TherapeuticDietMaster	Click Submit & success toast	'... saved successfully' toast	×KPJ PortalRecord Saved Successfully.

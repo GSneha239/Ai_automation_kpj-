@@ -204,7 +204,11 @@ public class Notification extends BasePage {
     public String fillDetails(int attempt) {
         java.time.LocalDate d = java.time.LocalDate.now().plusDays(attempt);
         lastTargetDate = d;
-        lastRemark = REMARKS[attempt % REMARKS.length] + (attempt >= REMARKS.length ? " " + (attempt / REMARKS.length + 1) : "");
+        // The server rejects on "Description already exist" — on this shared, long-lived QA environment the
+        // fixed REMARKS pool is already used up, so even attempt 0 needs a unique suffix, not just retries
+        // past REMARKS.length.
+        lastRemark = REMARKS[attempt % REMARKS.length] + " "
+                + String.format("%06d", Math.abs((System.nanoTime() + attempt * 7919L) % 1000000));
 
         selectDateFromPicker(d);
         Object dv = page.evaluate("() => {" + FIND_FIELDS + " return dateEl?dateEl.value:''; }");

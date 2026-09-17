@@ -61,7 +61,11 @@ public class AdmissionType extends BasePage {
     public String fillDetails(int attempt) {
         String code = "AT" + String.format("%05d", Math.abs((System.nanoTime() + attempt * 7919L) % 100000));
         lastCode = code;
-        lastDescription = DESCRIPTIONS[attempt % DESCRIPTIONS.length] + (attempt >= DESCRIPTIONS.length ? " " + (attempt / DESCRIPTIONS.length + 1) : "");
+        // Always uniquely stamped, not just once the DESCRIPTIONS pool cycles — on this shared, long-lived
+        // QA environment a fixed pool of canned descriptions gets exhausted permanently, so even attempt 0
+        // needs a unique suffix (same lesson as InvestigationTemplate/Notification).
+        lastDescription = DESCRIPTIONS[attempt % DESCRIPTIONS.length] + " "
+                + String.format("%06d", Math.abs((System.nanoTime() + attempt * 7919L) % 1000000));
         page.evaluate("(a) => { const A=window.angular; const set=(ng,v)=>{ const e=[...document.querySelectorAll(\"[ng-model='\"+ng+\"']\")].find(x=>x.offsetParent!==null); if(!e) return; const c=A.element(e).controller('ngModel'); e.value=v; if(c){c.$setViewValue(v);c.$render();} e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true})); }; set('admissionType.Code',a.code); set('admissionType.Description',a.description); }",
                 java.util.Map.of("code", code, "description", lastDescription));
         waitForAngular(300);

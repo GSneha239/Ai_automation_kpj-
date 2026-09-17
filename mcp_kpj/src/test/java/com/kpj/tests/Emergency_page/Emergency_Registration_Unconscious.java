@@ -2,7 +2,8 @@ package com.kpj.tests.Emergency_page;
 
 import com.kpj.core.DevHisBase;
 import com.kpj.pages.LoginPage;
-import com.kpj.pages.Emegency_Page.Emegency_Registration_Unconscious;
+// Not imported directly: the page object shares its simple name
+// (com.kpj.pages.Emergency_page.Emergency_Registration_Unconscious) with this test class.
 import com.microsoft.playwright.Page;
 
 /**
@@ -20,10 +21,6 @@ import com.microsoft.playwright.Page;
  */
 public class Emergency_Registration_Unconscious extends DevHisBase {
 
-    /** An existing patient MRN used for the Registered (existing-patient) path. Change if the test data
-     *  is reset — any MRN that resolves via SearchPatientByMRNo() works. */
-    private static final String REGISTERED_MRN = "ED000095";
-
     public Emergency_Registration_Unconscious() { super("TC11_EmergencyRegistrationUnconscious"); }
 
     public static void main(String[] args) {
@@ -36,21 +33,16 @@ public class Emergency_Registration_Unconscious extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Emergency Registration (Unconscious)", "Emergency > Emergency Registration (Unconscious)",
+        meta("Emergency - Emergency Registration (Unconscious)", "Emergency > Emergency Registration (Unconscious)",
                 "Register an unconscious emergency patient, then complete the auto-opened PDPA consent form.");
 
         LoginPage loginPage = new LoginPage(page);
         loginPage.login(BASE, USER, PASS);
-        step("Login", "farisha / Tcare@123", "Authenticated; Patient Dashboard", "Logged in", "PASS");
-
-        Emegency_Registration_Unconscious er = new Emegency_Registration_Unconscious(page);
-        er.navigateTo(BASE);
-        step("Open Emergency Registration (Unconscious)", "Emergency → Emergency Registration (Unconscious) (#/EmergencyRegistration)",
-                "The Emergency Registration form is shown", "Form opened", "PASS");
+        step("Login", USER + " / " + PASS, "Authenticated; Patient Dashboard", "Logged in", "PASS");
 
         // Reg.type — alternate/randomize New vs Registered each run.
         //   New        → creates a brand-new unconscious patient.
-        //   Registered → searches an EXISTING patient by MRN (search REGISTERED_MRN) for a new ED visit.
+        //   Registered → searches an EXISTING patient by MRN for a new ED visit.
         // Pinnable: -Ddevhis.regtype=New (or Registered) forces the path, so a specific one can be re-run on
         // demand instead of waiting for the coin flip to land on it. Unset = the original random behaviour.
         String wanted = System.getProperty("devhis.regtype", "").trim();
@@ -58,15 +50,50 @@ public class Emergency_Registration_Unconscious extends DevHisBase {
                 ? new java.util.Random().nextBoolean()
                 : wanted.equalsIgnoreCase("Registered");
         if (!wanted.isEmpty()) System.out.println("Reg.type pinned by -Ddevhis.regtype=" + wanted);
+
+        // If Registered, line up a pool of candidate MRNs to try BEFORE opening the registration form itself
+        // (a side-trip to Emergency List View after that would leave the form's state stranded). NOT a
+        // hardcoded MRN — this shared QA environment's patient data drifts, so any fixed value eventually
+        // goes stale (same lesson already learned for TransferBedList's own hardcoded MRN pool). Instead,
+        // pull real, currently-valid MRNs live from Emergency List View's own grid.
+        java.util.List<String> mrnCandidates = new java.util.ArrayList<>();
+        if (registered) {
+            com.kpj.pages.Emergency_page.EmergencyListView elv = new com.kpj.pages.Emergency_page.EmergencyListView(page);
+            if (elv.navigateViaMenu()) {
+                java.time.format.DateTimeFormatter ldf = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy");
+                java.time.LocalDate ltd = java.time.LocalDate.now();
+                String search = elv.searchByDateAndMrn(ltd.minusDays(365).format(ldf), ltd.plusDays(1).format(ldf), null);
+                java.util.List<String> live = elv.listMrns(10);
+                System.out.println("Emergency_Registration_Unconscious: Emergency List View search -> " + search + " | live MRNs: " + live);
+                for (String m : live) if (!mrnCandidates.contains(m)) mrnCandidates.add(m);
+            } else {
+                System.out.println("Emergency_Registration_Unconscious: could not open Emergency List View for a live MRN pool");
+            }
+        }
+
+        com.kpj.pages.Emergency_page.Emergency_Registration_Unconscious er =
+                new com.kpj.pages.Emergency_page.Emergency_Registration_Unconscious(page);
+        er.navigateTo(BASE);
+        step("Open Emergency Registration (Unconscious)", "Emergency → Emergency Registration (Unconscious) (#/EmergencyRegistration)",
+                "The Emergency Registration form is shown", "Form opened", "PASS");
+
         String regType = er.selectRegType(registered ? "Registered" : "New");
         String regDetail;
         boolean regStepOk = true;
         if (registered) {
-            String loadedName = er.searchExistingByMRN(REGISTERED_MRN);
-            boolean found = !loadedName.isEmpty();
+            String loadedName = "";
+            String usedMrn = null;
+            for (String candidate : mrnCandidates) {
+                loadedName = er.searchExistingByMRN(candidate);
+                if (!loadedName.isEmpty()) { usedMrn = candidate; break; }
+                System.out.println("Emergency_Registration_Unconscious: MRN " + candidate + " not found — trying the next candidate");
+            }
+            boolean found = usedMrn != null;
             regStepOk = found;
-            regDetail = "Reg.type: Registered — searched MRN " + REGISTERED_MRN
-                    + (found ? " → loaded: " + loadedName : " (patient NOT found)");
+            regDetail = found
+                    ? "Reg.type: Registered — searched MRN " + usedMrn + " → loaded: " + loadedName
+                            + (mrnCandidates.size() > 1 ? " (tried " + mrnCandidates.indexOf(usedMrn) + " other candidate(s) first)" : "")
+                    : "Reg.type: Registered — none of " + mrnCandidates.size() + " candidate MRN(s) resolved: " + mrnCandidates;
         } else {
             regDetail = "Reg.type: New";
         }
@@ -81,9 +108,20 @@ public class Emergency_Registration_Unconscious extends DevHisBase {
         int tabsBeforeSave = page.context().pages().size();
         String toast = er.saveRegistrationAndGetToast();
         boolean saved = toast != null && (toast.toLowerCase().contains("saved successfully") || toast.toLowerCase().contains("mrn is"));
+        // If Department genuinely has no options to pick (not just a load-timing issue — that is worked
+        // around by polling in fillMandatoryIfEmpty()), say so plainly instead of just echoing the
+        // downstream "Please Select Department First Then Doctor!" toast, which by itself does not explain
+        // that the dropdown was empty.
+        boolean deptEmpty = filled != null && filled.contains("Dept=(no-opt)");
+        String saveActual = toast == null || toast.isEmpty() ? "No success toast appeared" : toast;
+        if (!saved && deptEmpty) {
+            saveActual += "  ||  REASON: the Department dropdown (Visit.DepartmentID) had no selectable "
+                    + "options at fill time, so Department (and Doctor, which cascades from it) could not "
+                    + "be set — that is why Save rejects the registration.";
+        }
         step(page, "Save registration", "Click Save (IUDRegistration); wait for the toast",
                 "'Registration Saved Successfully & MRN is …' toast",
-                toast == null || toast.isEmpty() ? "No success toast appeared" : toast, saved ? "PASS" : "FAIL");
+                saveActual, saved ? "PASS" : "FAIL");
         if (!saved) return;
         // Extract the MRN for the summary.
         String mrn = toast.replaceAll(".*MRN is\\s*([A-Za-z0-9]+).*", "$1");
@@ -137,20 +175,24 @@ public class Emergency_Registration_Unconscious extends DevHisBase {
         }
         page.bringToFront();
 
-        // ===== Consent (auto-opens after save) =====
-        // For a NEW patient the PDPA Consent Details modal auto-opens. For a REGISTERED (existing) patient
-        // who already gave PDPA consent, it does NOT re-open — consent is already on file, so we skip the
-        // sign/submit steps (not a failure).
+        // ===== Consent (auto-opens after save, EXCEPT on this exact screen) =====
+        // Confirmed live in EmergencypatientRegistrationController.js: "BW-807 | Paraskumar | 17/08/2026"
+        // added `if ($state.current.name !== 'EmergencyRegistration') { ...modal('show')... }` around the
+        // auto-open call — i.e. the PDPA Consent Details modal is DELIBERATELY suppressed on THIS screen
+        // (Emergency Registration Unconscious) for every patient, New or Registered. It still presumably
+        // auto-opens on other registration screens not gated by that condition. This is intentional app
+        // behavior as of that change, not a defect — SKIPPED either way, not FAIL for New / SKIPPED only for
+        // Registered as this used to assume (that split predates BW-807 and no longer matches reality).
         boolean consentOpen = er.waitForConsentModal();
         String consentForm = er.getConsentName();
         if (!consentOpen) {
             step("Consent Details auto-opens (PDPA)", "After save the PDPA Consent Details modal opens (new/un-consented patients)",
-                    "Consent modal opens, or is skipped for an already-consented patient",
-                    registered ? "No consent modal — existing patient already has PDPA consent on file (skipped)"
-                               : "Consent modal did NOT open",
-                    registered ? "MANUAL" : "FAIL");
+                    "Consent modal opens, or is skipped where the app suppresses it",
+                    "No consent modal — suppressed on this screen by design (BW-807, 17/08/2026: the app only "
+                            + "auto-opens it when the current route is NOT EmergencyRegistration)",
+                    "SKIPPED");
             addSummary("Reg.type", regType);
-            addSummary("Consent", registered ? "Already on file (existing patient)" : "Not confirmed");
+            addSummary("Consent", "Suppressed on this screen by design (BW-807)");
             addSummary("Application URL", BASE + "/#/EmergencyRegistration");
             return;
         }

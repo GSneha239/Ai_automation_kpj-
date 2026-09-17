@@ -38,7 +38,7 @@ public class AmbulanceStaff extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Ambulance Staff", "Ancillary Services > Ambulance > AmbulanceStaff",
+        meta("Ancillary Services - Ambulance - AmbulanceStaff", "Ancillary Services > Ambulance > AmbulanceStaff",
                 "&#9888; Creates then edits a REAL ambulance staff roster entry: select Staff Type + Staff Name, "
                         + "Add, tick the row, Edit, change Staff Name, Save.");
 

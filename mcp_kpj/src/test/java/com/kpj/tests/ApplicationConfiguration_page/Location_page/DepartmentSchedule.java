@@ -29,7 +29,7 @@ public class DepartmentSchedule extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Application Configuration - Department Schedule",
+        meta("Application Configuration - Location - Department Schedule",
                 "Application Configuration > Location > Department Schedule",
                 "Add a department schedule: Department, Start/End Time, Days, Add, Submit.");
 

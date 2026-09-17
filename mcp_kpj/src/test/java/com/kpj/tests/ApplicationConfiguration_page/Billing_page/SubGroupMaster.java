@@ -34,7 +34,7 @@ public class SubGroupMaster extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Application Configuration - Billing - Sub Group Master", "Application Configuration > Billing > Sub Group",
+        meta("Application Configuration - Billing - Sub Group", "Application Configuration > Billing > Sub Group",
                 "Add a Sub Group: Add, enter Location + Group + Sub Group Code + Sub Group, enter Depreciation Field + Value + Add, Submit, then check the table.");
 
         LoginPage loginPage = new LoginPage(page);

@@ -18,7 +18,7 @@ import com.kpj.pages.LoginPage;
  */
 public class DischargeCheckList extends DevHisBase {
 
-    public DischargeCheckList() { super("ApplicationConfig_DischargeCheckList"); }
+    public DischargeCheckList() { super("ApplicationConfig_Admission_DischargeCheckList"); }
 
     public static void main(String[] args) {
         DischargeCheckList t = new DischargeCheckList();
@@ -30,7 +30,7 @@ public class DischargeCheckList extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Application Configuration - Discharge CheckList", "Application Configuration > Admission > Discharge CheckList",
+        meta("Application Configuration - Admission - Discharge CheckList", "Application Configuration > Admission > Discharge CheckList",
                 "Add a Discharge CheckList: Add, enter Code + Remark, tick the Mandatory checkbox, Submit.");
 
         LoginPage loginPage = new LoginPage(page);

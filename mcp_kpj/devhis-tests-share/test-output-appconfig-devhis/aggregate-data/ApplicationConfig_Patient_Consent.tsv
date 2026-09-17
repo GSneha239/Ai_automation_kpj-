@@ -1,5 +1,0 @@
-PASS	Application Configuration - Patient - Consent	ApplicationConfig_Patient_Consent	Login	Authenticated; Patient Dashboard	Logged in
-PASS	Application Configuration - Patient - Consent	ApplicationConfig_Patient_Consent	Open Consent screen	The Consent list screen is shown	Opened https://devhis.sancyberhad.com/#/Consent
-PASS	Application Configuration - Patient - Consent	ApplicationConfig_Patient_Consent	Click Add	The Consent add form is shown	Add form opened (https://devhis.sancyberhad.com/#/addConsent)
-PASS	Application Configuration - Patient - Consent	ApplicationConfig_Patient_Consent	Enter Code, Template Name, Consent Type	Code, Template Name and Consent Type are set	Code=CN24600 | TemplateName=Surgery Consent Form | ConsentType=Admission | Body=CKEDITOR:editor1
-PASS	Application Configuration - Patient - Consent	ApplicationConfig_Patient_Consent	Click Submit & success toast	A '... saved successfully' success toast is shown	×KPJ PortalConsent Saved Successfully.

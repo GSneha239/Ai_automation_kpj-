@@ -68,7 +68,7 @@ public class PMSchedule extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("PM Schedule", "Ancillary Services > Equipment/Asset > PM Schedule",
+        meta("Ancillary Services - Equipment/Asset - PM Schedule", "Ancillary Services > Equipment/Asset > PM Schedule",
                 "&#9888; Creates a REAL preventive-maintenance schedule: Add, select a Store, enter the Year, Submit.");
 
         String counter = System.getProperty("counter", COUNTER_FOR_MENU);

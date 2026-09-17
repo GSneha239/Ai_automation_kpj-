@@ -31,7 +31,7 @@ public class ModalitySchedule extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Application Configuration - Modality Schedule",
+        meta("Application Configuration - Location - Modality Schedule",
                 "Application Configuration > Location > Modality Schedule",
                 "Add a modality schedule: Department, Modality, Start/End Time, Days, Add, Submit.");
 

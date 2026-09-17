@@ -59,10 +59,22 @@ public class OccupancyList extends BedboardOccupancyListPage {
         } else {
             page.navigate("https://devhis.sancyberhad.com/" + OCC_ROUTE);
         }
+        String readyJs = "() => window.angular && /admissionlist/i.test(location.hash) && [...document.querySelectorAll('button')].some(b=>/^search$/i.test((b.textContent||'').trim()))";
         try {
-            page.waitForFunction("() => window.angular && /admissionlist/i.test(location.hash) && [...document.querySelectorAll('button')].some(b=>/^search$/i.test((b.textContent||'').trim()))",
-                    null, new Page.WaitForFunctionOptions().setTimeout(30000));
-        } catch (Exception ignore) { System.out.println("OccupancyList.navigateViaMenu: list not ready in time"); }
+            page.waitForFunction(readyJs, null, new Page.WaitForFunctionOptions().setTimeout(30000));
+        } catch (Exception ignore) {
+            // Verified live 10/09/2026: this can time out on the very first navigation right after login (the SPA
+            // is still cold-loading its menu/JS), even though #/AdmissionList is not shared with any other screen
+            // and every later call in the same run succeeds. So retry the click once more before giving up, rather
+            // than accepting a one-off cold-start timeout as a hard navigation failure.
+            System.out.println("OccupancyList.navigateViaMenu: list not ready in time — retrying once");
+            page.evaluate("() => { document.querySelectorAll('#__occTab').forEach(e=>e.removeAttribute('id'));"
+                    + " const a=[...document.querySelectorAll('a')].find(x=>(x.getAttribute('href')||'')==='#/AdmissionList' && x.offsetParent!==null); if(a){ a.id='__occTab'; } }");
+            try { page.locator("#__occTab").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000)); }
+            catch (Exception e) { page.navigate("https://devhis.sancyberhad.com/" + OCC_ROUTE); }
+            try { page.waitForFunction(readyJs, null, new Page.WaitForFunctionOptions().setTimeout(30000)); }
+            catch (Exception e) { System.out.println("OccupancyList.navigateViaMenu: still not ready after retry"); }
+        }
         waitForAngular(1200);
         return page.url().toLowerCase().contains("admissionlist");
     }

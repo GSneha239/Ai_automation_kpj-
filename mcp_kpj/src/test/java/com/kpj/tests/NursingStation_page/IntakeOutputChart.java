@@ -50,7 +50,7 @@ public class IntakeOutputChart extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Intake Output Chart", "Nursing Station > Intake Output Chart",
+        meta("Nursing Station - Intake Output Chart", "Nursing Station > Intake Output Chart",
                 "&#9888; Records a REAL intake/output entry: search the patient by MRN, fill the intake and "
                         + "output rows, Save.");
 

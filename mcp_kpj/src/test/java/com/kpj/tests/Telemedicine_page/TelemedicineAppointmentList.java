@@ -33,7 +33,7 @@ public class TelemedicineAppointmentList extends AppointmentListTest {
     @Override
     protected String[] metaInfo() {
         return new String[]{
-                "Telemedicine - Appointment List (Request MRD / Return MRD / View App History / Change Executor / Registration / Reschedule / Cancel)",
+                "Telemedicine - Appointment List",
                 "Telemedicine > Appointment List",
                 "Telemedicine Appointment List (same #/AppointmentList screen as OP, entered via the Telemedicine menu): exercises all footer tabs — Request MRD File, Return MRD File, View App History, Change Executor, Registration, Reschedule Appointment, and Cancel Appointment."
         };

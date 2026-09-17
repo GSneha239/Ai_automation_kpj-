@@ -1,4 +1,0 @@
-PASS	Emergency List View (Change Admission Type)	TC13_EmergencyListView	Login	Authenticated; Patient Dashboard	Logged in
-PASS	Emergency List View (Change Admission Type)	TC13_EmergencyListView	Open Emergency List View (via menu tab)	The Emergency List View screen is shown	Emergency List View opened
-PASS	Emergency List View (Change Admission Type)	TC13_EmergencyListView	Search by date range + MRN	Matching emergency patients are listed	From=01/06/2026 | To=26/08/2026 | MRN=8 | Search=clicked | rows=0
-FAIL	Emergency List View (Change Admission Type)	TC13_EmergencyListView	Select a patient	One patient is selected	No patient row to select

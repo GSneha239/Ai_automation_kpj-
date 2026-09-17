@@ -64,7 +64,7 @@ public class EMRProtocol extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("EMR Protocol", "Nursing Station > EMR Protocol",
+        meta("Nursing Station - EMR Protocol", "Nursing Station > EMR Protocol",
                 "&#9888; Creates a REAL EMR protocol: New, enter the template name, select Gender and the "
                         + "form, Save.");
 

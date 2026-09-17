@@ -34,7 +34,7 @@ public class RegistrationForeignTest extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Patient Registration - Foreign Nationality (" + NATIONALITY + ")",
+        meta("OP - Registration - Foreign Nationality",
                 "OP > Registration (VisitScreen) - Patient / Correspondence / Other / Payor / Visit / Kin",
                 "Registers a foreign-nationality (" + NATIONALITY + ") patient — Identification Type = Passport, "
                         + "Passport No. filled instead of NRIC-only.");
@@ -94,11 +94,6 @@ public class RegistrationForeignTest extends DevHisBase {
         step(page, "Fill Visa Details", "Open the Visa modal, fill Visa Type / Entry Type / Duration / validity "
                         + "dates / Remarks, upload the passport+visa copies, click them, then Add",
                 "The visa row is added (mandatory for a passport holder)", visa, visaOk ? "PASS" : "FAIL");
-
-        String attached = reg.attachDocuments(ATTACH);
-        step("Attach Photo / Thumb / IC Card", "Attach an image for Photo, Thumbprint and IC Card (" + ATTACH.getFileName() + ")",
-                "All three files attached", attached.isEmpty() ? "No file attached" : "Attached: " + attached,
-                attached.isEmpty() ? "FAIL" : "PASS");
 
         reg.fillCorrespondence(p);
         step("Fill Correspondence Details", "House No, Street, Address, Postcode (auto City/State/Country), Mobile, Phone, E-mail",

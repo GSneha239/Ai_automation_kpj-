@@ -58,7 +58,7 @@ public class PurchaseOrderApproval extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Purchase Order Approval", "Inventory > Purchase > Purchase Order Approval",
+        meta("Inventory - Purchase - Purchase Order Approval", "Inventory > Purchase > Purchase Order Approval",
                 "&#9888; MODIFIES a REAL purchase order: search by date range, open Modify on a row, "
                         + "select Delivery Place, enter Planned Delivery Date, enter PO Quantity/Free "
                         + "Qty/Unit Price/Net Unit Purchase Price, click Modify.");

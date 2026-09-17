@@ -20,7 +20,7 @@ public class BedType extends DevHisBase {
     /** How many times to re-enter fresh details when the server says the Code / Bed Type already exists. */
     private static final int MAX_ATTEMPTS = 40;
 
-    public BedType() { super("ApplicationConfig_BedType"); }
+    public BedType() { super("ApplicationConfig_Admission_BedType"); }
 
     public static void main(String[] args) {
         BedType t = new BedType();
@@ -32,7 +32,7 @@ public class BedType extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Application Configuration - Bed Type", "Application Configuration > Admission > Bed Type",
+        meta("Application Configuration - Admission - Bed Type", "Application Configuration > Admission > Bed Type",
                 "Add a Bed Type: Add, enter Code + Bed Type, Submit.");
 
         LoginPage loginPage = new LoginPage(page);

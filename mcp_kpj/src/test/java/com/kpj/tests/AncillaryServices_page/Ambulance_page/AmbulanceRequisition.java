@@ -43,7 +43,8 @@ public class AmbulanceRequisition extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Ambulance Requisition", "Ancillary Services > Ambulance > Ambulance Requisition",
+        meta("Ancillary Services - Ambulance - Ambulance Requisition",
+                "Ancillary Services > Ambulance > Ambulance Requisition",
                 "&#9888; Creates a REAL ambulance requisition: select Vehicle Type, search the patient by MRN, Save.");
 
         String mrn = System.getProperty("mrn", DEFAULT_MRN);
@@ -85,16 +86,53 @@ public class AmbulanceRequisition extends DevHisBase {
                 vtOk ? "Vehicle Type = " + vehicleType : "Vehicle Type NOT selected " + vehicleType,
                 vtOk ? "PASS" : "FAIL");
 
-        // 4) MRN + Search
-        String searchResult = req.searchByMrn(mrn);
+        // 4) MRN + Search — search via the Search Patient popup (enter a short MRN filter, pick the first
+        // real row from the results table) rather than typing an exact MRN. Verified live: patients real
+        // enough to use here carry an "11"-prefixed MRN, so that filter is tried first; a few more are
+        // tried after it for resilience, then — only if the popup finds nothing at all — fall back to the
+        // pinned/default MRN, this screen's own harvested list, and MRNs already confirmed elsewhere.
+        String searchResult = req.searchByPopup("11", "10", "12", "13", "20");
         boolean found = req.patientLoaded();
+        java.util.List<String> tried = new java.util.ArrayList<>();
+        tried.add("popup");
+        if (found) mrn = req.lastMrn;
+        if (!found) {
+            searchResult = req.searchByMrn(mrn);
+            found = req.patientLoaded();
+            tried.add(mrn);
+        }
+        if (!found) {
+            for (String candidate : req.harvestMrnsFromList()) {
+                if (tried.contains(candidate)) continue;
+                searchResult = req.searchByMrn(candidate);
+                found = req.patientLoaded();
+                tried.add(candidate);
+                if (found) { mrn = candidate; break; }
+            }
+        }
+        // Still nothing: this screen's OWN list has never had a real requisition on it (0 rows), so
+        // harvesting from it finds nothing to harvest. Fall back to MRNs already confirmed to resolve a
+        // real patient elsewhere in this suite (PatientFeedback, BirthCertificate/DeathCertificate/
+        // Mortuary), on the chance they exist in the same shared patient registry this OPD/IPD/External
+        // lookup searches.
+        if (!found) {
+            for (String candidate : new String[]{"1000338215", "100000684"}) {
+                if (tried.contains(candidate)) continue;
+                searchResult = req.searchByMrn(candidate);
+                found = req.patientLoaded();
+                tried.add(candidate);
+                if (found) { mrn = candidate; break; }
+            }
+        }
         step(page, "Enter MRN No. & click Search", "Enter MRN " + mrn + " and click Search (SearchPatientByMRNo)",
                 "The patient is found and Patient Name is filled",
-                found ? "MRN " + mrn + " -> " + searchResult : "No patient for MRN " + mrn + " (" + searchResult + ")",
+                found ? "MRN " + mrn + " -> " + searchResult
+                      : "No patient found among " + tried.size() + " MRN(s) tried: " + tried + " (" + searchResult + ")",
                 found ? "PASS" : "FAIL");
         if (!found) {
             addSummary("MRN", mrn);
-            addSummary("Result", "FAILED — no patient for this MRN (pass a valid one with -Dmrn=...)");
+            addSummary("MRNs tried", tried.toString());
+            addSummary("Result", "FAILED — no patient for any tried MRN (pass a valid one with -Dmrn=...)");
             return;
         }
 

@@ -30,7 +30,7 @@ public class FranchiseMaster extends DevHisBase {
     /** DevHIS only builds the nav menu for an outpatient counter. Override with {@code -Dcounter=}. */
     public static final String COUNTER_FOR_MENU = "OPD-B-01";
 
-    public FranchiseMaster() { super("ApplicationConfiguration_FranchiseMaster"); }
+    public FranchiseMaster() { super("ApplicationConfiguration_Inventory_FranchiseMaster"); }
 
     public static void main(String[] args) {
         FranchiseMaster t = new FranchiseMaster();
@@ -42,7 +42,7 @@ public class FranchiseMaster extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Franchise Master", "Application Configuration > Inventory > Franchise Master",
+        meta("Application Configuration - Inventory - Franchise Master", "Application Configuration > Inventory > Franchise Master",
                 "&#9888; Creates a REAL franchise: Add, select the Location, enter Code, Remark, Address, "
                         + "Contact No and E-mail, Submit.");
 

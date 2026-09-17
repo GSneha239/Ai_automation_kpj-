@@ -84,7 +84,7 @@ public class EducationManagement extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Education Management", "Nursing Station > Education Management",
+        meta("Nursing Station - Education Management", "Nursing Station > Education Management",
                 "&#9888; Uploads a REAL document: New, enter the file date and time, select the document "
                         + "category, upload a file, Submit.");
 

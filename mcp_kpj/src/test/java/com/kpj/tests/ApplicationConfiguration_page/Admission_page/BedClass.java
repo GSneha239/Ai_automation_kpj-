@@ -23,7 +23,7 @@ public class BedClass extends DevHisBase {
     /** How many times to re-enter fresh details when the server says the Bed Class Code / Room Type already exists. */
     private static final int MAX_ATTEMPTS = 40;
 
-    public BedClass() { super("ApplicationConfig_BedClass"); }
+    public BedClass() { super("ApplicationConfig_Admission_BedClass"); }
 
     public static void main(String[] args) {
         BedClass t = new BedClass();
@@ -35,7 +35,7 @@ public class BedClass extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Application Configuration - Bed Class", "Application Configuration > Admission > Bed Class",
+        meta("Application Configuration - Admission - Bed Class", "Application Configuration > Admission > Bed Class",
                 "Add a Bed Class: Add, fill Bed Class Code + Room Type, tick a Pricing Policy checkbox, Submit.");
 
         LoginPage loginPage = new LoginPage(page);

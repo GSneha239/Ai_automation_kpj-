@@ -34,7 +34,7 @@ public class VaccineScheduleMaster extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Application Configuration - Nursing - Vaccination Schedule (VaccineScheduleMaster)",
+        meta("Application Configuration - Nursing - Vaccination Schedule",
                 "Application Configuration > Nursing > Vaccination Schedule",
                 "Add a Vaccination Schedule: click Add, enter Schedule Name + Age (In Days) + Vaccination Name, Submit; wait for the success toast.");
 

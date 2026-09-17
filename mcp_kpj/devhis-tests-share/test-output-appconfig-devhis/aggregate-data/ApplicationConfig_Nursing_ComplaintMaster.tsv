@@ -1,5 +1,0 @@
-PASS	Application Configuration - Nursing - Complaint	ApplicationConfig_Nursing_ComplaintMaster	Login	Authenticated; Patient Dashboard	Logged in
-PASS	Application Configuration - Nursing - Complaint	ApplicationConfig_Nursing_ComplaintMaster	Open Complaint screen	The Complaint list screen is shown	Opened Complaint Welcome: Employee 1306:(KPJ) Last L @ https://devhis.sancyberhad.com/#/Complaint
-PASS	Application Configuration - Nursing - Complaint	ApplicationConfig_Nursing_ComplaintMaster	Click Add	The Complaint add form is shown	Add form opened (https://devhis.sancyberhad.com/#/addComplaint)
-PASS	Application Configuration - Nursing - Complaint	ApplicationConfig_Nursing_ComplaintMaster	Select Group, enter Code and Complaint	Group, Code and Complaint are set	Group=Cardiology | Code=CM91400 | Complaint=Chest Pain
-PASS	Application Configuration - Nursing - Complaint	ApplicationConfig_Nursing_ComplaintMaster	Click Submit & success toast	A '... saved successfully' success toast is shown	×KPJ PortalComplaint Saved Successfully.

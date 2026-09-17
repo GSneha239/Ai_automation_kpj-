@@ -31,7 +31,7 @@ public class BedboardOccupancyListTest extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Bedboard Occupancy List (Change Admission Type / Cancel Admission / Revoke Admission)",
+        meta("IP - Bedboard Occupancy List",
                 "IP > Bedboard Occupancy List",
                 "One run exercising the Bedboard Occupancy List footer actions: Change Admission Type, "
                         + "Cancel Admission and Revoke Admission.");

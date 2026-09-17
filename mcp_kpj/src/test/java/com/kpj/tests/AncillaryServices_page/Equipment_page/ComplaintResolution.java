@@ -64,7 +64,8 @@ public class ComplaintResolution extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Equipment Complaint Resolution", "Ancillary Services > Equipment/Asset > Complaint Resolution",
+        meta("Ancillary Services - Equipment/Asset - Complaint Resolution",
+                "Ancillary Services > Equipment/Asset > Complaint Resolution",
                 "Search equipment complaints by date range, location, store, equipment, category and status. "
                         + "Read-only — nothing is saved.");
 

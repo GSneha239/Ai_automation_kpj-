@@ -36,7 +36,7 @@ public class ItemFactorizationTemplate extends DevHisBase {
     /** DevHIS only builds the nav menu for an outpatient counter. Override with {@code -Dcounter=}. */
     public static final String COUNTER_FOR_MENU = "OPD-B-01";
 
-    public ItemFactorizationTemplate() { super("ApplicationConfiguration_ItemFactorizationTemplate"); }
+    public ItemFactorizationTemplate() { super("ApplicationConfiguration_Inventory_ItemFactorizationTemplate"); }
 
     public static void main(String[] args) {
         ItemFactorizationTemplate t = new ItemFactorizationTemplate();
@@ -48,7 +48,7 @@ public class ItemFactorizationTemplate extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Item Factorization Compounding Template",
+        meta("Application Configuration - Inventory - Item Factorization Compounding Template",
                 "Application Configuration > Inventory > Item Factorization Compounding Template",
                 "&#9888; Creates a REAL template: Add, enter the Template Code and Name, select the "
                         + "Store, enter an item line (code, name, quantity, Added/Deducted), click +, "

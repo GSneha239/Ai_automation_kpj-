@@ -52,7 +52,7 @@ public class PurchaseRequest extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Purchase Request", "Inventory > Purchase > Purchase Request",
+        meta("Inventory - Purchase - Purchase Request", "Inventory > Purchase > Purchase Request",
                 "&#9888; Creates a REAL purchase request: New, Get Items, search and select an item, "
                         + "enter PR Quantity/Unit Price/Amount, select PR Type, enter Delivery Lead Time, "
                         + "select Delivery Place, Save.");

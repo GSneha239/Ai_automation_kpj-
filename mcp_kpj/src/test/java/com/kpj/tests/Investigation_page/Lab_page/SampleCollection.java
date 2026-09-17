@@ -46,7 +46,7 @@ public class SampleCollection extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Sample Collection", "Investigation > Lab > Sample Collection",
+        meta("Investigation - Lab - Sample Collection", "Investigation > Lab > Sample Collection",
                 "&#9888; COLLECTS A REAL SAMPLE: search a date range, tick an order, tick one of its "
                         + "tests, Collect, enter the collection date and time, Save, then check the "
                         + "barcode and the toast.");

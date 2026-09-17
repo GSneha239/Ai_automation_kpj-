@@ -56,7 +56,7 @@ public class PurchaseOrder extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Purchase Order", "Inventory > Purchase > Purchase Order",
+        meta("Inventory - Purchase - Purchase Order", "Inventory > Purchase > Purchase Order",
                 "&#9888; Creates a REAL purchase order: New, select Supplier, select Purchase Based On, "
                         + "Search Item, search and select an item, enter PR Quantity/Free Qty/Unit "
                         + "Price/Net Unit Purchase Price, select Delivery Place/PR Type, enter Planned "

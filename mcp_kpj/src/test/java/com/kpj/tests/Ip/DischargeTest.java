@@ -31,7 +31,7 @@ public class DischargeTest extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Discharge (Cancel Discharge / Print)", "IP > Discharge",
+        meta("IP - Discharge", "IP > Discharge",
                 "One run exercising the Discharge actions: Cancel Discharge and Print.");
 
         LoginPage loginPage = new LoginPage(page);

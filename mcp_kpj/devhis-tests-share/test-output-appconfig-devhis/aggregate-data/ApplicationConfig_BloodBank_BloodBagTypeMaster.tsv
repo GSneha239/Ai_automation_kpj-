@@ -1,5 +1,0 @@
-PASS	Application Configuration - Blood Bank - Blood Bag Type Master	ApplicationConfig_BloodBank_BloodBagTypeMaster	Login	Authenticated; Patient Dashboard	Logged in
-PASS	Application Configuration - Blood Bank - Blood Bag Type Master	ApplicationConfig_BloodBank_BloodBagTypeMaster	Open Blood Bag Type Master screen	The Blood Bag Type Master screen is shown	Opened https://devhis.sancyberhad.com/#/BloodBagTypeMaster
-PASS	Application Configuration - Blood Bank - Blood Bag Type Master	ApplicationConfig_BloodBank_BloodBagTypeMaster	Click Add	The Blood Bag Type add form opens	Add clicked (https://devhis.sancyberhad.com/#/add-BloodBagTypeMaster)
-PASS	Application Configuration - Blood Bank - Blood Bag Type Master	ApplicationConfig_BloodBank_BloodBagTypeMaster	Enter Code, Remark, Item	All fields are entered	Code=BT669100 | Remark=Auto blood bag type BT669100 | Item=#MJZ004 Urine N Vomit Spl Pck Service-S
-PASS	Application Configuration - Blood Bank - Blood Bag Type Master	ApplicationConfig_BloodBank_BloodBagTypeMaster	Click Submit & success toast	'... saved successfully.' toast	×KPJ Portalblood bag type saved successfully.

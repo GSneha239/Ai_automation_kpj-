@@ -22,6 +22,10 @@ public class DepartmentGroup extends BasePage {
     public static String LIST_ROUTE = "#/DepartmentGroup";
     public static String ADD_ROUTE = "#/add-DepartmentGroup";
     public String lastDepartment = "", lastGroup = "";
+    /** Screenshot taken the moment the toast is detected in {@link #submitAndGetToast()} — the app
+     *  auto-navigates to the list screen shortly after saving, so a screenshot taken later (e.g. by the
+     *  test's own step() call) shows the list, not the toast. */
+    public byte[] toastPng;
 
     // ---- navigation ------------------------------------------------------
 
@@ -138,6 +142,12 @@ public class DepartmentGroup extends BasePage {
             page.waitForTimeout(2500);
             page.evaluate("() => { document.querySelectorAll('.toast-message,.toast,[id^=toast]').forEach(el=>{ const t=(el.textContent||'').replace(/\\s+/g,' ').trim(); if(t && !(window.__dgToasts||[]).includes(t)) (window.__dgToasts=window.__dgToasts||[]).push(t); }); }");
         }
+        // Grab the screenshot HERE, while the toast is still on screen — the app auto-navigates to the
+        // list screen shortly after a successful save, so a screenshot taken later (e.g. the test's own
+        // step() call) shows the list, not the toast that confirmed the save.
+        try { toastPng = page.screenshot(new Page.ScreenshotOptions().setTimeout(8000)); }
+        catch (Exception e) { System.out.println("submitAndGetToast: toast screenshot failed - " + e.getMessage()); }
+
         Object r = page.evaluate("() => { const a=window.__dgToasts||[]; return a.find(x=>/saved|added|success/i.test(x)) || a.find(x=>/exist|already/i.test(x)) || a.find(x=>x) || ''; }");
         waitForAngular(400);
         return r == null ? "" : r.toString().trim();

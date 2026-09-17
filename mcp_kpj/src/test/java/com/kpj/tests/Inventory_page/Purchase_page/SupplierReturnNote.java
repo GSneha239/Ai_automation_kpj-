@@ -17,25 +17,24 @@ import com.kpj.pages.LoginPage;
  *   <li>In <b>Search Details</b>, tick a transaction row's checkbox.</li>
  *   <li>Its items populate <b>Item List</b>; tick each item's checkbox.</li>
  *   <li>Click <b>OK</b>.</li>
- *   <li>For each item added to the main form, enter the <b>Return Qty</b>.</li>
+ *   <li>For each item added to the main form, enter the <b>Return Qty</b> and <b>Net Rate</b>.</li>
  *   <li>Click <b>Save</b> → verify report generation → verify the success toast.</li>
  * </ol>
  *
- * <p>This screen has not been inspected live except for its "Search" dialog (confirmed via
- * screenshots) — see {@link com.kpj.pages.Inventory_page.Purchase_page.SupplierReturnNote} for why that
- * dialog needed its own selectors rather than reusing the shared "Item Search" picker from
+ * <p>Originally built blind (before this module adopted the practice of live-inspecting first) and later
+ * actually run against the live screen — the two-level dialog, tick models, and Save handler all matched
+ * what had been guessed; only <b>Net Rate</b> needed adding, confirmed live as
+ * {@code ng-model="Itm.netrate"}, a sibling column of Return Qty on the same item row. See {@link
+ * com.kpj.pages.Inventory_page.Purchase_page.SupplierReturnNote} for the full detail, including why the
+ * "Search" dialog needed its own selectors rather than reusing the shared "Item Search" picker from
  * {@link com.kpj.pages.Inventory_page.Purchase_page.ItemEnquiry}/{@link
  * com.kpj.pages.Inventory_page.Purchase_page.Quotation}/{@link
  * com.kpj.pages.Inventory_page.Purchase_page.PurchaseRequest}/{@link
- * com.kpj.pages.Inventory_page.Purchase_page.PurchaseOrder} in the same module — it lists purchase
- * TRANSACTIONS rather than a flat item list, and selecting one populates a second grid of its own
- * items. Everything after the dialog is found by FUZZY matching, following the same atomic-JS checkbox
- * pattern and exploratory "verify report generation" check (mirrors
- * {@link com.kpj.pages.Inventory_page.Purchase_page.PurchaseOrderApproval}) used elsewhere in this
- * module. {@code describeControls()} is dumped into the report at each stage so anything still fuzzy
- * can be pinned exactly once this has run against the live screen.</p>
+ * com.kpj.pages.Inventory_page.Purchase_page.PurchaseOrder} in the same module. {@code describeControls()}
+ * is dumped into the report at each stage so anything still fuzzy can be pinned exactly once this has run
+ * against the live screen.</p>
  *
- * <p>Pin values with {@code -Dfrom=}, {@code -Dto=}, {@code -DreturnQty=}.</p>
+ * <p>Pin values with {@code -Dfrom=}, {@code -Dto=}, {@code -DreturnQty=}, {@code -DnetRate=}.</p>
  *
  * <p>&#9888; A successful run CREATES a REAL supplier return note in the target environment.</p>
  */
@@ -64,6 +63,7 @@ public class SupplierReturnNote extends DevHisBase {
         String from = System.getProperty("from", "01/01/2020");
         String to = System.getProperty("to", "31/12/2026");
         String returnQty = System.getProperty("returnQty", "1");
+        String netRate = System.getProperty("netRate", "10");
 
         new LoginPage(page).login(BASE, USER, PASS, counter);
         step("Login", USER + " login (counter " + counter + ")",
@@ -171,16 +171,27 @@ public class SupplierReturnNote extends DevHisBase {
                 returnQtyOk ? "PASSES: " + returnQtyResult : "FAILS: " + returnQtyResult,
                 returnQtyOk ? "PASS" : "FAIL");
 
-        // 9) Save; verify report generation
-        String reportResult = srn.saveAndVerifyReportGeneration();
+        // 8b) Enter Net Rate
+        String netRateResult = srn.enterNetRateForAllItems(netRate);
+        boolean netRateOk = srn.netRateEntered();
+        step(page, "Enter net rate", "Enter the Net Rate " + netRate + " for each item",
+                "Every item's Net Rate is entered",
+                netRateOk ? "PASSES: " + netRateResult : "FAILS: " + netRateResult,
+                netRateOk ? "PASS" : "FAIL");
+
+        // 9) Click Save
+        int tabsBeforeSave = srn.clickSave();
         boolean saveClickedOk = srn.saveClicked();
-        step(page, "Click Save; verify report generation", "Click Save",
-                "The Save action fires and a report is generated",
-                saveClickedOk ? "PASSES: " + reportResult : "FAILS: " + reportResult,
+        step(page, "Click Save", "Click Save",
+                "The Save action fires",
+                saveClickedOk ? "PASSES: " + srn.lastSaveDiagnostics : "FAILS: " + srn.lastSaveDiagnostics,
                 saveClickedOk ? "PASS" : "FAIL");
         if (!saveClickedOk) { addSummary("Result", "FAILED — the Save button was not found"); return; }
 
-        // 10) Verify success toast
+        // 10) Verify success toast message — checked BEFORE report generation, since PdfReport.capture()
+        // can itself take up to 15s watching for the report tab, and a fast-fading toast was confirmed
+        // live on a sibling screen (StoreIndent) to have already faded by the time a toast check ran
+        // after it.
         String toast = srn.waitForSaveToast();
         boolean success = com.kpj.pages.Inventory_page.Purchase_page.SupplierReturnNote.isSuccess(toast);
         String actual = toast == null || toast.isEmpty()
@@ -189,9 +200,16 @@ public class SupplierReturnNote extends DevHisBase {
         step(page, "Verify success toast message", "Wait for the success toast",
                 "'... saved successfully' toast", actual, success ? "PASS" : "FAIL");
 
+        // 11) Verify report generation
+        com.kpj.pages.PdfReport.Result pdf = com.kpj.pages.PdfReport.capture(page, tabsBeforeSave, 15000);
+        step(page, "Verify report generation", "Wait for the report to open",
+                "A non-blank PDF is generated", pdf.diagnostics, pdf.blank ? "FAIL" : "PASS");
+
         addSummary("Transaction selected", srn.lastTransactionTick);
         addSummary("Items ticked", srn.lastItemTick);
         addSummary("Return Qty", srn.lastReturnQty);
-        addSummary("Result", success ? toast : "Not confirmed (\"" + toast + "\")");
+        addSummary("Net Rate", srn.lastNetRate);
+        addSummary("Save toast result", success ? toast : "Not confirmed (\"" + toast + "\")");
+        addSummary("Report result", pdf.diagnostics);
     }
 }

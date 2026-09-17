@@ -55,7 +55,7 @@ public class AppointmentListTest extends DevHisBase {
     /** Report meta {title, module, description} — the Telemedicine variant overrides this. */
     protected String[] metaInfo() {
         return new String[]{
-                "Appointment List (Request MRD / Return MRD / View App History / Change Executor / Registration / Reschedule / Cancel)",
+                "OP - Appointment - Appointment List",
                 "OP > Appointment > Appointment List",
                 "One run exercising the Appointment List footer tabs in on-screen order: Request MRD File, Return MRD File, View App History, Change Executor, Registration, Reschedule Appointment, and Cancel Appointment."
         };
@@ -79,7 +79,7 @@ public class AppointmentListTest extends DevHisBase {
 
         // Login once; each section re-opens the Appointment List.
         loginPage.login(BASE, USER, PASS);
-        step("Login", "farisha / Tcare@123", "Authenticated; Patient Dashboard", "Logged in", "PASS");
+        step("Login", USER + " / " + PASS, "Authenticated; Patient Dashboard", "Logged in", "PASS");
 
         // Tab order: 1 Request MRD, 2 Return MRD, 3 View App History, 4 Change Executor,
         //            5 Registration, 6 Reschedule, 7 Cancel.

@@ -22,7 +22,7 @@ public class BedReleasedChecklist extends DevHisBase {
     /** How many times to re-enter fresh details when the server says the Code / Remark already exists. */
     private static final int MAX_ATTEMPTS = 40;
 
-    public BedReleasedChecklist() { super("ApplicationConfig_BedReleasedChecklist"); }
+    public BedReleasedChecklist() { super("ApplicationConfig_Admission_BedReleasedChecklist"); }
 
     public static void main(String[] args) {
         BedReleasedChecklist t = new BedReleasedChecklist();
@@ -34,7 +34,7 @@ public class BedReleasedChecklist extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Application Configuration - Bed Released Checklist", "Application Configuration > Admission > Bed Released Checklist",
+        meta("Application Configuration - Admission - Bed Released Checklist", "Application Configuration > Admission > Bed Released Checklist",
                 "Add a Bed Released Checklist: select a record, Add, enter Code + Remark, tick the mandatory checkbox, Submit.");
 
         LoginPage loginPage = new LoginPage(page);

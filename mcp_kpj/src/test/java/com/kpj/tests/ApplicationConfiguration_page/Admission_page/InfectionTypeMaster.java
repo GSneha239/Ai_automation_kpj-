@@ -21,7 +21,7 @@ public class InfectionTypeMaster extends DevHisBase {
     /** How many times to re-enter fresh details when the server says the Code / Remark already exists. */
     private static final int MAX_ATTEMPTS = 40;
 
-    public InfectionTypeMaster() { super("ApplicationConfig_InfectionTypeMaster"); }
+    public InfectionTypeMaster() { super("ApplicationConfig_Admission_InfectionTypeMaster"); }
 
     public static void main(String[] args) {
         InfectionTypeMaster t = new InfectionTypeMaster();
@@ -33,7 +33,7 @@ public class InfectionTypeMaster extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Application Configuration - Infection Type Master", "Application Configuration > Admission > Infection Type Master",
+        meta("Application Configuration - Admission - Infection Type Master", "Application Configuration > Admission > Infection Type Master",
                 "Add an Infection Type: Add, enter Code + Remark + Field name + Control Binding, Add the field row, Submit.");
 
         LoginPage loginPage = new LoginPage(page);

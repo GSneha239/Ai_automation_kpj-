@@ -1,4 +1,0 @@
-PASS	Application Configuration - Diet and Nutrition - Consistency Modified Diet Master	ApplicationConfig_Diet_ConsistencyModifiedDietMaster	Login	Authenticated; Patient Dashboard	Logged in
-PASS	Application Configuration - Diet and Nutrition - Consistency Modified Diet Master	ApplicationConfig_Diet_ConsistencyModifiedDietMaster	Open Consistency Modified Diet Master screen	The screen is shown	Opened https://devhis.sancyberhad.com/#/ConsistencyModifiedDietMaster
-PASS	Application Configuration - Diet and Nutrition - Consistency Modified Diet Master	ApplicationConfig_Diet_ConsistencyModifiedDietMaster	Enter Code, Remark	Code and Remark are entered	Code=CMD908800 | Remark=Auto consistency diet CMD908800
-FAIL	Application Configuration - Diet and Nutrition - Consistency Modified Diet Master	ApplicationConfig_Diet_ConsistencyModifiedDietMaster	Click Submit & success toast	'... saved successfully' toast	Submit not confirmed — server returned: "×KPJ PortalError!"

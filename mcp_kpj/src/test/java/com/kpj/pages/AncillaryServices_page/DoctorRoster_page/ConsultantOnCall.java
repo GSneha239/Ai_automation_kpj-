@@ -604,7 +604,11 @@ public class ConsultantOnCall extends BasePage {
         }
     }
 
+    // Failure placeholders returned by the JS helpers above always read "(no-...)" — e.g. "(no-field)",
+    // "(no-option)". Rejecting anything merely STARTING with "(" is too broad: a real department here is
+    // named "(NAMA DR) MR C/N", and that literal leading "(" was false-failing this step even though the
+    // department had genuinely been selected.
     private static boolean isReal(String v) {
-        return v != null && !v.isEmpty() && !v.startsWith("(");
+        return v != null && !v.isEmpty() && !v.startsWith("(no-");
     }
 }

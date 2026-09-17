@@ -21,7 +21,7 @@ public class Ward extends DevHisBase {
     /** How many times to re-enter fresh details when the server says the code / remark already exists. */
     private static final int MAX_ATTEMPTS = 40;
 
-    public Ward() { super("ApplicationConfig_Ward"); }
+    public Ward() { super("ApplicationConfig_Admission_Ward"); }
 
     public static void main(String[] args) {
         Ward t = new Ward();
@@ -33,7 +33,7 @@ public class Ward extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Application Configuration - Ward", "Application Configuration > Admission > Ward",
+        meta("Application Configuration - Admission - Ward", "Application Configuration > Admission > Ward",
                 "Add a Ward: Add, enter Code + Remark + Floor, Submit.");
 
         LoginPage loginPage = new LoginPage(page);

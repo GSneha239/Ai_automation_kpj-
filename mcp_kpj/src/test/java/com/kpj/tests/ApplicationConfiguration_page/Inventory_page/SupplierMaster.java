@@ -34,7 +34,7 @@ public class SupplierMaster extends DevHisBase {
     /** DevHIS only builds the nav menu for an outpatient counter. Override with {@code -Dcounter=}. */
     public static final String COUNTER_FOR_MENU = "OPD-B-01";
 
-    public SupplierMaster() { super("ApplicationConfiguration_SupplierMaster"); }
+    public SupplierMaster() { super("ApplicationConfiguration_Inventory_SupplierMaster"); }
 
     public static void main(String[] args) {
         SupplierMaster t = new SupplierMaster();
@@ -64,7 +64,7 @@ public class SupplierMaster extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Supplier Master", "Application Configuration > Inventory > Supplier Master",
+        meta("Application Configuration - Inventory - Supplier Master", "Application Configuration > Inventory > Supplier Master",
                 "&#9888; Creates a REAL supplier: Code, Title, Name, Payable Type, Vendor Type, the "
                         + "Personal Information tab's ledger, e-mail, telephone and mobile, then the "
                         + "Address Information tab (type, country/state/city/area, address, contact, "
@@ -73,12 +73,20 @@ public class SupplierMaster extends DevHisBase {
         String counter = System.getProperty("counter", COUNTER_FOR_MENU);
         String stamp = String.format("%05d", Math.abs(System.nanoTime() % 100000));
         String code = System.getProperty("code", "SUP" + stamp);
-        String name = System.getProperty("name", "Auto Supplier " + stamp);
+        // The Name field is validated "letters only" (class validate[...,custom[onlyLetterSp]] —
+        // verified live: typing digits shows "* Letters only" and blocks the field). So the unique
+        // suffix here must be letters, not the numeric stamp used everywhere else.
+        String nameSuffix = stamp.chars()
+                .mapToObj(c -> String.valueOf((char) ('A' + (c - '0'))))
+                .collect(java.util.stream.Collectors.joining());
+        String name = System.getProperty("name", "Auto Supplier " + nameSuffix);
         // Each value carries its own field name, so a value landing in a neighbouring box is visible.
         String ledger = System.getProperty("ledger", "LEDGER-" + stamp);
         String email = System.getProperty("email", "auto" + stamp + "@example.com");
         String tel = System.getProperty("tel", "03" + stamp + "1");
-        String mobile = System.getProperty("mobile", "019" + stamp + "2");
+        // Mobile No is validated "minimum 10 characters" (verified live) — "019" + 5-digit stamp + 1
+        // digit is only 9, so pad to a 10-digit number.
+        String mobile = System.getProperty("mobile", "019" + stamp + "02");
         String address = System.getProperty("address", "Addr " + stamp + " Jalan Auto");
         String addrContact = System.getProperty("addrContact", "07" + stamp + "3");
         // Five digits, so it is a plausible postcode; stamped so the added row can be told from any other.
@@ -421,6 +429,9 @@ public class SupplierMaster extends DevHisBase {
         addSummary("Payable / Vendor type", sm.lastPayableType + " / " + sm.lastVendorType);
         addSummary("Personal Information tab", sm.lastTab);
         addSummary("Contact block", sm.lastContact);
-        addSummary("Result", ok ? toast : "Not confirmed (\"" + toast + "\")");
+        addSummary("Result", ok ? toast
+                : genderBlocked
+                    ? "Not confirmed (\"" + toast + "\") — the form has NO Gender field to satisfy it"
+                    : "Not confirmed (\"" + toast + "\")");
     }
 }

@@ -1,4 +1,0 @@
-PASS	Application Configuration - Nursing - Bifocals	ApplicationConfig_Nursing_Bifocals	Login	Authenticated; Patient Dashboard	Logged in
-PASS	Application Configuration - Nursing - Bifocals	ApplicationConfig_Nursing_Bifocals	Open Bifocals screen	The Bifocals screen (inline-add form) is shown	Opened Bifocals Welcome: Employee 1306:(KPJ) La @ https://devhis.sancyberhad.com/#/Bifocals
-PASS	Application Configuration - Nursing - Bifocals	ApplicationConfig_Nursing_Bifocals	Enter Code and Remark	Code and Remark are entered	Code=BF54600 | Remark=Near Vision
-PASS	Application Configuration - Nursing - Bifocals	ApplicationConfig_Nursing_Bifocals	Click Submit & success toast	A '... saved successfully' success toast is shown	×KPJ PortalMaster Saved Successfully.

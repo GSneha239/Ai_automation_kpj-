@@ -39,7 +39,7 @@ public class Postal extends DevHisBase {
     /** DevHIS only builds the nav menu for an outpatient counter. Override with {@code -Dcounter=}. */
     public static final String COUNTER_FOR_MENU = "OPD-B-01";
 
-    public Postal() { super("ApplicationConfiguration_Postal"); }
+    public Postal() { super("ApplicationConfiguration_General_Postal"); }
 
     public static void main(String[] args) {
         Postal t = new Postal();
@@ -51,7 +51,7 @@ public class Postal extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Postal", "Application Configuration > General > Postal",
+        meta("Application Configuration - General - Postal", "Application Configuration > General > Postal",
                 "&#9888; Creates a REAL postal record: select the Country, State and City/District, enter "
                         + "the Postal code, Submit.");
 

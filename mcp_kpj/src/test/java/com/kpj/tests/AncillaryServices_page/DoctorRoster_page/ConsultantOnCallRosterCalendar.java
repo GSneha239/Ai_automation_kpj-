@@ -41,7 +41,7 @@ public class ConsultantOnCallRosterCalendar extends DevHisBase {
         // The breadcrumb names the Roster Calendar explicitly. Reports are named after this path, and
         // stopping at "Consultant On Call" would give this flow the same file name as the sibling
         // ConsultantOnCall test — one would overwrite the other.
-        meta("Consultant On Call - Roster Calendar / Print",
+        meta("Ancillary Services - Doctor Roster - Consultant On Call - Roster Calendar",
                 "Ancillary Services > Doctor Roster > Consultant On Call > Roster Calendar",
                 "Open the Roster Calendar, print it, confirm the print popup, cancel it, and go Back. "
                         + "Read-only — nothing is saved.");

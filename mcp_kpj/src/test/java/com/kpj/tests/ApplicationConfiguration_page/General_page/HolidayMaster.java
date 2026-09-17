@@ -27,7 +27,7 @@ public class HolidayMaster extends DevHisBase {
     /** DevHIS only builds the nav menu for an outpatient counter. Override with {@code -Dcounter=}. */
     public static final String COUNTER_FOR_MENU = "OPD-B-01";
 
-    public HolidayMaster() { super("ApplicationConfiguration_HolidayMaster"); }
+    public HolidayMaster() { super("ApplicationConfiguration_General_HolidayMaster"); }
 
     public static void main(String[] args) {
         HolidayMaster t = new HolidayMaster();
@@ -39,7 +39,7 @@ public class HolidayMaster extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Holiday Master", "Application Configuration > General > Holiday Master",
+        meta("Application Configuration - General - Holiday Master", "Application Configuration > General > Holiday Master",
                 "&#9888; Creates a REAL holiday: Add, enter Code and Date, Submit.");
 
         String counter = System.getProperty("counter", COUNTER_FOR_MENU);

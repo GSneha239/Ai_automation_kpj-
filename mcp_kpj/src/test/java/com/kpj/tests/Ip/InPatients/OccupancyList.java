@@ -33,7 +33,7 @@ public class OccupancyList extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Inpatients Occupancy List (Change Admission Type / Expected Discharge Date)",
+        meta("IP - Inpatients - Occupancy List",
                 "IP > Inpatients > Occupancy List",
                 "One run exercising the Occupancy List footer actions: Change Admission Type and Expected Discharge Date.");
 

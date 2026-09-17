@@ -32,7 +32,7 @@ public class OtTable extends DevHisBase {
     /** DevHIS only builds the nav menu for an outpatient counter. Override with {@code -Dcounter=}. */
     public static final String COUNTER_FOR_MENU = "OPD-B-01";
 
-    public OtTable() { super("ApplicationConfiguration_OtTable"); }
+    public OtTable() { super("ApplicationConfiguration_OTConfiguration_OtTable"); }
 
     public static void main(String[] args) {
         OtTable t = new OtTable();
@@ -44,7 +44,7 @@ public class OtTable extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("OT Table", "Application Configuration > OT Configuration > OT Table",
+        meta("Application Configuration - OT Configuration - OT Table", "Application Configuration > OT Configuration > OT Table",
                 "&#9888; Creates a REAL OT table: Add, select the OT Theatre, enter the Code, Remark and "
                         + "OT Slot, Submit.");
 

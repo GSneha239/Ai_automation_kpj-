@@ -45,7 +45,7 @@ public class LoginPage extends BasePage {
      *  and reused throughout this suite — this never guesses a password, it only rotates between known-good
      *  accounts. Override/extend with {@code -Ddevhis.cred.fallbacks=user1:pass1,user2:pass2}. */
     private static final String[][] DEFAULT_CRED_FALLBACKS = {
-            {"tieba", "User@123"},
+            {"tieba", "Tieba@123"},   // password reset 2026-09-10 (was User@123)
             {"farisha", "Tcare@123"},
             {"sandhya", "User@123"},
     };
@@ -243,7 +243,7 @@ public class LoginPage extends BasePage {
      * Convenience overload using default DevHIS credentials (sandhya / User@123 / OPD-B-01).
      */
     public void loginWithDefaults(String baseUrl) {
-        login(baseUrl, "farisha", "Tcare@123", null);
+        login(baseUrl, "tieba", "Tieba@123", null);
     }
 
     /**

@@ -28,7 +28,7 @@ public class Designation extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Application Configuration - Designation", "Application Configuration > Location > Designation",
+        meta("Application Configuration - Location - Designation", "Application Configuration > Location > Designation",
                 "Add a Designation: enter Code and Remark, Submit.");
 
         LoginPage loginPage = new LoginPage(page);

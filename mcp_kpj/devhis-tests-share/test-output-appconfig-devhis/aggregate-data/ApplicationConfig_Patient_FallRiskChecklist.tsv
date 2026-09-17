@@ -1,4 +1,0 @@
-PASS	Application Configuration - Patient - Fall Risk Checklist Master	ApplicationConfig_Patient_FallRiskChecklist	Login	Authenticated; Patient Dashboard	Logged in
-PASS	Application Configuration - Patient - Fall Risk Checklist Master	ApplicationConfig_Patient_FallRiskChecklist	Open Fall Risk Checklist Master screen	The Fall Risk Checklist Master screen (inline-add form) is shown	Opened Fall Risk Checklist Master Welcome: Employee  @ https://devhis.sancyberhad.com/#/FallRiskIntervention
-PASS	Application Configuration - Patient - Fall Risk Checklist Master	ApplicationConfig_Patient_FallRiskChecklist	Enter Code and Description	Code and Description are entered	Code=FC57600 | Description=Keep bed at the lowest position
-PASS	Application Configuration - Patient - Fall Risk Checklist Master	ApplicationConfig_Patient_FallRiskChecklist	Click Submit & success toast	A '... saved successfully' success toast is shown	×KPJ PortalSaved Successfully.

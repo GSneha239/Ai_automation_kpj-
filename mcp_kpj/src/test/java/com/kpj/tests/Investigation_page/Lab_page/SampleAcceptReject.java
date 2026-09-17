@@ -54,7 +54,7 @@ public class SampleAcceptReject extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Sample Accept/Reject", "Investigation > Lab > Sample Accept/Reject",
+        meta("Investigation - Lab - Sample Accept/Reject", "Investigation > Lab > Sample Accept/Reject",
                 "&#9888; ACCEPTS A REAL SAMPLE on the Accept tab and REJECTS A REAL SAMPLE on the Reject "
                         + "tab: search, tick a record, act, then confirm on each tab.");
 

@@ -77,7 +77,7 @@ public class AdverseDrugReaction extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Adverse Drug Reaction", "Nursing Station > Adverse Drug Reaction",
+        meta("Nursing Station - Adverse Drug Reaction", "Nursing Station > Adverse Drug Reaction",
                 "&#9888; Records a REAL adverse drug reaction: search the patient by MRN, select the drug "
                         + "administered, the severity and who recorded it, Save.");
 

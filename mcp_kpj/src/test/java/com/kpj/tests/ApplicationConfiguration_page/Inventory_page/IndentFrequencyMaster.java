@@ -28,7 +28,7 @@ public class IndentFrequencyMaster extends DevHisBase {
     /** DevHIS only builds the nav menu for an outpatient counter. Override with {@code -Dcounter=}. */
     public static final String COUNTER_FOR_MENU = "OPD-B-01";
 
-    public IndentFrequencyMaster() { super("ApplicationConfiguration_IndentFrequencyMaster"); }
+    public IndentFrequencyMaster() { super("ApplicationConfiguration_Inventory_IndentFrequencyMaster"); }
 
     public static void main(String[] args) {
         IndentFrequencyMaster t = new IndentFrequencyMaster();
@@ -40,7 +40,7 @@ public class IndentFrequencyMaster extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Indent Frequency Master", "Application Configuration > Inventory > Indent Frequency Master",
+        meta("Application Configuration - Inventory - Indent Frequency Master", "Application Configuration > Inventory > Indent Frequency Master",
                 "&#9888; Creates a REAL indent frequency record: select the Requesting Store, the Issuing "
                         + "Store and the Recurring Cycle, tick the day, Submit.");
 

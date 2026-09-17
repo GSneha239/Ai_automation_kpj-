@@ -26,7 +26,7 @@ public class SurgeryNotesMaster extends DevHisBase {
     /** DevHIS only builds the nav menu for an outpatient counter. Override with {@code -Dcounter=}. */
     public static final String COUNTER_FOR_MENU = "OPD-B-01";
 
-    public SurgeryNotesMaster() { super("ApplicationConfiguration_SurgeryNotesMaster"); }
+    public SurgeryNotesMaster() { super("ApplicationConfiguration_OTConfiguration_SurgeryNotesMaster"); }
 
     public static void main(String[] args) {
         SurgeryNotesMaster t = new SurgeryNotesMaster();
@@ -38,7 +38,7 @@ public class SurgeryNotesMaster extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Surgery Notes Master", "Application Configuration > OT Configuration > Surgery Notes Master",
+        meta("Application Configuration - OT Configuration - Surgery Notes Master", "Application Configuration > OT Configuration > Surgery Notes Master",
                 "&#9888; Creates a REAL surgery note: Add, enter Code and Short Description, Submit.");
 
         String counter = System.getProperty("counter", COUNTER_FOR_MENU);

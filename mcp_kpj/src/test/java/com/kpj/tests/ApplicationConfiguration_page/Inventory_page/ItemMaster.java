@@ -28,7 +28,7 @@ public class ItemMaster extends DevHisBase {
     /** DevHIS only builds the nav menu for an outpatient counter. Override with {@code -Dcounter=}. */
     public static final String COUNTER_FOR_MENU = "OPD-B-01";
 
-    public ItemMaster() { super("ApplicationConfiguration_ItemMaster"); }
+    public ItemMaster() { super("ApplicationConfiguration_Inventory_ItemMaster"); }
 
     public static void main(String[] args) {
         ItemMaster t = new ItemMaster();
@@ -40,7 +40,7 @@ public class ItemMaster extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Item Master", "Application Configuration > Inventory > Item Master",
+        meta("Application Configuration - Inventory - Item Master", "Application Configuration > Inventory > Item Master",
                 "&#9888; Creates a REAL item: enter the Service Code and Name, select Group and Sub "
                         + "Group, tick a pricing policy, enter the HSN Code, Submit.");
 

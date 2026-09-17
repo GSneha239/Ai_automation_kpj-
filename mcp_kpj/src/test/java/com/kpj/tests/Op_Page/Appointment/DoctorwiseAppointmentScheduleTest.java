@@ -45,7 +45,7 @@ public class DoctorwiseAppointmentScheduleTest extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Doctorwise Appointment Schedule",
+        meta("OP - Appointment - Doctorwise Appointment Schedule",
                 "OP > Appointment > Doctorwise Appointment Schedule",
                 "Selects a slot from a doctor's schedule → Book Appointment → Save. On Save, the "
                         + "appointment report should open in a new tab.");
@@ -55,7 +55,7 @@ public class DoctorwiseAppointmentScheduleTest extends DevHisBase {
 
         // 1) Authenticate
         loginPage.login(BASE, USER, PASS);
-        step("Login", "farisha / Tcare@123", "Authenticated; Patient Dashboard", "Logged in", "PASS");
+        step("Login", USER + " / " + PASS, "Authenticated; Patient Dashboard", "Logged in", "PASS");
 
         // 2) Open Doctorwise Appointment Schedule (Month defaults to the current month)
         sched.navigateTo(BASE);

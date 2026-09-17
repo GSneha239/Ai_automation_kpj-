@@ -11,30 +11,35 @@ import com.microsoft.playwright.Page;
  * {@link PurchaseOrder}) → enter the <b>From Date</b>/<b>To Date</b> → click <b>Search</b> → in
  * <b>Search Details</b> tick a transaction row's checkbox → its items populate <b>Item List</b> below,
  * where each item's own checkbox is ticked → click <b>OK</b> → for each item added to the main form,
- * enter the <b>Return Qty</b> → click <b>Save</b> → verify report generation → verify the success
- * toast.</p>
+ * enter the <b>Return Qty</b> and <b>Net Rate</b> → click <b>Save</b> → verify report generation →
+ * verify the success toast.</p>
  *
- * <p>This screen has not been inspected live except for the "Search" dialog itself (confirmed via
- * screenshots): it lists PURCHASE TRANSACTIONS (Transaction No. / Date / Store, e.g.
- * {@code PHA--25-0000001}, {@code P-SNGRN-26-0000017}) — a return note references what was originally
- * received, so selecting one populates its own item lines (Item Code, Item Name, UOM, Quantity, Balance
- * FOC, Purchase Price, Total/Discount/Tax/Net Amount) into a second grid below, each with its own
- * checkbox. This is a two-level selection (pick a transaction, then pick which of ITS items to return),
- * unlike the shared Item Search dialog's flat item list — so none of that dialog's proven selectors
- * apply here; this dialog is matched fresh by its own confirmed column headers.</p>
- *
- * <p>Everything after the dialog (the main form's Return Qty field(s), Save, the report/toast) has not
- * been inspected live and is found by FUZZY matching, following the same proven patterns as every other
- * screen in this module:</p>
+ * <p>Originally built blind (before this module adopted the practice of live-inspecting first) and later
+ * actually run end-to-end against the live screen — every guessed selector matched real live behavior:</p>
  * <ul>
+ *   <li>The "Search" dialog lists PURCHASE TRANSACTIONS (Transaction No. / Date / Store, e.g.
+ *       {@code PHA--25-0000001}) rather than a flat item list — a return note references what was
+ *       originally received, so ticking one ({@code ng-model="List.IsSelected"}) populates its own item
+ *       lines into a second grid below ({@code ng-model="Itm.IsSelected"} per item), a two-level
+ *       selection unlike the shared "Item Search" picker used on {@link ItemEnquiry}/{@link Quotation}/
+ *       {@link PurchaseRequest}/{@link PurchaseOrder} in the same module — so none of that dialog's
+ *       selectors apply here; this dialog is matched fresh by its own confirmed column headers.</li>
+ *   <li>Confirmed live that not every transaction has items left to return (a GRN can already be fully
+ *       returned) — {@link #tickFirstTransaction} tries each in turn rather than assuming the first
+ *       always works.</li>
+ *   <li><b>Return Qty</b> is {@code ng-model="Itm.ReturnQuantity"} and <b>Net Rate</b> is
+ *       {@code ng-model="Itm.netrate"} — sibling columns on the same item row added to the main form
+ *       after OK, with Net Rate pre-filled by the app with a computed default (e.g. {@code "0.9000"})
+ *       that {@link #enterNetRateForAllItems} overwrites with the requested value.</li>
+ *   <li>Save's real success message is {@code "Goods Return Note added Successfully"} (confirmed live via
+ *       the raw {@code GoodsReturnNote/IUD} response) — already covered by {@link #isSuccess}'s existing
+ *       "added" check with no changes needed. PDF generation is judged with {@link
+ *       com.kpj.pages.PdfReport}, the same helper already proven across this module.</li>
  *   <li>Checkbox ticks are done as ONE atomic JS call (find, click, sync Angular's
  *       {@code $setViewValue}, all in a single {@code page.evaluate}) — Playwright's own two-round-trip
  *       {@code Locator.check()} was observed elsewhere in this module to report success while the
  *       screen's own validation still saw nothing selected, because the live app re-renders the element
  *       between the "locate" and "act" round-trips.</li>
- *   <li>"Verify report generation" mirrors {@link PurchaseOrderApproval}'s same exploratory check (a new
- *       browser tab/window, or a visible "report"-mentioning message) since it is equally unconfirmed
- *       here which form it takes, if any.</li>
  * </ul>
  * {@link #describeControls()} dumps every visible control (main form or whichever dialog is open) so
  * anything still fuzzy can be pinned exactly once this has run against the live screen.
@@ -45,8 +50,7 @@ public class SupplierReturnNote extends BasePage {
 
     public String lastBodyText = "", lastMenu = "", lastRoute = "", lastNew = "", lastSearchItem = "",
             lastDialogDates = "", lastDialogSearch = "", lastTransactionTick = "", lastItemTick = "",
-            lastPickerOk = "", lastReturnQty = "", lastSave = "", lastSaveDiagnostics = "",
-            lastReportSignal = "";
+            lastPickerOk = "", lastReturnQty = "", lastNetRate = "", lastSave = "", lastSaveDiagnostics = "";
 
     /** Shared JS helpers: visibility, text normalising, ng-model tail, top dialog, model-aware setter. */
     private static final String JS =
@@ -267,8 +271,39 @@ public class SupplierReturnNote extends BasePage {
         return lastDialogDates != null && lastDialogDates.contains("FromDate=" + from) && lastDialogDates.contains("ToDate=" + to);
     }
 
+    /** Ensure the dialog's own Store filter carries a real value before searching — confirmed live on
+     *  a differently-configured environment (this same class, run against a project whose default login
+     *  account falls back differently) that leaving it on its placeholder silently returns zero
+     *  transactions even across a maximally broad date range, matching the "Store defaults to zero
+     *  results" lesson already proven elsewhere in this module (e.g. {@code ItemSaleList#selectStore}).
+     *  Non-fatal/defensive: only acts if the dialog's store is genuinely still unselected. */
+    private void ensureDialogStoreSelected() {
+        Object already = page.evaluate("() => {" + JS
+                + " const d=topDialog(); if(!d) return true;"
+                + " const e=[...d.querySelectorAll('select')].filter(vis)"
+                + "   .find(x=>/store/i.test(tail(x)+' '+labelOf(x)));"
+                + " if(!e) return true;"
+                + " const t=(e.options[e.selectedIndex]||{}).text||'';"
+                + " return !/^-*\\s*select\\s*-*$/i.test(t.trim()); }");
+        if (Boolean.TRUE.equals(already)) return;
+        Object result = page.evaluate("() => {" + JS
+                + " const d=topDialog(); if(!d) return '(no dialog)';"
+                + " const e=[...d.querySelectorAll('select')].filter(vis)"
+                + "   .find(x=>/store/i.test(tail(x)+' '+labelOf(x)));"
+                + " if(!e) return '(no store dropdown)';"
+                + " const opts=[...e.options].map((o,i)=>({o,i})).filter(x=>x.i>0"
+                + "   && !/^-*\\s*select\\s*-*$/i.test((x.o.text||'').trim()));"
+                + " const pref=opts.find(x=>/^pharmacy/i.test((x.o.text||'').trim())) || opts[0];"
+                + " if(!pref) return '(no real option)';"
+                + " e.selectedIndex=pref.i; e.dispatchEvent(new Event('change',{bubbles:true}));"
+                + " return e.options[e.selectedIndex].text; }");
+        System.out.println("SupplierReturnNote: dialog store defensively set to -> " + result);
+        waitForAngular(700);
+    }
+
     /** Click <b>Search</b> inside the Search dialog and report how many transaction rows came back. */
     public String clickSearchInDialog() {
+        ensureDialogStoreSelected();
         page.evaluate("() => {" + JS
                 + " const d=topDialog(); if(!d) return;"
                 + " const b=[...d.querySelectorAll('button,a')].filter(vis)"
@@ -460,6 +495,27 @@ public class SupplierReturnNote extends BasePage {
         return lastReturnQty != null && !lastReturnQty.startsWith("0 Return Qty");
     }
 
+    /**
+     * Enter the <b>Net Rate</b> for EVERY item row added to the main form — confirmed live
+     * {@code ng-model="Itm.netrate"}, a sibling column of Return Qty on the same row, pre-filled by the
+     * app with a computed default (e.g. {@code "0.9000"}) that this overwrites with the requested value.
+     */
+    public String enterNetRateForAllItems(String rate) {
+        Object r = page.evaluate("(v) => {" + JS
+                + " const boxes=[...document.querySelectorAll('input[ng-model=\"Itm.netrate\"]')].filter(vis);"
+                + " let count=0;"
+                + " for (const e of boxes) { setEl(e, v); count++; }"
+                + " return count+' Net Rate field(s) set to '+v; }", rate);
+        lastNetRate = r == null ? "" : r.toString();
+        waitForAngular(500);
+        System.out.println("SupplierReturnNote: " + lastNetRate);
+        return lastNetRate;
+    }
+
+    public boolean netRateEntered() {
+        return lastNetRate != null && !lastNetRate.startsWith("0 Net Rate");
+    }
+
     // ---- save + report + toast -------------------------------------------------
 
     public static boolean isSuccess(String toast) {
@@ -471,16 +527,12 @@ public class SupplierReturnNote extends BasePage {
                 || t.contains("inserted") || t.contains("updated");
     }
 
-    /** Click <b>Save</b> and check whether a report was generated (a new browser tab/window, or a
-     *  visible "report"-mentioning message) — same exploratory check as {@link PurchaseOrderApproval}. */
-    public String saveAndVerifyReportGeneration() {
-        try {
-            page.evaluate("() => { try{ if(window.toastr) toastr.clear(); }catch(e){}"
-                    + " document.querySelectorAll('#toast-container .toast,.toast-message,.toast,[id^=toast]')"
-                    + "   .forEach(t=>t.remove()); }");
-        } catch (Exception ignore) { }
-        waitForAngular(300);
-
+    /** Click <b>Save</b> and return how many browser tabs existed just before the click — needed by
+     *  {@link com.kpj.pages.PdfReport#capture} to find the tab it opens. No pre-clear of any existing
+     *  toast here — confirmed live on a sibling screen ({@code StoreIndent}) that clearing before Save
+     *  can wipe out a toast that was already showing by the time the clear ran, since Save itself can be
+     *  fast enough for that. */
+    public int clickSave() {
         int pagesBefore = page.context().pages().size();
         Object clicked = page.evaluate("() => {" + JS
                 + " const b=[...document.querySelectorAll('button,a,input[type=submit],input[type=button]')]"
@@ -490,28 +542,14 @@ public class SupplierReturnNote extends BasePage {
                 + " b.scrollIntoView({block:'center'}); b.click();"
                 + " return 'clicked \"'+(norm(b.textContent)||b.value||'')+'\" [ng-click='"
                 + "   +(b.getAttribute('ng-click')||'-')+']'; }");
-        String clickedText = clicked == null ? "" : clicked.toString();
-        waitForAngular(2500);
+        lastSaveDiagnostics = clicked == null ? "" : clicked.toString();
+        System.out.println("SupplierReturnNote: " + lastSaveDiagnostics);
+        waitForAngular(500);
         try { acceptSaveDialog(); } catch (Exception ignore) { }
-
-        int pagesAfter = page.context().pages().size();
-        Object reportText = page.evaluate("() => {" + JS
-                + " const t=[...document.querySelectorAll('*')].filter(vis)"
-                + "   .map(x=>ownText(x)).find(x=>/report/i.test(x) && x.length<120);"
-                + " return t||''; }");
-        String reportTextStr = reportText == null ? "" : reportText.toString();
-
-        String reportSignal = pagesAfter > pagesBefore
-                ? "a new tab/window opened (" + pagesBefore + " -> " + pagesAfter + " page(s))"
-                : (!reportTextStr.isEmpty() ? "a \"report\"-mentioning message appeared: \"" + reportTextStr + "\""
-                                             : "no new tab and no \"report\" message were observed");
-        lastReportSignal = clickedText + "; " + reportSignal;
-        lastSaveDiagnostics = clickedText;
-        System.out.println("SupplierReturnNote: " + lastReportSignal);
-        return lastReportSignal;
+        return pagesBefore;
     }
 
-    public boolean saveClicked() { return lastReportSignal != null && lastReportSignal.startsWith("clicked \""); }
+    public boolean saveClicked() { return lastSaveDiagnostics != null && lastSaveDiagnostics.startsWith("clicked \""); }
 
     /** Wait for and return the success toast after Save. */
     public String waitForSaveToast() {
@@ -528,7 +566,7 @@ public class SupplierReturnNote extends BasePage {
                     }
                 }
             } catch (Exception ignore) { }
-            if (toast.isEmpty()) page.waitForTimeout(400);
+            if (toast.isEmpty()) page.waitForTimeout(150);
         }
         lastSave = toast;
         lastSaveDiagnostics = lastSaveDiagnostics + (toast.isEmpty() ? "; no message within 15s" : "");

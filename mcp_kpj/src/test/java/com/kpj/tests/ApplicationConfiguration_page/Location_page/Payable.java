@@ -39,7 +39,7 @@ public class Payable extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Application Configuration - Payable", "Application Configuration > Location > Payable",
+        meta("Application Configuration - Location - Payable", "Application Configuration > Location > Payable",
                 "Add a Payable (Doctor): header, Personal Information, Location-Department, Address Information, "
                         + "File Linking, Location-VisitType, Location-Classification, Dependent List, Education, "
                         + "Experience, Einvoice, Submit.");

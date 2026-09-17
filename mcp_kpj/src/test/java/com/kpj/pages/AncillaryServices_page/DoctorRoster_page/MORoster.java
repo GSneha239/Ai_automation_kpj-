@@ -403,7 +403,67 @@ public class MORoster extends BasePage {
         }
     }
 
+    // ---- add + save, retried on a duplicate rejection ----------------------
+
+    /** Attempts {@link #addAndSaveWithDuplicateRetry} took (successful or not). */
+    public int attemptsTried = 0;
+    /** The row summary from {@link #clickAdd()} on the attempt that finally succeeded (or the last one tried). */
+    public String lastAddResult = "";
+
+    /**
+     * {@link #clickAdd()} then {@link #saveAndGetToast()}; if rejected because "one or more roster rows
+     * already exist for the selected date / medical officer / shift combination", start over on a FRESH
+     * roster form with a new future date window (same Department/Shift preference) and retry, up to
+     * {@code maxAttempts} times.
+     *
+     * <p>Confirmed live 2026-09-08: this rejection is a real, specific business-rule message — not the
+     * bare, unexplained "Error!" originally seen on 2026-08-06 — so it reads as the app correctly
+     * enforcing uniqueness rather than the earlier mystery defect. A wide-enough future date window
+     * collides anyway once enough prior automated runs have populated it under the same default
+     * Department/Shift/Officer, hence this retry.</p>
+     *
+     * @return the toast from the first accepted Save, or the last rejection if every attempt failed
+     */
+    public String addAndSaveWithDuplicateRetry(String deptPrefer, String shiftPrefer, int maxAttempts) {
+        attemptsTried = 0;
+        String toast = "";
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            attemptsTried = attempt;
+            lastAddResult = clickAdd();
+            toast = saveAndGetToast();
+            if (isSuccess(toast) || !isAlreadyExists(toast)) return toast;
+
+            System.out.println("MORoster: attempt " + attempt + " rejected as a duplicate (\"" + toast + "\")"
+                    + (attempt < maxAttempts ? " — retrying on a fresh form with a new date window" : ""));
+            if (attempt == maxAttempts) break;
+
+            if (!navigateViaMenu() || !clickNewRoster()) {
+                System.out.println("MORoster: could not reopen a fresh roster form for the retry");
+                break;
+            }
+            java.time.LocalDate base = java.time.LocalDate.now()
+                    .plusDays(30 + Math.floorMod(System.nanoTime(), 300));
+            selectDates(base.toString(), base.plusDays(6).toString());
+            selectDepartmentShiftAndOfficer(deptPrefer, shiftPrefer);
+        }
+        return toast;
+    }
+
+    private static boolean isSuccess(String toast) {
+        if (toast == null) return false;
+        String t = toast.toLowerCase();
+        return t.contains("success") || t.contains("saved") || t.contains("added") || t.contains("updated");
+    }
+
+    private static boolean isAlreadyExists(String toast) {
+        return toast != null && toast.toLowerCase().contains("already exist");
+    }
+
+    // Failure placeholders returned by the JS helpers always read "(no-...)" (e.g. "(no-field)",
+    // "(no-option)"). Rejecting anything merely STARTING with "(" is too broad: a real department here is
+    // named "(NAMA DR) MR C/N", and that literal leading "(" was false-failing this step even though the
+    // department had genuinely been selected.
     private static boolean isReal(String v) {
-        return v != null && !v.isEmpty() && !v.startsWith("(");
+        return v != null && !v.isEmpty() && !v.startsWith("(no-");
     }
 }

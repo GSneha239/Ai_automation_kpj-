@@ -1,5 +1,0 @@
-PASS	Application Configuration - Patient - Admission Type	ApplicationConfig_Patient_AdmissionType	Login	Authenticated; Patient Dashboard	Logged in
-PASS	Application Configuration - Patient - Admission Type	ApplicationConfig_Patient_AdmissionType	Open Admission Type screen	The Admission Type screen is shown	Opened https://devhis.sancyberhad.com/#/AdmissionType
-PASS	Application Configuration - Patient - Admission Type	ApplicationConfig_Patient_AdmissionType	Click Add	The add form is shown	Add form opened (https://devhis.sancyberhad.com/#/add-admissionType)
-PASS	Application Configuration - Patient - Admission Type	ApplicationConfig_Patient_AdmissionType	Enter Admission Type & select Location KPJ	The Admission Type + Location are set	Code=AT17700 | AdmissionType=Auto Admission Type AT17700 | Location=KPJ
-PASS	Application Configuration - Patient - Admission Type	ApplicationConfig_Patient_AdmissionType	Click Submit & success toast	'... saved successfully' toast	×KPJ PortalAdmission Type Saved Successfully.

@@ -35,7 +35,7 @@ public class HospitalLocation extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Application Configuration - Hospital Location", "Application Configuration > Location > Hospital Location",
+        meta("Application Configuration - Location - Hospital Location", "Application Configuration > Location > Hospital Location",
                 "Open Hospital Location and verify the Location column reads " + EXPECTED_LOCATION + ".");
 
         LoginPage loginPage = new LoginPage(page);

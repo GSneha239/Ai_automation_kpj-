@@ -18,32 +18,31 @@ import com.kpj.pages.LoginPage;
  *   <li>Click <b>Save</b> → verify the success toast.</li>
  * </ol>
  *
- * <p>Dates default to a FUTURE window that shifts with the time of day, because DevHIS rejects a roster
- * whose date/officer/shift combination already exists — a fixed window would pass once and fail on every
- * re-run. Pin a range with {@code -DfromDate=} / {@code -DtoDate=} ({@code yyyy-MM-dd}).</p>
+ * <p>Dates default to a FUTURE window offset by {@code nanoTime}, because DevHIS rejects a roster whose
+ * date/officer/shift combination already exists — a fixed window would pass once and fail on every
+ * re-run, and re-runs can happen only minutes (or seconds) apart. Pin a range with {@code -DfromDate=} /
+ * {@code -DtoDate=} ({@code yyyy-MM-dd}).</p>
  *
  * <p>&#9888; A successful run CREATES a real MO roster in the target environment.</p>
  *
- * <h2>KNOWN DEFECT — Save always fails on this screen</h2>
- * <p>As of 2026-08-06 the final Save returns a bare <b>"×KPJ PortalError!"</b> every time, so this flow
- * ends FAIL by design — the failure is the app's, not the script's. Steps 1-6 all pass: the form opens,
- * the dates set, Department / Shift / Medical Officer all take real values, and Add appends the roster
- * row ({@code rowsAdded=1}).</p>
+ * <h2>UPDATE 2026-09-08 — the original "always fails" defect no longer reproduces</h2>
+ * <p>On 2026-08-06, Save returned a bare, unexplained <b>"×KPJ PortalError!"</b> on every attempt (7
+ * Department/Shift/Officer combinations tried). Re-run live today with the same script, Save instead
+ * returned a specific, sensible rejection: <b>"One or more roster rows already exist for the selected
+ * date / medical officer / shift combination."</b> — the exact wording the sibling <b>Consultant On
+ * Call</b> screen has always used for genuine duplicates. That reads as the app correctly enforcing
+ * uniqueness, not the earlier mystery failure — the collision itself is an artifact of this test (and
+ * others like it) always defaulting to the first Department/Shift/Officer option, so a wide future date
+ * window still fills up after enough automated runs.</p>
  *
- * <p>Reproduced across <b>7 combinations</b>, all with a future date window so no duplicate rule applies:</p>
- * <ul>
- *   <li>Departments: Administration, Emergency Department, Hand &amp; Microsurgery (Orthopaedic)</li>
- *   <li>Shifts: AM, PM, NIGHT, AOC/SSB - ON CALL</li>
- *   <li>Medical Officers: Doctor 213 TIEBA, A, Demo Doctor</li>
- * </ul>
+ * <p>So this flow now retries on exactly that rejection —
+ * {@link com.kpj.pages.AncillaryServices_page.DoctorRoster_page.MORoster#addAndSaveWithDuplicateRetry}
+ * reopens a fresh roster form with a new random future date window (same Department/Shift preference) and
+ * tries again, up to 5 times — to demonstrate the real happy path rather than get stuck reporting a
+ * duplicate as if it were the original defect. Any OTHER rejection (including a bare "Error!", should it
+ * resurface) is reported as-is, not retried.</p>
  *
- * <p>For contrast, the sibling <b>Consultant On Call</b> screen — same {@code fnGoToNewRoster} /
- * {@code fnAddRow} / {@code fnSaveRoster} handlers — saves successfully with comparable input, and it
- * reports duplicates with a <i>specific</i> message ("One or more roster rows already exist..."), so this
- * bare "Error!" is a different failure, not a duplicate clash.</p>
- *
- * <p>Narrow it further with {@code -Ddepartment=} / {@code -Dshift=} / {@code -DfromDate=}. Once the
- * underlying defect is fixed this flow should pass unchanged.</p>
+ * <p>Narrow it with {@code -Ddepartment=} / {@code -Dshift=} / {@code -DfromDate=} / {@code -Dattempts=}.</p>
  */
 public class MORoster extends DevHisBase {
 
@@ -62,13 +61,18 @@ public class MORoster extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("MO Roster", "Ancillary Services > Doctor Roster > MO Roster",
+        meta("Ancillary Services - Doctor Roster - MO Roster", "Ancillary Services > Doctor Roster > MO Roster",
                 "&#9888; Creates a REAL MO roster: New Roster, pick From/To dates, pick Department + Shift + "
                         + "Medical Officer, Add, Save.");
 
         String counter = System.getProperty("counter", COUNTER_FOR_MENU);
+        // DevHIS rejects a roster whose date/officer/shift combination already exists, so the offset must
+        // change on every run, not just every couple of minutes. Time-of-day-in-seconds % 90 only advances
+        // one day every 90 seconds, so two runs a few minutes apart (as happens while iterating on this
+        // test) land on the SAME window and collide. nanoTime's low bits change on every JVM start, so the
+        // offset is effectively unique per run regardless of how close together runs happen.
         java.time.LocalDate base = java.time.LocalDate.now()
-                .plusDays(30 + (java.time.LocalTime.now().toSecondOfDay() % 90));
+                .plusDays(30 + Math.floorMod(System.nanoTime(), 300));
         String fromDate = System.getProperty("fromDate", base.toString());
         String toDate = System.getProperty("toDate", base.plusDays(6).toString());
 
@@ -114,18 +118,24 @@ public class MORoster extends DevHisBase {
                 "Select a Department, a Shift and a Medical Officer (ui-select)",
                 "Department, Shift and Medical Officer are all selected", dso, dsoOk ? "PASS" : "FAIL");
 
-        // 5) Add the row
-        String added = roster.clickAdd();
+        // 5) Add the row, then 6) Save -> success toast, retrying on a "already exists" duplicate
+        // rejection (a wide future date window still collides after enough automated runs default to
+        // the same Department/Shift/Officer — see the class javadoc's 2026-09-08 update).
+        int maxAttempts = Integer.getInteger("attempts", 5);
+        String toast = roster.addAndSaveWithDuplicateRetry(
+                System.getProperty("department"), System.getProperty("shift"), maxAttempts);
+        String added = roster.lastAddResult;
         boolean addOk = added != null && added.startsWith("rowsAdded=") && !added.startsWith("rowsAdded=0");
-        step(page, "Click Add", "Click Add (fnAddRow) to add the roster line",
+        step(page, "Click Add", "Click Add (fnAddRow) to add the roster line"
+                        + (roster.attemptsTried > 1 ? " (attempt " + roster.attemptsTried + ")" : ""),
                 "A roster row is added to the grid", added, addOk ? "PASS" : "FAIL");
 
-        // 6) Save -> success toast
-        String toast = roster.saveAndGetToast();
         String tl = toast == null ? "" : toast.toLowerCase();
         boolean ok = tl.contains("success") || tl.contains("saved") || tl.contains("added") || tl.contains("updated");
         String actual = toast == null || toast.isEmpty() ? "No toast appeared"
-                : (ok ? toast : "Save not confirmed — server returned: \"" + toast + "\"");
+                : (ok ? toast + (roster.attemptsTried > 1 ? "  (attempt " + roster.attemptsTried + " of "
+                                                              + maxAttempts + ", after earlier duplicate rejections)" : "")
+                      : "Save not confirmed after " + roster.attemptsTried + " attempt(s) — server returned: \"" + toast + "\"");
         step(page, "Click Save & success toast", "Click Save (fnSaveRoster); wait for the success toast",
                 "'... saved successfully' toast", actual, ok ? "PASS" : "FAIL");
 
@@ -133,6 +143,7 @@ public class MORoster extends DevHisBase {
         addSummary("Department", roster.lastDepartment);
         addSummary("Shift", roster.lastShift);
         addSummary("Medical Officer", roster.lastMedicalOfficer);
+        addSummary("Attempts tried", roster.attemptsTried + " of " + maxAttempts);
         addSummary("Result", ok ? toast : "Not confirmed (\"" + toast + "\")");
     }
 }

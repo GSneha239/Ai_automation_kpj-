@@ -35,7 +35,7 @@ public class SubDepartmentSchedule extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Application Configuration - Sub Department Schedule",
+        meta("Application Configuration - Location - Sub Department Schedule",
                 "Application Configuration > Location > Sub Department Schedule",
                 "Add a sub department schedule: Department, Sub Department, Payable, Start/End Time, Days, Add, Submit.");
 

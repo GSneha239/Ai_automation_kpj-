@@ -28,7 +28,7 @@ public class Generic extends DevHisBase {
     /** DevHIS only builds the nav menu for an outpatient counter. Override with {@code -Dcounter=}. */
     public static final String COUNTER_FOR_MENU = "OPD-B-01";
 
-    public Generic() { super("ApplicationConfiguration_Generic"); }
+    public Generic() { super("ApplicationConfiguration_Inventory_Generic"); }
 
     public static void main(String[] args) {
         Generic t = new Generic();
@@ -40,7 +40,7 @@ public class Generic extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Generic", "Application Configuration > Inventory > Generic",
+        meta("Application Configuration - Inventory - Generic", "Application Configuration > Inventory > Generic",
                 "&#9888; Creates a REAL generic: enter Code and Remark, then Submit.");
 
         String counter = System.getProperty("counter", COUNTER_FOR_MENU);

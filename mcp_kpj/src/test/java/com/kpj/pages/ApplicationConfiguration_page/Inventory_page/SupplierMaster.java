@@ -539,7 +539,10 @@ public class SupplierMaster extends BasePage {
                 + " const i=[...e.options].findIndex(o=>/^malaysia$/i.test(norm(o.text)));"
                 + " return i; }");
         int malaysia = my instanceof Number ? ((Number) my).intValue() : -1;
-        if (malaysia >= 0) { countries.remove(Integer.valueOf(malaysia)); countries.add(0, malaysia); }
+        // Malaysia only — the reference data (states/cities/areas) behind this form is Malaysian, and
+        // trying other countries just burns time on combinations that were never going to be used.
+        if (malaysia >= 0) { countries = java.util.List.of(malaysia); }
+        // else: no "Malaysia" option found — fall back to searching whatever countries are offered.
 
         // The best country/state/city found while hunting for an area, so a run that finds no area
         // anywhere still LEAVES a valid country/state/city on the form instead of whatever combination
@@ -563,13 +566,20 @@ public class SupplierMaster extends BasePage {
 
             int triedStates = 0;
             for (Integer si : states) {
-                if (triedStates++ >= 4) break;
                 int citiesBefore = optionCount(A + "City");
                 String state = selectIndex(A + "State", "__smState", si);
                 waitForListChange(A + "City", citiesBefore, 9000);
                 java.util.List<Integer> cities = realIndexes(A + "City");
-                // "No Information" is this application's placeholder row, not a real state or city.
-                if (cities.isEmpty() || state.matches("(?i)\\s*no information\\s*")) continue;
+                // "No Information" is this application's placeholder row, not a real state or city. A
+                // name starting with "Auto" (e.g. "Auto State 33600") is other tests' generated test
+                // data, not a real state — skip both WITHOUT spending one of the 4 tries, since several
+                // "Auto State ..." entries sort before the real states (Johor, Kedah, ...) in this list
+                // and would otherwise exhaust the try budget before a real state is ever reached.
+                if (state.matches("(?i)\\s*no information\\s*") || state.matches("(?i)\\s*auto\\b.*")) {
+                    continue;
+                }
+                if (triedStates++ >= 4) break;
+                if (cities.isEmpty()) continue;
 
                 int triedCities = 0;
                 for (Integer cyi : cities) {

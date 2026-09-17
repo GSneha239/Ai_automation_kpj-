@@ -32,7 +32,7 @@ public class ComplaintType extends DevHisBase {
     /** DevHIS only builds the nav menu for an outpatient counter. Override with {@code -Dcounter=}. */
     public static final String COUNTER_FOR_MENU = "OPD-B-01";
 
-    public ComplaintType() { super("ApplicationConfiguration_ComplaintType"); }
+    public ComplaintType() { super("ApplicationConfiguration_Equipment_ComplaintType"); }
 
     public static void main(String[] args) {
         ComplaintType t = new ComplaintType();
@@ -44,7 +44,7 @@ public class ComplaintType extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Complaint Type", "Application Configuration > Equipment > Complaint Type",
+        meta("Application Configuration - Equipment - Complaint Type", "Application Configuration > Equipment > Complaint Type",
                 "&#9888; Creates a REAL complaint type: Add, enter Code, Remark and Expected Resolution, "
                         + "select the Period, Submit.");
 

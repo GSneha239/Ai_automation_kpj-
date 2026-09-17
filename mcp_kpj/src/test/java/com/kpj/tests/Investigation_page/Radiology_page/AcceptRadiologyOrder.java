@@ -53,7 +53,7 @@ public class AcceptRadiologyOrder extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Accept Radiology Order", "Investigation > Radiology > Accept Radiology Order",
+        meta("Investigation - Radiology - Accept Radiology Order", "Investigation > Radiology > Accept Radiology Order",
                 "&#9888; ACCEPTS A REAL ORDER and MARKS A REAL VISIT on the Accept tab, and REJECTS A "
                         + "REAL ORDER on the Reject tab.");
 

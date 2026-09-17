@@ -44,7 +44,7 @@ public class PostMortem extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Post Mortem Report", "Nursing Station > Post Mortem Report",
+        meta("Nursing Station - Post Mortem Report", "Nursing Station > Post Mortem Report",
                 "&#9888; Creates a REAL post mortem record: Add, search the patient by MRN, select the "
                         + "template, Save.");
 

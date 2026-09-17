@@ -27,7 +27,7 @@ public class SmsWhatsappTemplate extends DevHisBase {
     /** DevHIS only builds the nav menu for an outpatient counter. Override with {@code -Dcounter=}. */
     public static final String COUNTER_FOR_MENU = "OPD-B-01";
 
-    public SmsWhatsappTemplate() { super("ApplicationConfiguration_SmsWhatsappTemplate"); }
+    public SmsWhatsappTemplate() { super("ApplicationConfiguration_General_SmsWhatsappTemplate"); }
 
     public static void main(String[] args) {
         SmsWhatsappTemplate t = new SmsWhatsappTemplate();
@@ -39,7 +39,7 @@ public class SmsWhatsappTemplate extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("SMS/WhatsApp Template", "Application Configuration > General > SMS/WhatsApp Template",
+        meta("Application Configuration - General - SMS/WhatsApp Template", "Application Configuration > General > SMS/WhatsApp Template",
                 "&#9888; Creates a REAL SMS/WhatsApp template: Add, enter Code, Template Name and Remark, "
                         + "tick the SMS or WhatsApp checkbox, Submit.");
 

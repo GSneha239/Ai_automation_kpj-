@@ -52,7 +52,7 @@ public class Transfer extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Transfer", "Inventory > Transfer > Transfer",
+        meta("Inventory - Transfer - Transfer", "Inventory > Transfer > Transfer",
                 "&#9888; Marks TWO REAL indent items: [Mark Unavailable] New, Get Indent, search and "
                         + "select an item, click Mark Unavailable; then [Mark Close] repeats with a "
                         + "fresh item, click Mark Close; then [Print] on the list view: search by date "

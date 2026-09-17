@@ -17,7 +17,7 @@ import com.kpj.pages.LoginPage;
  */
 public class AutoCharges extends DevHisBase {
 
-    public AutoCharges() { super("ApplicationConfig_AutoCharges"); }
+    public AutoCharges() { super("ApplicationConfig_Admission_AutoCharges"); }
 
     public static void main(String[] args) {
         AutoCharges t = new AutoCharges();
@@ -29,7 +29,7 @@ public class AutoCharges extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Application Configuration - Auto Charges", "Application Configuration > Admission > Auto Charges",
+        meta("Application Configuration - Admission - Auto Charges", "Application Configuration > Admission > Auto Charges",
                 "Add an Auto Charge: Add, select a Service (a different one if it already exists), Submit.");
 
         LoginPage loginPage = new LoginPage(page);

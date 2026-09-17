@@ -59,7 +59,7 @@ public class Quotation extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Quotation", "Inventory > Purchase > Quotation",
+        meta("Inventory - Purchase - Quotation", "Inventory > Purchase > Quotation",
                 "&#9888; Creates a REAL quotation: New, select supplier, enter item name, then adds an "
                         + "item via the New Item tab AND via the Get Items tab (each with its own "
                         + "Quotation Details and Add Terms and Condition), then one shared Save.");

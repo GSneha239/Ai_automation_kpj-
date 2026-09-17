@@ -61,25 +61,50 @@ public class OutPatientQueueManagementPage extends BasePage {
         searchQueue(fromDate, null);
     }
 
+    // Department (queue.departmentid): reset to "--Select--" (index 0) then click Search — shared by the
+    // initial search and by the re-assert loop below, which must repeat the SAME two actions together (a reset
+    // with no re-Search leaves whatever the PREVIOUS Search already filtered by still in effect).
+    private static final String RESET_DEPT_AND_SEARCH_JS =
+            "() => { const dep=document.querySelector(\"select[ng-model='queue.departmentid']\");"
+                    + " if(dep && dep.value){ dep.selectedIndex=0; dep.dispatchEvent(new Event('change',{bubbles:true}));"
+                    + "   try{angular.element(dep).triggerHandler('change');}catch(x){} const $=window.jQuery; if($){try{$(dep).trigger('change');}catch(x){}} }"
+                    + " const b=[...document.querySelectorAll('button')].find(x=>/^search$/i.test((x.innerText||'').trim()) && x.offsetParent!==null); if(b) b.click(); }";
+
     /** Search the queue with a From/To date range (dd/MM/yyyy; toDate may be null). */
     public void searchQueue(String fromDate, String toDate) {
         page.evaluate("(a) => { const [fd, td] = a;"
                 + " const set=(ng,v)=>{ if(v==null) return; const f=document.querySelector(\"input[ng-model='\"+ng+\"']\"); if(!f) return;"
                 + "   const c=angular.element(f).controller('ngModel'); f.value=v; if(c){c.$setViewValue(v);c.$render();} f.dispatchEvent(new Event('change',{bubbles:true})); };"
-                + " set('queue.fromdate', fd); set('queue.todate', td);"
-                + " const b=[...document.querySelectorAll('button')].find(x=>/^search$/i.test((x.innerText||'').trim()) && x.offsetParent!==null); if(b) b.click(); }",
+                + " set('queue.fromdate', fd); set('queue.todate', td); }",
                 java.util.Arrays.asList(fromDate, toDate));
+        // Department (queue.departmentid) — confirmed live 2026-09-17: this select loads with a department
+        // ALREADY chosen (e.g. "ACCIDENT & EMERGENCY"), not "--Select--", so a Search run without touching it
+        // silently filters the whole queue down to just that one department. Per request: leave/reset it to
+        // "--Select--" before searching, so results are not narrowed by a department nobody chose.
+        page.evaluate(RESET_DEPT_AND_SEARCH_JS);
+        // The default department can be populated by a LATE-arriving async response — confirmed live it can
+        // still land a couple of seconds after the page looks ready, i.e. AFTER the reset above already ran and
+        // found nothing to reset, silently re-narrowing the search when it finally arrives. A single reset is
+        // not enough on a fresh session: re-check for a few seconds and reset-and-re-Search again whenever it
+        // comes back non-empty, so the LAST Search actually run is the one with no Department filter.
+        for (int i = 0; i < 6; i++) {
+            waitForAngular(600);
+            Object depVal = page.evaluate("() => { const e=document.querySelector(\"select[ng-model='queue.departmentid']\"); return e?e.value:null; }");
+            if (depVal == null || depVal.toString().isEmpty()) break;
+            System.out.println("searchQueue: Department was repopulated (" + depVal + ") by a late async default after Search — resetting and re-searching");
+            page.evaluate(RESET_DEPT_AND_SEARCH_JS);
+        }
         // Wait for the queue grid to populate — and RE-SEARCH if it comes back empty (a slow/loaded server
         // intermittently returns an empty result mid-run; a second Search usually fills it).
         String gridHasRows = "() => { let ok=false; document.querySelectorAll('*').forEach(el=>{ if(ok) return; try{ const s=angular.element(el).scope();"
                 + " if(s && s.grid && s.grid.options && s.grid.options.data && s.grid.options.data.length) ok=true; }catch(e){} }); return ok; }";
         for (int attempt = 0; attempt < 3; attempt++) {
             try {
-                page.waitForFunction(gridHasRows, null, new Page.WaitForFunctionOptions().setTimeout(15000));
+                page.waitForFunction(gridHasRows, null, new Page.WaitForFunctionOptions().setTimeout(20000));
                 break; // grid populated
             } catch (Exception ignore) {
                 System.out.println("searchQueue: queue grid empty (attempt " + (attempt + 1) + "/3) — re-searching");
-                page.evaluate("() => { const b=[...document.querySelectorAll('button')].find(x=>/^search$/i.test((x.innerText||'').trim()) && x.offsetParent!==null); if(b) b.click(); }");
+                page.evaluate(RESET_DEPT_AND_SEARCH_JS);
                 waitForAngular(1500);
             }
         }
@@ -1264,7 +1289,7 @@ public class OutPatientQueueManagementPage extends BasePage {
                     "() => { const m=[...document.querySelectorAll('.modal,[role=dialog]')].find(x=>x.getBoundingClientRect().width>0 && x.querySelector(\"button[ng-click='SaveQueueNewCaseDetails()']\"));"
                             + " const e=m&&[...m.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')==='queue.doctoridcase'); return e && [...e.options].filter(o=>o.value && !/^-*\\s*select/i.test((o.text||'').trim())).length>0; }",
                     null, new Page.WaitForFunctionOptions().setTimeout(12000));
-        } catch (Exception ignore) { System.out.println("fillNewCaseDetails: doctor list did not populate in time"); }
+        } catch (Exception ignore) { System.out.println("fillNewCaseDetails: doctor list did not populate in time"); com.kpj.core.Reasons.add("the New Case Doctor dropdown did not populate (no options loaded in time)"); }
         waitForAngular(400);
         // Set a RANDOM real doctor via the scope + a Diagnosis.
         Object rest = page.evaluate("() => {"
@@ -1706,7 +1731,7 @@ public class OutPatientQueueManagementPage extends BasePage {
                         "() => { const m=[...document.querySelectorAll('.modal,[role=dialog]')].find(x=>x.getBoundingClientRect().width>0 && /change doctor/i.test(x.textContent||''));"
                                 + " const e=m&&[...m.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')==='ChangePatienttype.DoctorID'); return e && [...e.options].filter(o=>o.value && !/^-*\\s*select/i.test((o.text||'').trim())).length>0; }",
                         null, new Page.WaitForFunctionOptions().setTimeout(10000));
-            } catch (Exception ignore) { System.out.println("selectAnyDoctorAndSave: doctor list did not populate after setting a department"); }
+            } catch (Exception ignore) { System.out.println("selectAnyDoctorAndSave: doctor list did not populate after setting a department"); com.kpj.core.Reasons.add("the Change Doctor dropdown did not populate after setting a department (no options loaded)"); }
             waitForAngular(400);
         }
         Object picked = page.evaluate("() => { const m=[...document.querySelectorAll('.modal,[role=dialog]')].find(x=>x.getBoundingClientRect().width>0 && /change doctor/i.test(x.textContent||'')); if(!m) return '(no-modal)';"

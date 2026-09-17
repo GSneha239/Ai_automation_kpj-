@@ -43,7 +43,7 @@ public class NurseRoster extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Nurse Roster", "Nursing Station > Nurse Roster",
+        meta("Nursing Station - Nurse Roster", "Nursing Station > Nurse Roster",
                 "&#9888; Creates a REAL nurse roster: New Roster, pick Department + Nurse, enter Staff No, "
                         + "set the date range, pick Nursing Station + Team + Shift, Add, Save.");
 

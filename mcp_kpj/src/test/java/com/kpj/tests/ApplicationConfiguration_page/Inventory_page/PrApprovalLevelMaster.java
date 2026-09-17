@@ -26,7 +26,7 @@ public class PrApprovalLevelMaster extends DevHisBase {
     /** DevHIS only builds the nav menu for an outpatient counter. Override with {@code -Dcounter=}. */
     public static final String COUNTER_FOR_MENU = "OPD-B-01";
 
-    public PrApprovalLevelMaster() { super("ApplicationConfiguration_PrApprovalLevelMaster"); }
+    public PrApprovalLevelMaster() { super("ApplicationConfiguration_Inventory_PrApprovalLevelMaster"); }
 
     public static void main(String[] args) {
         PrApprovalLevelMaster t = new PrApprovalLevelMaster();
@@ -38,7 +38,7 @@ public class PrApprovalLevelMaster extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("PR Approval Level Master", "Application Configuration > Inventory > PR Approval Level Master",
+        meta("Application Configuration - Inventory - PR Approval Level Master", "Application Configuration > Inventory > PR Approval Level Master",
                 "&#9888; Creates a REAL PR approval level: select the level, enter Min and Max, Submit.");
 
         String counter = System.getProperty("counter", COUNTER_FOR_MENU);

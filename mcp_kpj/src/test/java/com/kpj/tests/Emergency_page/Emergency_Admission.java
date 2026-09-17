@@ -5,7 +5,7 @@ import com.kpj.pages.LoginPage;
 import com.microsoft.playwright.Page;
 
 // NOTE: the page object is also named Emergency_Admission, so it is referenced by its fully-qualified
-// name (com.kpj.pages.Emegency_Page.Emergency_Admission) — importing it would clash with this class name.
+// name (com.kpj.pages.Emergency_page.Emergency_Admission) — importing it would clash with this class name.
 
 /**
  * TC12 - Emergency &gt; <b>Emergency Admission</b> (full IPD admission).
@@ -32,14 +32,14 @@ public class Emergency_Admission extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Emergency Admission", "Emergency > Emergency Admission",
+        meta("Emergency - Emergency Admission", "Emergency > Emergency Admission",
                 "Admit an emergency patient (full IPD admission) via the Emergency menu, then generate the admission report.");
 
         LoginPage loginPage = new LoginPage(page);
         loginPage.login(BASE, USER, PASS);
-        step("Login", "farisha / Tcare@123", "Authenticated; Patient Dashboard", "Logged in", "PASS");
+        step("Login", USER + " / " + PASS, "Authenticated; Patient Dashboard", "Logged in", "PASS");
 
-        com.kpj.pages.Emegency_Page.Emergency_Admission ea = new com.kpj.pages.Emegency_Page.Emergency_Admission(page);
+        com.kpj.pages.Emergency_page.Emergency_Admission ea = new com.kpj.pages.Emergency_page.Emergency_Admission(page);
 
         boolean opened = ea.navigateViaMenu();
         step(page, "Open Emergency Admission (via menu tab)", "Click Emergency → Emergency Admission (menu, not direct URL)",

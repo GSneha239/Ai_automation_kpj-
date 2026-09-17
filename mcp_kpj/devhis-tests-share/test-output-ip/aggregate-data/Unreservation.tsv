@@ -1,4 +1,0 @@
-PASS	IP - Bed Management - Unreservation	Unreservation	Login	Authenticated; Patient Dashboard	Logged in
-PASS	IP - Bed Management - Unreservation	Unreservation	Setup · Reserve a bed (Pre-Admission)	A bed is reserved for the patient	MRN 100000434 -> ×KPJ PortalBed Reservation saved successfully.
-PASS	IP - Bed Management - Unreservation	Unreservation	Open Unreservation	The Unreservation (#/UnReservation) screen is shown	Opened https://devhis.sancyberhad.com/#/UnReservation
-FAIL	IP - Bed Management - Unreservation	Unreservation	Enter MRN & Search	The reservation shows in the List of Reserved Beds table	0 row(s) in List of Reserved Beds (no MRN filter (all reserved beds))

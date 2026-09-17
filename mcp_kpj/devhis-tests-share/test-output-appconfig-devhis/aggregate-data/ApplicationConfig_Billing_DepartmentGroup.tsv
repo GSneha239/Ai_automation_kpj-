@@ -1,5 +1,0 @@
-PASS	Application Configuration - Billing - Department Group	ApplicationConfig_Billing_DepartmentGroup	Login	Authenticated; Patient Dashboard	Logged in
-PASS	Application Configuration - Billing - Department Group	ApplicationConfig_Billing_DepartmentGroup	Open Department Group screen	The Department Group screen is shown	Opened https://devhis.sancyberhad.com/?_cb=1.2.18#/DepartmentGroup
-PASS	Application Configuration - Billing - Department Group	ApplicationConfig_Billing_DepartmentGroup	Click Add	The Department Group add form opens	Add clicked (https://devhis.sancyberhad.com/?_cb=1.2.18#/add-DepartmentGroup)
-PASS	Application Configuration - Billing - Department Group	ApplicationConfig_Billing_DepartmentGroup	Select Department and Group	Department and Group are selected	Department=Administration | Group=Cardiology
-FAIL	Application Configuration - Billing - Department Group	ApplicationConfig_Billing_DepartmentGroup	Click Submit & success toast (retry other Department x Group combos on 'exists')	'... saved successfully.' toast	Still 'already exists' after trying 40 Department x Group combination(s): "×KPJ PortalGroup Already Assigned to the Department!"

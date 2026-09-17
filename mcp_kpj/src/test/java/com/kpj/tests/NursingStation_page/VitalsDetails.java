@@ -57,7 +57,7 @@ public class VitalsDetails extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Vitals Details", "Nursing Station > Vitals Details",
+        meta("Nursing Station - Vitals Details", "Nursing Station > Vitals Details",
                 "&#9888; Records REAL vital signs: search the patient by MRN, tick vitals, enter value + "
                         + "remarks, pick Taken By, Telemedicine Import, Save.");
 

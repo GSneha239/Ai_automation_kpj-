@@ -30,7 +30,7 @@ public class ProcedureSubcategoryMaster extends DevHisBase {
     /** DevHIS only builds the nav menu for an outpatient counter. Override with {@code -Dcounter=}. */
     public static final String COUNTER_FOR_MENU = "OPD-B-01";
 
-    public ProcedureSubcategoryMaster() { super("ApplicationConfiguration_ProcedureSubcategoryMaster"); }
+    public ProcedureSubcategoryMaster() { super("ApplicationConfiguration_OTConfiguration_ProcedureSubcategoryMaster"); }
 
     public static void main(String[] args) {
         ProcedureSubcategoryMaster t = new ProcedureSubcategoryMaster();
@@ -42,7 +42,7 @@ public class ProcedureSubcategoryMaster extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Procedure Subcategory Master", "Application Configuration > OT Configuration > Procedure Subcategory Master",
+        meta("Application Configuration - OT Configuration - Procedure Subcategory Master", "Application Configuration > OT Configuration > Procedure Subcategory Master",
                 "&#9888; Creates a REAL procedure subcategory: Add, enter the Code and Remark, select the Store, "
                         + "Submit.");
 

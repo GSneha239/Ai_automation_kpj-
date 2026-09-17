@@ -33,7 +33,7 @@ public class OpdWaitingArea extends DevHisBase {
     /** DevHIS only builds the nav menu for an outpatient counter. Override with {@code -Dcounter=}. */
     public static final String COUNTER_FOR_MENU = "OPD-B-01";
 
-    public OpdWaitingArea() { super("ApplicationConfiguration_OpdWaitingArea"); }
+    public OpdWaitingArea() { super("ApplicationConfiguration_General_OpdWaitingArea"); }
 
     public static void main(String[] args) {
         OpdWaitingArea t = new OpdWaitingArea();
@@ -45,7 +45,7 @@ public class OpdWaitingArea extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("OPD Waiting Area", "Application Configuration > General > OPD Waiting Area",
+        meta("Application Configuration - General - OPD Waiting Area", "Application Configuration > General > OPD Waiting Area",
                 "&#9888; Creates a REAL OPD waiting area: Add, enter Code and Remark, tick a cabin and a "
                         + "modality, Save.");
 

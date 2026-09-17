@@ -1,7 +1,0 @@
-PASS	System Configuration - User	SystemConfig_User	Login	Authenticated; Patient Dashboard	Logged in
-PASS	System Configuration - User	SystemConfig_User	Open User screen	The User list is shown	Opened User Details Welcome: Employee 1301:(KPJ @ https://dsh-nhisqa.kpjhealth.com.my/#/User
-PASS	System Configuration - User	SystemConfig_User	Click Add	The user entry form is shown	Add form opened - User Details Welcome: Employee 1301:(KPJ @ https://dsh-nhisqa.kpjhealth.com.my/#/Add-UserDetailsModified
-PASS	System Configuration - User	SystemConfig_User	Select Payable Type + Payable; enter Login ID, Password, Confirm Password	Payable Type, Payable, Login ID and both password fields are set	PayableType=Consultant | Payable=AJAY PAYABLE | LoginID=QAUSER55651592370 | Password=set | ConfirmPassword=set
-PASS	System Configuration - User	SystemConfig_User	Select Location Details, OPD Waiting Area	Location and OPD Waiting Area are selected	Location=row | OPDWaitingArea=Medical Records Department | DepositReceiptType=(no options) [via SubGroupID ng=UserDetailsModified.SubGroupID] Deposit/Receipt Type: NOT ASSERTED — no options exist for any Payable Type on this environment (Sub Group master not configured); the app saves without it
-PASS	System Configuration - User	SystemConfig_User	Tick a user right	One user right is ticked	View All Levels (ticked)
-PASS	System Configuration - User	SystemConfig_User	Click Submit & success toast	A '... saved successfully' success toast is shown	×KPJ PortalUser Details saved successfully.

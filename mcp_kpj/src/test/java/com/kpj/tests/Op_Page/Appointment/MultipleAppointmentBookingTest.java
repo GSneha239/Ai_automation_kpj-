@@ -37,7 +37,7 @@ public class MultipleAppointmentBookingTest extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Multiple Appointment Booking",
+        meta("OP - Appointment - Multiple Appointment Booking",
                 "OP > Appointment > Multiple Appointment Booking",
                 "⚠️ This test creates a NEW appointment booking in DevHIS.");
 
@@ -47,7 +47,7 @@ public class MultipleAppointmentBookingTest extends DevHisBase {
 
         // 1) Authenticate
         loginPage.login(BASE, USER, PASS);
-        step("Login", "farisha / Tcare@123", "Authenticated; Patient Dashboard", "Logged in", "PASS");
+        step("Login", USER + " / " + PASS, "Authenticated; Patient Dashboard", "Logged in", "PASS");
 
         // 2) Navigate to the module
         bookingPage.navigateTo(BASE);

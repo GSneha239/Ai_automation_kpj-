@@ -43,7 +43,7 @@ public class RadiologyResultEntry extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Radiology Result Entry", "Investigation > Radiology > Result Entry",
+        meta("Investigation - Radiology - Result Entry", "Investigation > Radiology > Result Entry",
                 "Search a date range, tick a record and print the Result Entry Report. Nothing is saved.");
 
         String counter = System.getProperty("counter", COUNTER_FOR_MENU);

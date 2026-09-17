@@ -59,7 +59,7 @@ public class PurchaseRequestApproval extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Purchase Request Approval", "Inventory > Purchase > Purchase Request Approval",
+        meta("Inventory - Purchase - Purchase Request Approval", "Inventory > Purchase > Purchase Request Approval",
                 "&#9888; APPROVES one REAL purchase request and REJECTS a different one: search by date "
                         + "range, then [Approve PR] tick Approved PR for an item and Approve PR, then "
                         + "[Reject PR] tick Reject for another item and Reject PR.");

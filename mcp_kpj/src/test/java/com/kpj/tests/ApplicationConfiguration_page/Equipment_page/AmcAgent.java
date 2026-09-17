@@ -30,7 +30,7 @@ public class AmcAgent extends DevHisBase {
     /** DevHIS only builds the nav menu for an outpatient counter. Override with {@code -Dcounter=}. */
     public static final String COUNTER_FOR_MENU = "OPD-B-01";
 
-    public AmcAgent() { super("ApplicationConfiguration_AmcAgent"); }
+    public AmcAgent() { super("ApplicationConfiguration_Equipment_AmcAgent"); }
 
     public static void main(String[] args) {
         AmcAgent t = new AmcAgent();
@@ -42,7 +42,7 @@ public class AmcAgent extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("AMC Agent", "Application Configuration > Equipment > AMC Agent",
+        meta("Application Configuration - Equipment - AMC Agent", "Application Configuration > Equipment > AMC Agent",
                 "&#9888; Creates a REAL AMC agent: enter Code and Remark, then Submit.");
 
         String counter = System.getProperty("counter", COUNTER_FOR_MENU);
@@ -75,7 +75,24 @@ public class AmcAgent extends DevHisBase {
 
         addSummary("List screen controls", tor.describeControls());
         addSummary("Add", tor.openFormIfNeeded());
-        addSummary("Form controls", tor.describeControls());
+        String formControls = tor.describeControls();
+        addSummary("Form controls", formControls);
+
+        // The form that actually opened only carries Code + Store — no Remark, no MIMS GUID/Description,
+        // no MIMS Type. Verified live 2026-09-02: this is genuinely what the app renders at this route
+        // today, not a locator miss (Code itself resolves fine). Rather than mechanically fail once per
+        // missing field, stop here and report it as the one real problem it is: the app opens the wrong
+        // (an incomplete) page for this flow. Nothing is entered anywhere on a form already known to be
+        // wrong, since typing into an unrelated screen's fields would only corrupt its data.
+        if (!tor.hasExpectedFields()) {
+            step(page, "Form has the expected fields", "Check for Remark / MIMS GUID / MIMS Description before entering anything",
+                    "The form carries Code, Remark, MIMS GUID, MIMS Description and MIMS Type",
+                    "FAILS — opens the WRONG (an incomplete) page: only Code and Store are present. "
+                        + "Form controls: " + formControls,
+                    "FAIL");
+            addSummary("Result", "FAILED — wrong/incomplete page (only Code + Store found)");
+            return;
+        }
 
         // 2) Code + Remark
         String entry = tor.enterDetails(code, remark);

@@ -27,7 +27,7 @@ public class DrugClass extends DevHisBase {
     /** DevHIS only builds the nav menu for an outpatient counter. Override with {@code -Dcounter=}. */
     public static final String COUNTER_FOR_MENU = "OPD-B-01";
 
-    public DrugClass() { super("ApplicationConfiguration_DrugClass"); }
+    public DrugClass() { super("ApplicationConfiguration_Inventory_DrugClass"); }
 
     public static void main(String[] args) {
         DrugClass t = new DrugClass();
@@ -39,7 +39,7 @@ public class DrugClass extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Drug Class", "Application Configuration > Inventory > Drug Class",
+        meta("Application Configuration - Inventory - Drug Class", "Application Configuration > Inventory > Drug Class",
                 "&#9888; Creates a REAL drug class: Add, enter Code and Remark, tick Is Carbapenems or "
                         + "Is Chemotherapy, Submit.");
 

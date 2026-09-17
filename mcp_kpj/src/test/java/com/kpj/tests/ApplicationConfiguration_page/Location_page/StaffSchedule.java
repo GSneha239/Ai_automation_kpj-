@@ -30,7 +30,7 @@ public class StaffSchedule extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Application Configuration - Staff Schedule",
+        meta("Application Configuration - Location - Staff Schedule",
                 "Application Configuration > Location > Staff Schedule",
                 "Add a staff schedule: Department, Payable, Start/End Time, Consultation Room, Nursing "
                         + "Station, Days, Add, Submit.");

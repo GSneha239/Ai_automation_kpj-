@@ -22,7 +22,7 @@ public class Room extends DevHisBase {
     /** How many times to re-enter fresh details when the server says the Code / Remark already exists. */
     private static final int MAX_ATTEMPTS = 40;
 
-    public Room() { super("ApplicationConfig_Room"); }
+    public Room() { super("ApplicationConfig_Admission_Room"); }
 
     public static void main(String[] args) {
         Room t = new Room();
@@ -34,7 +34,7 @@ public class Room extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Application Configuration - Room", "Application Configuration > Admission > Room",
+        meta("Application Configuration - Admission - Room", "Application Configuration > Admission > Room",
                 "Add a Room: Add, enter Code + Remark, select Room Type, tick an Amenity checkbox, Submit.");
 
         LoginPage loginPage = new LoginPage(page);

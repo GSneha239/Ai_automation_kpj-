@@ -30,13 +30,13 @@ public class GraphicalView extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("IP Graphical View", "IP > Inpatients > Graphical View",
+        meta("IP - Inpatients - Graphical View", "IP > Inpatients > Graphical View",
                 "Select an occupied bed on the graphical bed board, view its Bed Information / Admission "
                         + "Details / Rate Details, pick a Pricing Policy, and close via OK.");
 
         LoginPage loginPage = new LoginPage(page);
         loginPage.login(BASE, USER, PASS);
-        step("Login", "tieba / User@123", "Authenticated; Patient Dashboard", "Logged in", "PASS");
+        step("Login", "tieba / Tieba@123", "Authenticated; Patient Dashboard", "Logged in", "PASS");
 
         com.kpj.pages.Ip.GraphicalView gv = new com.kpj.pages.Ip.GraphicalView(page);
 
@@ -180,6 +180,22 @@ public class GraphicalView extends DevHisBase {
                         + (toast == null || toast.isEmpty() ? "No toast appeared." : "Last toast: " + toast)),
                 admitOk ? "PASS" : "FAIL");
 
+        // A successful Save opens the admission report(s) (IPD Report, Patient Label, Wrist Band, Consent
+        // Form, ...) in NEW tabs — confirmed live these open several seconds after Save, so give them a
+        // chance before moving on. This test (unlike the standalone com.kpj.tests.Ip.Admission) doesn't
+        // capture those reports, but it MUST NOT leave one of them as the frontmost tab: every section after
+        // this one keeps calling page.evaluate()/screenshot() on the ORIGINAL bed-board tab, and Chromium
+        // throttles/deprioritizes a backgrounded tab's renderer — confirmed live that is exactly what turned
+        // into "screenshot timed out" and "Execution context was destroyed" failures further down this same
+        // test. Close every report tab that opened and bring the original tab back to front before continuing.
+        if (admitOk) page.waitForTimeout(12000);
+        try {
+            for (com.microsoft.playwright.Page pg : page.context().pages()) {
+                if (pg != page && !pg.isClosed()) pg.close();
+            }
+        } catch (Exception ignore) { }
+        try { page.bringToFront(); } catch (Exception ignore) { }
+
         addSummary("Vacant Bed", vacantBed.replace("\n", " | "));
         addSummary("Admission · NOK / Guarantor", nok == null ? "-" : nok);
         addSummary("Admission · Payor", payor == null ? "-" : payor);
@@ -251,8 +267,17 @@ public class GraphicalView extends DevHisBase {
         // 9) Select a VACANT (green) bed and click Under Maintenance — confirmed live: MaintenanceBed() is
         // enabled on a vacant bed's toolbar and navigates to the SAME #/add-undermaintenance form
         // com.kpj.tests.Ip.BedManagement_page.UnderMaintenance's "Add" flow drives via the Under Maintenance
-        // list screen's own "Add" button — so the fill reuses that SAME markBedUnderMaintenance(...), not a
-        // second copy of that logic.
+        // list screen's own "Add" button.
+        //
+        // NOT reusing markBedUnderMaintenance() here — confirmed live this entry point is genuinely
+        // different: the form's Ward pre-fill matches the clicked bed, but its Room Type pre-fill does NOT
+        // (e.g. clicking bed DC-26, tooltip "Room Type: DAY CARE, Ward: DAY CARE", landed with Room Type set
+        // to an unrelated value whose combo has zero beds — DC-26 only appears once Room Type is corrected
+        // to "DAY CARE"). markBedUnderMaintenance()'s blind "any bed from any combo" search (built for the
+        // standalone screen, which starts with an EMPTY Ward/Room Type) would happily search past this and
+        // mark a COMPLETELY DIFFERENT bed than the one actually clicked. markSpecificBedUnderMaintenance()
+        // keeps the pre-filled Ward, iterates only Room Type until the CLICKED bed's own name appears, and
+        // selects that exact bed instead.
         //
         // Re-navigate to Graphical View first — same lesson as the Transfer Bed section above: the browser is
         // left on whatever page the previous section's Save landed on, not back on the bed board.
@@ -266,18 +291,18 @@ public class GraphicalView extends DevHisBase {
                 vacantForMaintenance == null ? "FAIL" : "PASS");
         if (vacantForMaintenance == null) return;
 
+        String targetBedName = com.kpj.pages.Ip.GraphicalView.bedNameFromTitle(vacantForMaintenance);
         com.kpj.pages.Ip.BedManagement_page.UnderMaintenance um = new com.kpj.pages.Ip.BedManagement_page.UnderMaintenance(page);
         java.time.format.DateTimeFormatter mdf = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy");
         java.time.LocalDate mtd = java.time.LocalDate.now();
         com.kpj.pages.Ip.BedManagement_page.UnderMaintenance.MaintenanceResult mr =
-                um.markBedUnderMaintenance(mtd.format(mdf), mtd.plusDays(7).format(mdf), "Bed under maintenance - automated test");
+                um.markSpecificBedUnderMaintenance(targetBedName, mtd.format(mdf), mtd.plusDays(7).format(mdf),
+                        "Bed under maintenance - automated test");
 
-        step(page, "Maintenance · Select Ward/Room Type (generate bed list)", "Select Ward + Room Type; change until a bed list generates",
-                "A bed list is generated with at least one bed", mr.combo, mr.bedsOk ? "PASS" : "FAIL");
-        if (!mr.bedsOk) { addSummary("Maintenance · Result", mr.failReason); return; }
-
-        step(page, "Maintenance · Select the bed", "Tick the SELECT checkbox of the first bed in the generated list",
-                "A bed is selected", mr.bed == null ? "No bed selected" : "Selected: " + mr.bed, mr.bed == null ? "FAIL" : "PASS");
+        step(page, "Maintenance · Select the clicked bed (" + targetBedName + ")",
+                "Keep the pre-filled Ward; change Room Type until '" + targetBedName + "' appears in the list; tick its checkbox",
+                "The SAME bed clicked on the board is selected", mr.bed == null ? mr.failReason : "Selected: " + mr.bed,
+                mr.bed == null ? "FAIL" : "PASS");
         if (mr.bed == null) { addSummary("Maintenance · Result", mr.failReason); return; }
 
         step(page, "Maintenance · Enter remark", "Enter the Remark (undermaintenance.remark)",

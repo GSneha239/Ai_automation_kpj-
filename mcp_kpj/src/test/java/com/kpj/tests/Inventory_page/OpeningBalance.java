@@ -49,7 +49,7 @@ public class OpeningBalance extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Opening Balance", "Inventory > Opening Balance",
+        meta("Inventory - Opening Balance", "Inventory > Opening Balance",
                 "&#9888; Creates a REAL opening balance: New, Get Items, search and select an item, "
                         + "enter its barcode/batch/expiry/qty/cost/MRP, Save.");
 

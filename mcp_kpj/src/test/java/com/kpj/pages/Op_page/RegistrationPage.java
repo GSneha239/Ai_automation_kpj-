@@ -257,7 +257,7 @@ public class RegistrationPage extends BasePage {
         try {
             page.waitForFunction("() => { const e=[...document.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')==='Registration.ICCardTypeID'); return e && e.options.length>1; }",
                     null, new Page.WaitForFunctionOptions().setTimeout(15000));
-        } catch (Exception ignore) { System.out.println("fillPatientInformation: ICCardType dropdown did not populate in time"); }
+        } catch (Exception ignore) { System.out.println("fillPatientInformation: ICCardType dropdown did not populate in time"); com.kpj.core.Reasons.add("the IC Card Type dropdown did not populate (no options loaded in time)"); }
         for (int a = 0; a < 4; a++) {
             setSel("Registration.ICCardTypeID", icCardType);
             waitForAngular(300);
@@ -558,7 +558,7 @@ public class RegistrationPage extends BasePage {
             try {
                 page.waitForFunction("() => { const s=[...document.querySelectorAll('select')].find(x=>(x.getAttribute('ng-model')||'')==='Registration.VisaTypeID');"
                         + " return !!(s && s.options.length>1); }", null, new Page.WaitForFunctionOptions().setTimeout(8000));
-            } catch (Exception ignore) { System.out.println("fillVisaDetails: Visa Type list did not populate — will report what it offers"); }
+            } catch (Exception ignore) { System.out.println("fillVisaDetails: Visa Type list did not populate — will report what it offers"); com.kpj.core.Reasons.add("the Visa Type dropdown did not populate (no options loaded in time)"); }
         } catch (Exception e) {
             // Say WHY nothing opened: is the button there, visible, covered by something, and did the screen
             // answer with a toast? A datepicker/overlay left open by the previous field swallows the click.
@@ -967,7 +967,7 @@ public class RegistrationPage extends BasePage {
             page.waitForFunction(
                     "() => { const e=[...document.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')==='Registration.ResCityID'); return e && e.options.length>1; }",
                     null, new Page.WaitForFunctionOptions().setTimeout(12000));
-        } catch (Exception ignore) { System.out.println("fillCorrespondence: City dropdown did not populate from postcode in time"); }
+        } catch (Exception ignore) { System.out.println("fillCorrespondence: City dropdown did not populate from postcode in time"); com.kpj.core.Reasons.add("the City dropdown did not populate from the postcode (no options loaded in time)"); }
         waitForAngular(400);
         // Ensure City/State/Country are actually SELECTED — the postcode auto-fill sometimes loads the options but
         // leaves the ng-model empty. For any that's still empty, pick the first real option (selectedIndex=1, the
@@ -983,7 +983,7 @@ public class RegistrationPage extends BasePage {
         // yields at least one city option, and capture the resulting State+City model values.
         boolean cityOk = Boolean.TRUE.equals(page.evaluate("() => { const e=[...document.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')==='Registration.ResCityID'); if(!e) return false; const c=angular.element(e).controller('ngModel'); return e.options.length>1 && c && c.$modelValue!=null && c.$modelValue!==''; }"));
         if (!cityOk) {
-            System.out.println("fillCorrespondence: no City from postcode — selecting a different State to load cities.");
+            System.out.println("fillCorrespondence: no City from postcode — selecting a different State to load cities."); com.kpj.core.Reasons.add("the postcode gave no selectable City (City dropdown empty), so a different State was selected to load a city - the saved State/City are not the postcode's own");
             Object fb = page.evaluate("async () => { const sleep=ms=>new Promise(r=>setTimeout(r,ms));"
                     + " const st=[...document.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')==='Registration.ResStateID');"
                     + " const ct=[...document.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')==='Registration.ResCityID');"
@@ -1036,8 +1036,15 @@ public class RegistrationPage extends BasePage {
         Object r = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
                 + " const sel=ng=>{ const all=[...document.querySelectorAll('select')].filter(x=>(x.getAttribute('ng-model')||'')===ng);"
                 + "   return all.find(x=>x.offsetParent!==null) || all[0]; };"
+                // What the select DISPLAYS; when that is the placeholder, fall back to the Angular MODEL — confirmed
+                // live (Emergency Registration Conscious): a late list reload can leave the select on "--Select--"
+                // while Visit.DepartmentID still holds the value the Save then posts. Report it as
+                // "<option text> (model)" so the reader knows the display and the model disagreed.
                 + " const val=e=>{ if(!e) return null; const o=e.options[e.selectedIndex]; const t=o?norm(o.textContent):'';"
-                + "   return (o && o.value && !/^-*\\s*select\\s*-*$/i.test(t)) ? t : ''; };"
+                + "   if(o && o.value && !/^-*\\s*select\\s*-*$/i.test(t)) return t;"
+                + "   try{ const c=window.angular.element(e).controller('ngModel'); const v=c?c.$modelValue:null;"
+                + "     if(v!=null && (''+v).trim()!==''){ const m=[...e.options].find(x=>x.value && x.value.replace(/^(number|string):/,'')===(''+v)); return (m?norm(m.textContent):('id '+v))+' (model)'; } }catch(x){}"
+                + "   return ''; };"
                 + " const opts=e=>e?[...e.options].filter(o=>o.value && !/^-*\\s*select\\s*-*$/i.test(norm(o.textContent))).length:0;"
                 // Sub Dept counts only where the screen stars it — some builds leave it optional.
                 + " const starred=e=>{ if(!e) return false; if(e.hasAttribute('required')||e.hasAttribute('ng-required')) return true;"
@@ -1090,55 +1097,63 @@ public class RegistrationPage extends BasePage {
         return r == null ? "" : r.toString();
     }
 
+    /**
+     * Fill Payor Information: <b>Payor Mode</b> → <b>Payor Status</b> → <b>Payor</b>, per the confirmed live
+     * (2026-09-17) working order — replacing the previous approach of clicking a "self" ROW in the payor grid,
+     * which does not exist on this environment (the grid holds payors already added to the registration, not a
+     * preset list to pick from; its one pre-existing row, "COMPANY / SECURITIES COMMISSION MALAYSIA", is
+     * unrelated leftover data, not a Self/Cash option).
+     *
+     * <p><b>Payor</b> ({@code Registration.receivablename}, id {@code txtSponsorName}) is a plain text field with
+     * an {@code auto-complete} directive that never actually offered a suggestion list in testing, however it was
+     * typed into (mouse-focused real keystrokes, programmatic value+events, with pauses between characters) — the
+     * app accepts the typed text as-is. <b>Pricing Policy</b> stays on "--Select--" with no options no matter what
+     * is chosen above (same class of environment/master-data gap as Deposit/Receipt Type elsewhere in this suite),
+     * so it is not part of what this method waits for or judges success on — confirmed live that a real user's
+     * successful manual save also left it unset.</p>
+     */
     public boolean selectPayorSelf() {
-        // Open the Payor Information accordion so its default row loads.
+        // Open the Payor Information accordion so its fields render.
         page.evaluate("() => { const a=[...document.querySelectorAll('a,button')].find(x=>x.getAttribute('ng-click')==='FillSponserDropDown();' && x.offsetParent!==null); if(a) a.click(); }");
-        // KS serves the payor masters slowly: at 8s the grid was still empty, EditSponser therefore never ran, the
-        // payor FORM stayed blank and Save died on the nameless "Please fill in all the mandatory fields!" with
-        // Payor Mode / Payor Code / Priority / Pricing Policy empty. At 15s the same environment has both the
-        // default SELFPAY row and a 28-option Payor Mode list, so wait properly — for the ROW and for the LIST.
-        try {
-            page.waitForFunction(
-                    "() => [...document.querySelectorAll('table')].some(t=>/PAYOR MODE|PRICING POLICY/i.test((t.querySelector('thead')||{}).innerText||'') && /self|selfpay|cash/i.test((t.querySelector('tbody')||{}).innerText||''))",
-                    null, new Page.WaitForFunctionOptions().setTimeout(30000));
-        } catch (Exception ignore) { System.out.println("selectPayorSelf: payor default row did not load"); }
         try {
             page.waitForFunction(
                     "() => { const e=[...document.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')==='Registration.receivabletypeid'); return e && e.options.length>1; }",
                     null, new Page.WaitForFunctionOptions().setTimeout(20000));
-        } catch (Exception ignore) { System.out.println("selectPayorSelf: Payor Mode list did not populate"); }
+        } catch (Exception ignore) { System.out.println("selectPayorSelf: Payor Mode list did not populate"); com.kpj.core.Reasons.add("the Payor Mode dropdown did not populate (no options loaded)"); }
         waitForAngular(500);
-        // Invoke the payor grid row's handler (EditSponser) — that fills the payor form with Self.
-        page.evaluate("() => { const t=[...document.querySelectorAll('table')].find(x=>/PAYOR MODE|PRICING POLICY/i.test((x.querySelector('thead')||{}).innerText||''));"
-                + " if(!t) return; const row=t.querySelector('tbody tr'); if(!row) return;"
-                + " const cell=[...row.querySelectorAll('td')].find(td=>/self|selfpay|cash/i.test(td.textContent||'')) || row.querySelector('td') || row;"
-                + " const sc=angular.element(cell).scope(); if(sc && typeof sc.EditSponser==='function'){ sc.$apply(function(){ sc.EditSponser(sc.$index); }); } else { cell.click(); } }");
+        // 1) Payor Mode.
+        setSelTxt("Registration.receivabletypeid", "ASSOCIATE COMPANY");
         waitForAngular(600);
-        // Ensure Insurer = Self (REAL click) and backfill any empty mandatory payor select.
+        // 2) Payor Status.
+        setSelTxt("Registration.PayerTypeId", "Self");
+        waitForAngular(600);
+        // 3) Payor — plain text, no autocomplete selection to make.
+        try { page.locator("#txtSponsorName").fill("self"); }
+        catch (Exception e) { System.out.println("selectPayorSelf: Payor text fill failed - " + e.getMessage()); }
+        waitForAngular(600);
+        // Ensure Insurer = Self (REAL click) — belt-and-braces; Payor Status already carries the same meaning.
         Object tagged = page.evaluate("()=>{const r=[...document.querySelectorAll('input[ng-model=\"Insurer\"]')].find(x=>x.value==='1'); if(!r) return false; r.id='__payorSelf'; return true;}");
         if (Boolean.TRUE.equals(tagged)) {
             try { page.locator("#__payorSelf").check(new com.microsoft.playwright.Locator.CheckOptions().setTimeout(5000)); }
             catch (Exception e) { try { page.locator("#__payorSelf").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000)); } catch (Exception ignore) {} }
             page.evaluate("()=>{const e=document.getElementById('__payorSelf'); if(e) e.removeAttribute('id');}");
         }
-        page.evaluate("() => { const setSelIfEmpty=(ng,txt)=>{ const e=[...document.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')===ng); if(!e) return; const cur=((e.options[e.selectedIndex]||{}).text||'').trim(); if(cur && !/^-*\\s*select\\s*-*$/i.test(cur)) return;"
-                + " let i=[...e.options].findIndex(o=>(o.text||'').trim().toLowerCase()===txt.toLowerCase()); if(i<1) i=[...e.options].findIndex((o,ix)=>ix>0 && !/select/i.test(o.text||'')); if(i<1) return; e.selectedIndex=i; e.dispatchEvent(new Event('change',{bubbles:true})); const $=window.jQuery||window.$; if($){try{$(e).trigger('change'); $(e).select2('val', e.value);}catch(err){}} };"
-                + " setSelIfEmpty('Registration.receivabletypeid','Self'); setSelIfEmpty('Registration.PayerTypeId','Self'); }");
         waitForAngular(400);
-        // Judge on the payor FORM, not on the Insurer radio. The radio alone used to be accepted as a fallback,
-        // which reported "Payor = Self" as a PASS on KS while Payor Mode, Payor Code, Priority and Pricing Policy
-        // were all still empty — the step passed and Save failed three steps later with no explanation.
         Object state = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
                 + " const val=ng=>{ const e=[...document.querySelectorAll('select,input')].find(x=>(x.getAttribute('ng-model')||'')===ng);"
                 + "   if(!e) return ''; if(e.tagName!=='SELECT') return norm(e.value);"
                 + "   const o=e.options[e.selectedIndex]; const t=o?norm(o.textContent):'';"
                 + "   return (o && o.value && !/^-*\\s*select\\s*-*$/i.test(t)) ? t : ''; };"
-                + " return JSON.stringify({mode:val('Registration.receivabletypeid'), code:val('Registration.receivabletypecode'),"
-                + "   name:val('Registration.receivablename'), policy:val('Registration.tariffid'), priority:val('Registration.Priority')}); }");
+                + " return JSON.stringify({mode:val('Registration.receivabletypeid'), status:val('Registration.PayerTypeId'),"
+                + "   name:val('Registration.receivablename'), code:val('Registration.receivabletypecode'),"
+                + "   policy:val('Registration.tariffid'), priority:val('Registration.Priority')}); }");
         System.out.println("selectPayorSelf: payor form => " + state);
         lastPayorState = state == null ? "" : state.toString();
+        // Judge on Payor Mode + Payor Status + Payor text — the three fields this method actually sets — NOT on
+        // Pricing Policy, which stays empty on this environment regardless (see method Javadoc).
         return !group(lastPayorState, "\"mode\":\"([^\"]*)\"").isEmpty()
-                && !group(lastPayorState, "\"policy\":\"([^\"]*)\"").isEmpty();
+                && !group(lastPayorState, "\"status\":\"([^\"]*)\"").isEmpty()
+                && !group(lastPayorState, "\"name\":\"([^\"]*)\"").isEmpty();
     }
 
     /**
@@ -1156,6 +1171,88 @@ public class RegistrationPage extends BasePage {
     /** Set by {@link #fillVisitInformationRequiringSubDept()} — never clear Sub Department on this pass. */
     private boolean subDeptRequired = false;
 
+    /**
+     * Wait for the Doctor list to stop changing, then re-check Doctor and Visit Type. If either is empty, pick a
+     * DIFFERENT doctor (via {@link #tryOtherDoctorsForVisitType()}, which re-checks Visit Type after each) and
+     * look again — up to a few rounds, because each doctor change is itself a cascade that can reload lists.
+     * Records a {@link com.kpj.core.Reasons reason} when it gives up, so the report says what stayed empty.
+     */
+    private void settleAndRecheckVisit() {
+        for (int round = 1; round <= 3; round++) {
+            // Let any in-flight cascade land: the Doctor option count must hold still for ~1.2s.
+            try {
+                page.waitForFunction("() => new Promise(async (resolve) => { const sleep=ms=>new Promise(r=>setTimeout(r,ms));"
+                        + " const cnt=()=>{ const e=[...document.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')==='Visit.DoctorID'); return e?e.options.length:-1; };"
+                        + " let a=cnt(); for(let k=0;k<12;k++){ await sleep(400); const b=cnt(); if(b===a){ if(k>=2) return resolve(true); } else { a=b; k=0; } } resolve(true); })",
+                        null, new Page.WaitForFunctionOptions().setTimeout(8000));
+            } catch (Exception ignore) { }
+            // Department FIRST — it is the top of the cascade. Re-select it only when the MODEL is empty too: if
+            // the model still holds the id and only the display was reset, re-selecting would re-fire the whole
+            // cascade and wipe the Doctor/Visit Type just settled (the check accepts the model value for that).
+            String dept = selectedText("Visit.DepartmentID");
+            if (dept.isEmpty() && modelValue("Visit.DepartmentID").isEmpty()) {
+                System.out.println("settleAndRecheckVisit: round " + round + " — Department is EMPTY (display and model) → re-selecting it, then re-checking the cascade");
+                setSelTxt("Visit.DepartmentID", "Dietician");
+                waitForAngular(1000);
+                selectSubDepartmentAndDoctor();
+                waitForAngular(600);
+            } else if (dept.isEmpty()) {
+                System.out.println("settleAndRecheckVisit: round " + round + " — Department display reset to placeholder but model still holds id " + modelValue("Visit.DepartmentID") + " (left as is)");
+            }
+            String doctor = selectedText("Visit.DoctorID");
+            String visitType = selectedVisitTypeText();
+            if (!doctor.isEmpty() && !visitType.isEmpty()) {
+                if (round > 1) {
+                    System.out.println("settleAndRecheckVisit: settled on round " + round + " — Doctor=" + doctor + " | Visit Type=" + visitType);
+                    com.kpj.core.Reasons.add("the Doctor/Visit Type selection was reset by a late doctor-list reload; changed the doctor to '" + doctor
+                            + "' (Visit Type '" + visitType + "') on re-check round " + round);
+                }
+                return;
+            }
+            System.out.println("settleAndRecheckVisit: round " + round + " — Doctor='" + doctor + "' | Visit Type='" + visitType
+                    + "' → " + (doctor.isEmpty() ? "doctor was reset by a late list reload; " : "") + "changing the doctor and checking again");
+            if (doctor.isEmpty() && !doctorListHasOptions()) {
+                // The doctor list itself is empty — re-run the sub-department/department walk that finds one.
+                selectSubDepartmentAndDoctor();
+                if (currentDoctor().isEmpty()) ensureDoctorByChangingDepartment();
+                waitForAngular(800);
+            }
+            // tryOtherDoctorsForVisitType() walks the doctors OTHER than the current one (here: none / the one that
+            // lost its Visit Type), re-checking Visit Type after each — exactly "change the doctor and check".
+            if (tryOtherDoctorsForVisitType()) continue;
+            if (ensureVisitTypeIfPresent()) continue;
+        }
+        String doctor = selectedText("Visit.DoctorID");
+        String visitType = selectedVisitTypeText();
+        if (doctor.isEmpty() || visitType.isEmpty()) {
+            com.kpj.core.Reasons.add("after 3 settle/re-check rounds " + (doctor.isEmpty() ? "the Doctor dropdown is still EMPTY (list reloads and resets the selection)" : "Doctor=" + doctor)
+                    + " and " + (visitType.isEmpty() ? "the Visit Type dropdown is still EMPTY - no doctor tried had a Visit Type configured" : "Visit Type=" + visitType));
+        }
+    }
+
+    /** The Visit Type label currently selected (the select is found by ng-model or label) — "" when unset. */
+    private String selectedVisitTypeText() {
+        Object t = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                + " const sel=[...document.querySelectorAll('select')].find(s=>/visit.?type/i.test(s.getAttribute('ng-model')||'')); if(!sel) return '';"
+                + " const o=sel.options[sel.selectedIndex]; const s=o?norm(o.textContent):'';"
+                + " return (o && o.value && !/^-*\\s*select\\s*-*$/i.test(s)) ? s : ''; }");
+        return t == null ? "" : t.toString();
+    }
+
+    /** The Angular ngModel value behind a {@code <select ng-model=ng>} as a string — "" when null/empty/absent. */
+    private String modelValue(String ngModel) {
+        Object v = page.evaluate("(ng) => { const e=[...document.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')===ng); if(!e) return '';"
+                + " try{ const c=window.angular.element(e).controller('ngModel'); const v=c?c.$modelValue:null; return v==null?'':(''+v).trim(); }catch(x){ return ''; } }", ngModel);
+        return v == null ? "" : v.toString();
+    }
+
+    /** True when the Doctor select currently offers at least one real (non-placeholder) option. */
+    private boolean doctorListHasOptions() {
+        return Boolean.TRUE.equals(page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                + " const e=[...document.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')==='Visit.DoctorID'); if(!e) return false;"
+                + " return [...e.options].some(o=>o.value && !/^-*\\s*select\\s*-*$/i.test(norm(o.textContent))); }"));
+    }
+
     /** Visit Information — Source, Encounter, Department + Doctor, Queue No (on the Save button scope), Cash. */
     public void fillVisitInformation() {
         // Open the "Visit Information" accordion header FIRST — the exact control is //*[@id="headingFour"]/a
@@ -1170,7 +1267,12 @@ public class RegistrationPage extends BasePage {
         waitForAngular(600);
         setSelTxt("Visit.PatientSourceID", "External");
         setSelTxt("Visit.EncounterTypeID", "Outpatient");
-        setSelTxt("Visit.DepartmentID", "Cardiology");
+        // Registration Department = Dietician, per request (2026-09-17) — confirmed live it is a real, selectable
+        // department (its only Sub Dept is "Food"). Registration.GroupCategoryId is a SEPARATE, unrelated field
+        // (a billing service-group list — Dietary, F&B, Laboratory, ... — with no "Dietician"/"Cardiology" entry
+        // either way); setSelTxt's silent fall-back-to-first-option already made this line's exact text a no-op
+        // before this change too, so it is left as-is rather than pretending a fix here would do anything.
+        setSelTxt("Visit.DepartmentID", "Dietician");
         setSelTxt("Registration.GroupCategoryId", "Cardiology");
         waitForAngular(800); // doctor list can reload after the department is set
         // Sub Department is filtered BY Department, so it must be set AFTER the department cascade has reloaded it.
@@ -1197,11 +1299,26 @@ public class RegistrationPage extends BasePage {
         // Department from its now-populated (if short) list. Save did not actually block on it, but the pre-Save
         // verification correctly flagged the gap — close it the same way Sub Department is re-checked above.
         if (selectedText("Visit.DepartmentID").isEmpty()) {
-            setSelTxt("Visit.DepartmentID", "Cardiology");
+            setSelTxt("Visit.DepartmentID", "Dietician");
         }
-        page.evaluate("() => { const b=[...document.querySelectorAll('button')].find(x=>x.getAttribute('ng-click')==='IUDRegistration();' && x.offsetParent!==null);"
-                + " let s = b ? angular.element(b).scope() : angular.element(document.querySelector('#txtFirstName')).scope();"
-                + " s.$apply(function(){ let x=s; for(let i=0;i<10&&x;i++){ if(x.Visit){ x.Visit.TokenNo='1'; break; } x=x.$parent; } }); }");
+        // FINAL PASS — confirmed live (Emergency Registration Conscious, 2026-09-04): everything above had set
+        // Doctor="Doctor 100" and Visit Type=2, yet the completeness check a moment later found the Doctor select
+        // back on its placeholder (list reloaded with 34 options) and the Visit Type list EMPTY. A late cascade
+        // response (sub-department/department → doctors) lands AFTER the selection and resets it. So let the
+        // lists settle, then re-check; if Visit Type (or Doctor) is empty, CHANGE THE DOCTOR and check again.
+        settleAndRecheckVisit();
+        // Queue No. — a real typed value into the visible field (ng-model Visit.TokenNo), per request, rather
+        // than writing the scope directly. A random 3-digit number, same spirit as the Login ID elsewhere: cheap
+        // to make distinct without needing to know what queue numbers are already taken.
+        String queueNo = String.valueOf(100 + (int) (Math.random() * 900));
+        try { page.locator("input[ng-model='Visit.TokenNo']").first().fill(queueNo); }
+        catch (Exception e) {
+            System.out.println("fillVisitInformation: Queue No. fill failed - " + e.getMessage() + " - falling back to scope write");
+            page.evaluate("(qn) => { const b=[...document.querySelectorAll('button')].find(x=>x.getAttribute('ng-click')==='IUDRegistration();' && x.offsetParent!==null);"
+                    + " let s = b ? angular.element(b).scope() : angular.element(document.querySelector('#txtFirstName')).scope();"
+                    + " s.$apply(function(){ let x=s; for(let i=0;i<10&&x;i++){ if(x.Visit){ x.Visit.TokenNo=qn; break; } x=x.$parent; } }); }", queueNo);
+        }
+        waitForAngular(400);
         page.evaluate("()=>{const c=[...document.querySelectorAll('input[type=checkbox]')].find(x=>x.getAttribute('ng-model')==='Visit.IsCashPayment');if(c&&!c.checked)c.click();}");
     }
     /**
@@ -1298,6 +1415,10 @@ public class RegistrationPage extends BasePage {
     }
 
     private void selectSubDepartmentAndDoctor() {
+        // Whatever Registration Department the caller already set (e.g. "Dietician") — captured BEFORE any
+        // doctor is picked, so pickDoctorPreservingDepartment() below can tell whether a doctor's own ng-change
+        // silently moved it elsewhere. See that method's Javadoc for why this matters.
+        String intendedDept = selectedText("Visit.DepartmentID");
         // Locate the Sub Department select and list its real options (polling — it loads off Department).
         Object info = page.evaluate("() => new Promise(async (resolve) => { const norm=s=>(s||'').replace(/\s+/g,' ').trim(); const sleep=ms=>new Promise(r=>setTimeout(r,ms));"
                 + " const labelOf=s=>{ let t=''; if(s.id){ const l=document.querySelector('label[for=\"'+s.id+'\"]'); if(l) t+=' '+l.textContent; }"
@@ -1333,13 +1454,17 @@ public class RegistrationPage extends BasePage {
             String subDept = String.valueOf(o);
             setSelTxt(model, subDept);
             waitForAngular(1500);                     // the doctor list reloads off the sub-department
-            setSelTxt("Visit.DoctorID", "Allen R");   // falls back to the first real doctor if Allen R is filtered out
-            String doctor = currentDoctor();
+            String doctor = pickDoctorPreservingDepartment(intendedDept);
             if (!doctor.isEmpty()) {
-                System.out.println("selectSubDepartmentAndDoctor: " + model + "=" + subDept + " | Doctor=" + doctor);
+                System.out.println("selectSubDepartmentAndDoctor: " + model + "=" + subDept + " | Doctor=" + doctor
+                        + " | Department=" + selectedText("Visit.DepartmentID"));
                 return;
             }
-            System.out.println("selectSubDepartmentAndDoctor: '" + subDept + "' has no doctors — trying the next one");
+            System.out.println("selectSubDepartmentAndDoctor: '" + subDept + "' has no doctor that keeps Department=\""
+                    + intendedDept + "\" — trying the next sub-department");
+            com.kpj.core.Reasons.add("Sub Department '" + subDept + "' has no Doctor whose selection keeps Registration"
+                    + " Department = '" + intendedDept + "' (every real doctor either had none, or its own home"
+                    + " department overrides the one chosen) - tried the next sub-department");
         }
 
         // No sub-department leaves a doctor. What to do now DIFFERS by screen:
@@ -1378,11 +1503,55 @@ public class RegistrationPage extends BasePage {
         page.evaluate("(ng) => { const e=[...document.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')===ng); if(!e) return;"
                 + " e.selectedIndex=0; e.dispatchEvent(new Event('change',{bubbles:true})); const $=window.jQuery; if($){try{$(e).trigger('change');}catch(err){}} }", model);
         waitForAngular(800);
-        setSelTxt("Visit.DepartmentID", "Cardiology");   // re-fires the cascade that fills the doctor list
+        setSelTxt("Visit.DepartmentID", "Dietician");   // re-fires the cascade that fills the doctor list
         waitForAngular(1800);
         setSelTxt("Visit.DoctorID", "Allen R");
         if (currentDoctor().isEmpty()) { waitForAngular(1500); setSelTxt("Visit.DoctorID", ""); }
         System.out.println("selectSubDepartmentAndDoctor: no sub-department left a doctor — cleared it; Doctor=" + currentDoctor());
+    }
+
+    /**
+     * Pick a Doctor from the CURRENTLY LOADED list whose selection does not silently move
+     * <b>Registration Department</b> away from {@code intendedDept}.
+     *
+     * <p>Confirmed live 2026-09-17 by reading this environment's own
+     * {@code App/OPD/controller/patientRegistrationController.js}: the Doctor select carries
+     * {@code ng-change="fnSetDepartment1();fnSetClusterbyDoctor();fnSetVisitType(1);"} (tagged in the app's own
+     * source "BW-87-YASHWANTH-23/04/2026: Doctor->Department Logic"), and {@code fnSetDepartment1()} OVERWRITES
+     * {@code $scope.Visit.DepartmentID} with the picked doctor's OWN home department whenever the two differ.
+     * That is a deliberate app feature, not a defect — but it means a doctor whose home department is elsewhere
+     * silently steals the registration away from whatever department was just chosen. Trying Registration
+     * Department = <b>Dietician</b> live, its only Sub Dept ("Food") listed 12 doctors and roughly a third of
+     * them moved Department elsewhere on selection (e.g. "AHMAD BIN ALI" -> Clinical Radiology, "Doctor 100" ->
+     * Cardiothoracic Surgery, "Doctor 194" -> Emergency Department) while the rest (AJAY PAYABLE, Doctor
+     * 111/213/42, Doctor_Dr.M, DrTay, DummyRadiology, ...) kept it on Dietician — so a naive "take the first
+     * doctor" pick (previously "Allen R", else whatever is first) had roughly 1-in-3 odds of silently registering
+     * under the WRONG department. Walk the real doctor options and keep the first whose Department still reads
+     * {@code intendedDept} afterwards.
+     *
+     * @param intendedDept the Department text to preserve (blank skips the check — falls back to "Allen R", else
+     *                      the first real option, the pre-existing behaviour)
+     * @return the doctor text committed, or "" when none of the current list's doctors preserve the department
+     */
+    private String pickDoctorPreservingDepartment(String intendedDept) {
+        if (intendedDept == null || intendedDept.isEmpty()) {
+            setSelTxt("Visit.DoctorID", "Allen R");
+            return currentDoctor();
+        }
+        Object list = optionsOf("Visit.DoctorID");
+        java.util.List<?> doctors = (list instanceof java.util.List) ? (java.util.List<?>) list : java.util.Collections.emptyList();
+        for (Object d : doctors) {
+            String doctor = String.valueOf(d);
+            setSelTxt("Visit.DoctorID", doctor);
+            waitForAngular(900);
+            String committed = currentDoctor();
+            if (committed.isEmpty()) continue;                                        // did not bind — try the next
+            String deptNow = selectedText("Visit.DepartmentID");
+            if (deptNow.equalsIgnoreCase(intendedDept)) return committed;              // preserved — done
+            System.out.println("pickDoctorPreservingDepartment: \"" + committed + "\" moved Department to \""
+                    + deptNow + "\" (wanted \"" + intendedDept + "\") — trying the next doctor");
+        }
+        return "";
     }
 
     /**
@@ -1521,7 +1690,7 @@ public class RegistrationPage extends BasePage {
 
         String first = m.get("first") == null ? "" : String.valueOf(m.get("first"));
         if (first.isEmpty()) {
-            System.out.println("reassertSubDepartmentIfRequired: " + model + " is EMPTY and no options loaded — Save will be blocked");
+            System.out.println("reassertSubDepartmentIfRequired: " + model + " is EMPTY and no options loaded — Save will be blocked"); com.kpj.core.Reasons.add("the Sub Department dropdown (" + model + ") is EMPTY - no options loaded, so Save is blocked");
             return;
         }
         setSelTxt(model, first);
@@ -1780,7 +1949,7 @@ public class RegistrationPage extends BasePage {
                 + " resolve(o && o.value ? o.value.replace(/^(number|string):/,'') : null); })", model);
         boolean resolved = v != null && !String.valueOf(v).trim().isEmpty();
         if (!resolved) {
-            System.out.println("ensureVisitType: could NOT resolve a value for " + model + " — Save will re-select it");
+            System.out.println("ensureVisitType: could NOT resolve a value for " + model + " — Save will re-select it"); com.kpj.core.Reasons.add("the Visit Type dropdown (" + model + ") had no selectable value after the fill - re-selected at Save");
         } else {
             snap(model, v);
             System.out.println("ensureVisitType: was empty — re-selected " + model + " = " + v);
@@ -1797,6 +1966,11 @@ public class RegistrationPage extends BasePage {
      * waiting longer for the same one. Bounded (a handful of candidates) since each costs a real cascade reload.
      */
     private boolean tryOtherDoctorsForVisitType() {
+        // Same Doctor->Department auto-sync as pickDoctorPreservingDepartment() (see its Javadoc) can undo the
+        // department this walk started with, so prefer a candidate that resolves Visit Type WITHOUT also moving
+        // Department away from it — but don't let that block Visit Type resolving at all: if none manage both,
+        // fall back to the first one that resolves Visit Type regardless.
+        String intendedDept = selectedText("Visit.DepartmentID");
         Object opts = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
                 + " const e=[...document.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')==='Visit.DoctorID');"
                 + " if(!e) return []; const cur=norm((e.options[e.selectedIndex]||{}).textContent||'');"
@@ -1806,16 +1980,36 @@ public class RegistrationPage extends BasePage {
         if (list.isEmpty()) { System.out.println("tryOtherDoctorsForVisitType: no other doctor to try"); return false; }
         final int maxDoctors = Integer.getInteger("doctor.walk.max", 5);
         int tried = 0;
+        String fallbackDoctor = "";
         for (Object o : list) {
             if (tried++ >= maxDoctors) break;
             String doctor = String.valueOf(o);
             setSelTxt("Visit.DoctorID", doctor);
             waitForAngular(1200);   // Visit Type list reloads off the doctor
             if (ensureVisitTypeIfPresent()) {
-                System.out.println("tryOtherDoctorsForVisitType: Doctor=" + doctor + " resolved Visit Type");
-                return true;
+                String deptNow = selectedText("Visit.DepartmentID");
+                if (intendedDept.isEmpty() || deptNow.equalsIgnoreCase(intendedDept)) {
+                    System.out.println("tryOtherDoctorsForVisitType: Doctor=" + doctor + " resolved Visit Type (kept Department=" + deptNow + ")");
+                    return true;
+                }
+                if (fallbackDoctor.isEmpty()) fallbackDoctor = doctor;
+                System.out.println("tryOtherDoctorsForVisitType: Doctor=" + doctor + " resolved Visit Type but moved Department"
+                        + " to \"" + deptNow + "\" (wanted \"" + intendedDept + "\") — still looking for one that keeps both");
+                continue;
             }
             System.out.println("tryOtherDoctorsForVisitType: Doctor=" + doctor + " also has no Visit Type — trying the next one");
+            com.kpj.core.Reasons.add("Doctor '" + doctor + "' has no Visit Type configured (Visit Type list empty for that doctor) - tried the next doctor");
+        }
+        if (!fallbackDoctor.isEmpty()) {
+            setSelTxt("Visit.DoctorID", fallbackDoctor);
+            waitForAngular(1200);
+            ensureVisitTypeIfPresent();
+            System.out.println("tryOtherDoctorsForVisitType: no doctor kept both Department and Visit Type — using Doctor="
+                    + fallbackDoctor + " (Visit Type resolved; Department ended up " + selectedText("Visit.DepartmentID") + ")");
+            com.kpj.core.Reasons.add("No Doctor under this Sub Department resolves a Visit Type WITHOUT also moving"
+                    + " Registration Department away from '" + intendedDept + "' - used Doctor '" + fallbackDoctor
+                    + "' anyway (Visit Type resolved; Department ended up different)");
+            return true;
         }
         System.out.println("tryOtherDoctorsForVisitType: no doctor (tried " + tried + ") resolved Visit Type");
         return false;
@@ -1902,10 +2096,10 @@ public class RegistrationPage extends BasePage {
                         + " (via sub-department) | Doctor=" + currentDoctor());
                 return;
             }
-            System.out.println("ensureDoctorByChangingDepartment: '" + dept + "' has no doctors — trying the next department");
+            System.out.println("ensureDoctorByChangingDepartment: '" + dept + "' has no doctors — trying the next department"); com.kpj.core.Reasons.add("Department '" + dept + "' has no doctors in its Doctor dropdown (list empty) - tried the next department");
         }
         noDoctorAvailable = true;
-        System.out.println("ensureDoctorByChangingDepartment: no department yielded a doctor (tried " + tried + ")");
+        System.out.println("ensureDoctorByChangingDepartment: no department yielded a doctor (tried " + tried + ")"); com.kpj.core.Reasons.add("NO department or sub-department offers a doctor (tried " + tried + ") - the Primary Doctor dropdown stays EMPTY on this environment");
     }
 
     /** True when NO department or sub-department offered a selectable doctor on the last visit fill. */
@@ -2531,7 +2725,14 @@ public class RegistrationPage extends BasePage {
         try {
             if (p.url().startsWith("chrome-error://")) return "chrome-error page (" + p.url() + ")";
             Object r = p.evaluate("() => { const t=(document.title||'')+' '+((document.body&&document.body.innerText)||'');"
-                    + " const m=t.match(/this site can.?t be reached|dns_probe[a-z_]*|err_connection[a-z_]*|err_name_not_resolved|err_internet_disconnected/i);"
+                    // Browser-level (DNS/connection) errors, plus the server-side ones these report/consent-form
+                    // hosts render as a normal 200 page — confirmed live: the consent form (nhisformstest) can
+                    // render "An error occurred while processing your request. Details: Patient record not found
+                    // for VisitID = ..." as its ENTIRE page (no form, no buttons at all), which the browser-level
+                    // check alone let through as "loaded fine" — the caller then polled 21s for buttons that
+                    // were never going to appear on what is actually an error page, not a form.
+                    + " const m=t.match(/this site can.?t be reached|dns_probe[a-z_]*|err_connection[a-z_]*|err_name_not_resolved|err_internet_disconnected"
+                    + "|an error occurred while processing your request|patient record not found|record not found for visitid|server error in ('|&#39;)\\//i);"
                     + " return m ? m[0] : ''; }");
             String s = r == null ? "" : r.toString().trim();
             return s.isEmpty() ? "" : s + " (" + p.url() + ")";
@@ -2568,22 +2769,77 @@ public class RegistrationPage extends BasePage {
         // back as a browser-level DNS/connection error (confirmed live: dsh-nhisforms.kpjhealth.com.my
         // DNS_PROBE_FINISHED_NXDOMAIN) and would otherwise burn the full 8s+15s of waits below for nothing.
         String broken = describeIfBrokenPage(form);
+        // "Patient record not found for VisitID = ..." (confirmed live, Emergency Registration Conscious) can
+        // be a replication-lag race — the tab opens with the just-created VisitID baked into its URL, and the
+        // consent-form host's own lookup can be a beat behind the save that created it. A DNS-class error
+        // reloading won't fix; THIS class might. One bounded retry: wait, reload, re-check — not a poll loop.
+        if (!broken.isEmpty() && (broken.toLowerCase().contains("not found") || broken.toLowerCase().contains("error occurred"))) {
+            System.out.println("submitPatientForm: '" + broken + "' — retrying once in case this is a replication-lag race");
+            form.waitForTimeout(4000);
+            try { form.reload(); } catch (Exception e) { System.out.println("submitPatientForm: reload failed - " + e.getMessage()); }
+            try { form.waitForLoadState(); } catch (Exception ignore) {}
+            form.waitForTimeout(1500);
+            broken = describeIfBrokenPage(form);
+        }
         if (!broken.isEmpty()) {
             lastPatientFormLoadError = broken;
             System.out.println("submitPatientForm: consent form tab did not load — " + broken);
+            // Say WHY in the report. Confirmed live 2026-09-04 on nhisformstest: "Patient record not found for
+            // VisitID = ER-…" persists long after the save (today's AND yesterday's Emergency visits), the direct
+            // Create URL rejects the ER visit number too, and an OP visit number resolves there to a DIFFERENT,
+            // older patient — i.e. the forms host works off its own copy of the data that is not synced with
+            // devhis. That is an environment/integration problem, not something the registration flow can fix.
+            String vid = "";
+            java.util.regex.Matcher vm = java.util.regex.Pattern.compile("(?i)visit\\s*id\\s*=\\s*([A-Z]{2}-\\d+)").matcher(broken);
+            if (vm.find()) vid = vm.group(1);
+            if (broken.toLowerCase().contains("not found")) {
+                com.kpj.core.Reasons.add("the consent-form host (nhisformstest) has NO record of visit " + (vid.isEmpty() ? "" : vid + " ")
+                        + "even after a reload - its data is not synced with devhis (new "
+                        + (vid.startsWith("ER") ? "Emergency" : "") + " visits never appear there); ENVIRONMENT issue, not fixable by the test");
+            } else if (broken.toLowerCase().contains("error occurred")) {
+                com.kpj.core.Reasons.add("the consent-form host (nhisformstest) answered a server error for this visit even after a reload - ENVIRONMENT issue on the forms host, not fixable by the test");
+            }
             return false;
         }
         form.evaluate("() => { const b=[...document.querySelectorAll('button,input[type=submit]')].find(x=>/^submit$/i.test((x.textContent||x.value||'').trim()) && x.offsetParent!==null); if(b){ b.scrollIntoView({block:'center'}); b.click(); } }");
+        // Poll for EITHER a "Yes" confirm (click it and keep polling) OR the success state directly, instead
+        // of a rigid "Yes" first, THEN success" two-phase wait. Confirmed live for the sibling Consent Form
+        // flow (Admission.submitConsentForm): this class of form is a server-rendered postback page, so
+        // clicking Yes triggers a real navigation that can take a few seconds and briefly destroys the JS
+        // context — a single short waitForFunction for "Yes" alone can time out even though the page is
+        // behaving normally, and not every build necessarily shows an intermediate confirm at all.
         boolean submitted = false;
-        try {
-            form.waitForFunction("() => [...document.querySelectorAll('button,a')].some(b=>/^yes$/i.test((b.textContent||'').trim()) && b.offsetParent!==null)",
-                    null, new Page.WaitForFunctionOptions().setTimeout(8000));
-            form.evaluate("() => { const y=[...document.querySelectorAll('button,a')].find(b=>/^yes$/i.test((b.textContent||'').trim()) && b.offsetParent!==null); if(y) y.click(); }");
-            form.waitForFunction("() => /form submitted successfully/i.test((document.body && document.body.innerText) || '') || /\\/Edit\\//.test(location.href)",
-                    null, new Page.WaitForFunctionOptions().setTimeout(15000));
-            submitted = true;
-        } catch (Exception e) {
-            System.out.println("Consent submit: " + e.getMessage());
+        for (int i = 0; i < 30 && !submitted; i++) {
+            try {
+                Object state = form.evaluate("() => { const hasYes=[...document.querySelectorAll('button,a')].some(b=>/^yes$/i.test((b.textContent||'').trim()) && b.offsetParent!==null);"
+                        + " const ok=/form submitted successfully/i.test((document.body && document.body.innerText) || '') || /\\/Edit\\//.test(location.href);"
+                        + " return {hasYes, ok}; }");
+                @SuppressWarnings("unchecked")
+                java.util.Map<String, Object> m = state instanceof java.util.Map ? (java.util.Map<String, Object>) state : java.util.Collections.emptyMap();
+                if (Boolean.TRUE.equals(m.get("ok"))) { submitted = true; break; }
+                if (Boolean.TRUE.equals(m.get("hasYes"))) {
+                    form.evaluate("() => { const y=[...document.querySelectorAll('button,a')].find(b=>/^yes$/i.test((b.textContent||'').trim()) && b.offsetParent!==null); if(y) y.click(); }");
+                }
+            } catch (Exception e) {
+                // Clicking Yes can trigger a real navigation that briefly destroys the JS context — swallow
+                // and retry rather than giving up on the first transient failure.
+                System.out.println("submitPatientForm: transient error during poll (probably a navigation) - " + e.getMessage());
+            }
+            form.waitForTimeout(700);
+        }
+        if (!submitted) {
+            System.out.println("submitPatientForm: neither the success state nor a lasting 'Yes' confirm appeared within the poll window");
+            try {
+                Object diag = form.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                        + " const btns=[...document.querySelectorAll('button,a,input[type=submit],input[type=button]')].filter(b=>b.offsetParent!==null)"
+                        + "   .map(b=>'\"'+norm(b.textContent||b.value)+'\"').filter((v,i,a)=>v!=='\"\"' && a.indexOf(v)===i).slice(0,30);"
+                        + " const iframes=[...document.querySelectorAll('iframe')].map(f=>f.src||'(no src)');"
+                        + " return { url: location.href, title: document.title, bodyTextLen: (document.body?document.body.innerText:'').length,"
+                        + "   bodyTextSample: norm((document.body?document.body.innerText:'')).slice(0,300), visibleButtons: btns, iframes }; }");
+                System.out.println("submitPatientForm: DIAG on failure => " + diag);
+            } catch (Exception e) {
+                System.out.println("submitPatientForm: DIAG evaluate also failed - " + e.getMessage());
+            }
         }
         // Dismiss the 'Form Submitted Successfully' dialog.
         form.waitForTimeout(1000);
@@ -2632,7 +2888,7 @@ public class RegistrationPage extends BasePage {
         try {
             page.waitForFunction("() => { const e=[...document.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')==='Registration.PrefixID'); return e && e.options.length>1; }",
                     null, new Page.WaitForFunctionOptions().setTimeout(15000));
-        } catch (Exception ignore) { System.out.println("setPrefixRobust: Patient Title dropdown did not populate in time"); }
+        } catch (Exception ignore) { System.out.println("setPrefixRobust: Patient Title dropdown did not populate in time"); com.kpj.core.Reasons.add("the Patient Title dropdown did not populate (no options loaded in time)"); }
         Object v = null;
         for (int a = 0; a < 4 && v == null; a++) {
             v = page.evaluate("(want)=>{ const $=window.jQuery; const norm=s=>(s||'').toLowerCase().replace(/[^a-z0-9]/g,'');"
@@ -2742,6 +2998,7 @@ public class RegistrationPage extends BasePage {
             System.out.println("setSelLike: WARNING " + ngModel + " has no option like any of "
                     + Arrays.toString(wantedCandidates) + " — fell back to the first option \"" + text
                     + "\" (WRONG DATA will be saved). Actual options on this environment: " + allOptsJson);
+            com.kpj.core.Reasons.add("the " + ngModel.replaceAll("^\\w+\\.", "").replaceAll("ID$", "") + " dropdown has no option like " + Arrays.toString(wantedCandidates) + " on this environment - its FIRST option \"" + text + "\" was selected instead (options offered: " + allOptsJson + ")");
         } else if (!"exact".equals(how)) {
             System.out.println("setSelLike: " + ngModel + " \"" + usedWanted + "\" matched \"" + text + "\" (" + how + ")");
         }

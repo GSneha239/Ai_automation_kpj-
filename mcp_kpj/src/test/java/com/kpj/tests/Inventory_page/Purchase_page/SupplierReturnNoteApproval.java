@@ -53,7 +53,7 @@ public class SupplierReturnNoteApproval extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Supplier Return Note Approval", "Inventory > Purchase > Supplier Return Note Approval",
+        meta("Inventory - Purchase - Supplier Return Note Approval", "Inventory > Purchase > Supplier Return Note Approval",
                 "Search by date range, open Print, select a GRN Return row, verify its item details "
                         + "show, click Print, verify report generation.");
 

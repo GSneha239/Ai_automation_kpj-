@@ -4,7 +4,7 @@ import com.kpj.core.DevHisBase;
 import com.kpj.pages.LoginPage;
 
 // NOTE: the page object is also named EmergencyListView, so it is referenced by its fully-qualified
-// name (com.kpj.pages.Emegency_Page.EmergencyListView) — importing it would clash with this class name.
+// name (com.kpj.pages.Emergency_page.EmergencyListView) — importing it would clash with this class name.
 
 /**
  * TC13 - Emergency &gt; <b>Emergency List View</b> — Change Admission Type.
@@ -20,7 +20,11 @@ import com.kpj.pages.LoginPage;
  */
 public class EmergencyListView extends DevHisBase {
 
-    private static final String FROM_DATE = "01/06/2026";
+    // From Date = 2 months back, so the window rolls forward with "today" instead of staying pinned at a
+    // fixed date (it was hardcoded to "01/06/2026" — not yet stale as of this fix, since To Date already
+    // moves with today, but an ever-growing from-June-to-today window is fragile in its own right: it gets
+    // slower over time and would need a manual year bump eventually).
+    private static final String FROM_DATE = java.time.LocalDate.now().minusMonths(2).format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"));
     // To Date = current date (so the search always spans up to "today", not a hard-coded future date).
     private static final String TO_DATE   = java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"));
     // "enter any single-digit number in MRN" — a random 1-9 each run (if it matches nothing the search
@@ -41,14 +45,14 @@ public class EmergencyListView extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Emergency List View (Change Admission Type)", "Emergency > Emergency List View",
+        meta("Emergency - Emergency List View", "Emergency > Emergency List View",
                 "Search emergency patients by date range + MRN, select a patient, Change Admission Type, fill the 3 sections, Save.");
 
         LoginPage loginPage = new LoginPage(page);
         loginPage.login(BASE, USER, PASS);
-        step("Login", "farisha / Tcare@123", "Authenticated; Patient Dashboard", "Logged in", "PASS");
+        step("Login", USER + " / " + PASS, "Authenticated; Patient Dashboard", "Logged in", "PASS");
 
-        com.kpj.pages.Emegency_Page.EmergencyListView lv = new com.kpj.pages.Emegency_Page.EmergencyListView(page);
+        com.kpj.pages.Emergency_page.EmergencyListView lv = new com.kpj.pages.Emergency_page.EmergencyListView(page);
 
         boolean opened = lv.navigateViaMenu();
         step(page, "Open Emergency List View (via menu tab)", "Click Emergency → Emergency List View (menu, not direct URL)",
@@ -482,7 +486,7 @@ public class EmergencyListView extends DevHisBase {
                 // A just-closed admission LEAVES the "All Inpatients" list — switch to the "Closed Admission"
                 // filter (wide date range) to surface it, then re-select the SAME patient by MRN and Revoke.
                 if (clOk) {
-                    String mrn = com.kpj.pages.Emegency_Page.EmergencyListView.mrnFromDescriptor(p4);
+                    String mrn = com.kpj.pages.Emergency_page.EmergencyListView.mrnFromDescriptor(p4);
                     int closedRows = lv.useClosedAdmissionFilter(mrn);
                     step(page, "Revoke Admission · Show closed admissions",
                             "Tick the 'Closed Admission' filter (wide date range) and Search until the just-closed patient appears",

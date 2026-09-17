@@ -1,7 +1,0 @@
-PASS	Application Configuration - Billing - Plan	ApplicationConfig_Billing_PlanMaster	Login	Authenticated; Patient Dashboard	Logged in
-PASS	Application Configuration - Billing - Plan	ApplicationConfig_Billing_PlanMaster	Open Plan screen	The Plan screen is shown	Opened https://devhis.sancyberhad.com/?_cb=1.2.18#/PlanMaster
-PASS	Application Configuration - Billing - Plan	ApplicationConfig_Billing_PlanMaster	Click Add	The Plan add form opens	Add clicked (https://devhis.sancyberhad.com/?_cb=1.2.18#/add-PlanMaster)
-PASS	Application Configuration - Billing - Plan	ApplicationConfig_Billing_PlanMaster	Enter Plan details	All fields are entered	Location=KPJ | PlanCode=PL681400 | PlanName=Auto Plan PL681400 | PricingPolicy=AA INTERNATIONAL HUB SDN BHD | Group=Cardiology | SubGroup=Auto Sub Group SG031800 | Services=CON0001 - Consultation Fees | Class=AutoRoom3900 | CoPay=10 | Discount=5
-PASS	Application Configuration - Billing - Plan	ApplicationConfig_Billing_PlanMaster	Click Add (add the detail line)	The detail line is added to the plan grid	(detail row added)
-PASS	Application Configuration - Billing - Plan	ApplicationConfig_Billing_PlanMaster	Click Submit & success toast	'... saved successfully.' toast	×KPJ PortalPlan Saved Successfully.
-PASS	Application Configuration - Billing - Plan	ApplicationConfig_Billing_PlanMaster	Check the list table for the added row	The newly added Plan row is shown in the table	Found in table: PL681400Auto Plan PL681400 True

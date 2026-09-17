@@ -45,6 +45,57 @@ public class PayableWaiver extends BasePage {
 
     // ---- probes ----------------------------------------------------------
 
+    /**
+     * Best-effort read of the Department values already sitting in the LIST screen's grid — call this
+     * BEFORE clicking Add. Every one of those departments already has at least one waiver on this
+     * environment, and some (like "(NAMA DR) MR C/N") have waivers against MANY doctors — cycling only
+     * the Doctor within that same Department can exhaust the whole retry budget before ever reaching a
+     * combination that saves. Starting from a Department NOT in this set instead gives Submit its best
+     * shot at succeeding quickly. Never fails the flow; returns an empty set if the grid holds nothing or
+     * no Department-shaped column is found.
+     */
+    public java.util.Set<String> existingDepartmentsInList() {
+        Object r = page.evaluate("() => { let best=-1, arr=null;"
+                + " document.querySelectorAll('*').forEach(el=>{ try{"
+                + "   const s=window.angular.element(el).scope(); if(!s) return;"
+                + "   const scan=a=>{ if(Array.isArray(a) && a.length && typeof a[0]==='object'"
+                + "        && Object.keys(a[0]).some(k=>/depart/i.test(k)) && a.length>best){ best=a.length; arr=a; } };"
+                + "   if(s.grid && s.grid.options && s.grid.options.data) scan(s.grid.options.data);"
+                + "   for(const k of Object.keys(s)){ try{ scan(s[k]); }catch(e){} } }catch(e){} });"
+                + " const out=[], seen=new Set();"
+                + " if(arr){ for(const row of arr){"
+                + "   const key=Object.keys(row).find(k=>/depart.*name/i.test(k)) || Object.keys(row).find(k=>/depart/i.test(k) && !/id$/i.test(k));"
+                + "   const v=key && row[key] && String(row[key]).trim();"
+                + "   if(v && !seen.has(v)){ seen.add(v); out.push(v); } } }"
+                + " return out; }");
+        java.util.Set<String> set = new java.util.LinkedHashSet<>();
+        if (r instanceof java.util.List) for (Object o : (java.util.List<?>) r) if (o != null) set.add(o.toString());
+        System.out.println("PayableWaiver: " + set.size() + " department(s) already in the list -> " + set);
+        return set;
+    }
+
+    /**
+     * The ordinal (0-based, among REAL options) of the first Department option whose text is NOT in
+     * {@code exclude}; 0 if every option is already taken or the select is empty.
+     */
+    public int firstDepartmentIndexAvoiding(java.util.Set<String> exclude) {
+        int count = optionCount("waiver.DepartmentID");
+        for (int i = 0; i < count; i++) {
+            String candidate = peekNth("waiver.DepartmentID", i);
+            if (!candidate.isEmpty() && !exclude.contains(candidate)) return i;
+        }
+        return 0;
+    }
+
+    /** The text of the {@code index}-th real option, without selecting it. */
+    private String peekNth(String ngModel, int index) {
+        Object t = page.evaluate("([m,n]) => { const s=[...document.querySelectorAll('select')].find(x=>(x.getAttribute('ng-model')||'')===m);"
+                + " if(!s) return '';"
+                + " const real=[...s.options].filter(o=>o.value && !/^-*\\s*select|^\\s*$/i.test((o.textContent||'').trim()));"
+                + " return n<real.length ? (real[n].textContent||'').trim() : ''; }", java.util.Arrays.asList(ngModel, index));
+        return t == null ? "" : t.toString();
+    }
+
     public String findPayableWaiverLinks() {
         Object r = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
                 + " const parentOf=a=>{ let p=a.parentElement, hop=0;"

@@ -27,7 +27,7 @@ public class DrugCategory extends DevHisBase {
     /** DevHIS only builds the nav menu for an outpatient counter. Override with {@code -Dcounter=}. */
     public static final String COUNTER_FOR_MENU = "OPD-B-01";
 
-    public DrugCategory() { super("ApplicationConfiguration_DrugCategory"); }
+    public DrugCategory() { super("ApplicationConfiguration_Inventory_DrugCategory"); }
 
     public static void main(String[] args) {
         DrugCategory t = new DrugCategory();
@@ -39,7 +39,7 @@ public class DrugCategory extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Drug Category", "Application Configuration > Inventory > Drug Category",
+        meta("Application Configuration - Inventory - Drug Category", "Application Configuration > Inventory > Drug Category",
                 "&#9888; Creates a REAL drug category: Add, enter Code and Remark, Submit, then Save on "
                         + "the confirmation dialog.");
 

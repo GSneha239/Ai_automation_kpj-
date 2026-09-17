@@ -52,7 +52,7 @@ public class ItemSaleList extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Item Sale List", "Inventory > POS > Item Sale List",
+        meta("Inventory - POS - Item Sale List", "Inventory > POS > Item Sale List",
                 "Search by date range, select an item sale row, then [Print Drug Label] click Print Drug "
                         + "Label and verify the PDF drug label is generated, then [Print] click Print and "
                         + "verify a report is generated.");

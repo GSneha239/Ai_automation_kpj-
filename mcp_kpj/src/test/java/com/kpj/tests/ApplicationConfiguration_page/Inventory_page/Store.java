@@ -38,7 +38,7 @@ public class Store extends DevHisBase {
     /** DevHIS only builds the nav menu for an outpatient counter. Override with {@code -Dcounter=}. */
     public static final String COUNTER_FOR_MENU = "OPD-B-01";
 
-    public Store() { super("ApplicationConfiguration_Store"); }
+    public Store() { super("ApplicationConfiguration_Inventory_Store"); }
 
     public static void main(String[] args) {
         Store t = new Store();
@@ -50,7 +50,7 @@ public class Store extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Store", "Application Configuration > Inventory > Store",
+        meta("Application Configuration - Inventory - Store", "Application Configuration > Inventory > Store",
                 "&#9888; Creates a REAL store: Location, Floor, Code, Remark, Address, Contact, PO "
                         + "Approval Level, ledgers, licence and tax numbers, Person Name, HOD, a "
                         + "transaction tick, the profit/discount row, Add, Submit.");

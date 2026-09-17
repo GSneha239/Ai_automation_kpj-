@@ -30,7 +30,7 @@ public class LocationWaiver extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Application Configuration - Location Waiver",
+        meta("Application Configuration - Location - Location Waiver",
                 "Application Configuration > Location > Location Waiver",
                 "Add a location waiver: Location, Pricing Policy, Service, Waiver Days, Service Rate, Submit.");
 

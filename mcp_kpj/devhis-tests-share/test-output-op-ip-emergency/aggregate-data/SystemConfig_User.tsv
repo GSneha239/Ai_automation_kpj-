@@ -1,2 +1,0 @@
-PASS	System Configuration - User	SystemConfig_User	Login	Authenticated; Patient Dashboard	Logged in
-FAIL	System Configuration - User	SystemConfig_User	ERROR	Test completes	FAILED: Truncated class file

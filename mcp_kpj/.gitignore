@@ -1,11 +1,31 @@
+# Maven build output
 target/
-test-output/
+
+# All generated test output folders
+test-output*/
+**/test-output*/
+
+# Do not push executable/distribution folders
+Executables/
+devhis-tests-share/
+
+# IDE files
 .idea/
 *.iml
 .vscode/
+
+# Node dependencies
 node_modules/
 
-# ad-hoc test run console captures
+# Ad-hoc test run console captures
 *.log
 logs/
+
+# Playwright MCP local files
 .playwright-mcp/
+
+# Generated binaries
+*.jar
+
+# Generated Maven file
+dependency-reduced-pom.xml

@@ -1,5 +1,0 @@
-PASS	Application Configuration - Ward	ApplicationConfig_Ward	Login	Authenticated; Patient Dashboard	Logged in
-PASS	Application Configuration - Ward	ApplicationConfig_Ward	Open Ward screen	The Ward screen is shown	Opened https://devhis.sancyberhad.com/#/WardMaster
-PASS	Application Configuration - Ward	ApplicationConfig_Ward	Click Add	The Ward add form opens	Add clicked
-PASS	Application Configuration - Ward	ApplicationConfig_Ward	Enter Code, Remark, Floor	Code, Remark and Floor are entered	Code=WD942600 | Remark=Auto ward WD942600 | Floor=LG Floor | codeNg=WardMaster.code | remNg=WardMaster.description | floorNg=WardMaster.floorid | floorTag=SELECT
-PASS	Application Configuration - Ward	ApplicationConfig_Ward	Click Submit & success toast	'... saved successfully.' toast	×KPJ PortalWard Master details added successfully.

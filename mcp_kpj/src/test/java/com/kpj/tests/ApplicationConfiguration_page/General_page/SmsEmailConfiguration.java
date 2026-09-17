@@ -27,7 +27,7 @@ public class SmsEmailConfiguration extends DevHisBase {
     /** DevHIS only builds the nav menu for an outpatient counter. Override with {@code -Dcounter=}. */
     public static final String COUNTER_FOR_MENU = "OPD-B-01";
 
-    public SmsEmailConfiguration() { super("ApplicationConfiguration_SmsEmailConfiguration"); }
+    public SmsEmailConfiguration() { super("ApplicationConfiguration_General_SmsEmailConfiguration"); }
 
     public static void main(String[] args) {
         SmsEmailConfiguration t = new SmsEmailConfiguration();
@@ -39,7 +39,7 @@ public class SmsEmailConfiguration extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("SMS E-mail Configuration", "Application Configuration > General > SMS E-mail Configuration",
+        meta("Application Configuration - General - SMS E-mail Configuration", "Application Configuration > General > SMS E-mail Configuration",
                 "&#9888; Creates a REAL SMS/e-mail configuration: select the Location in the search panel, "
                         + "then the Event, SMS, E-mail and SMS E-mail To in the Add panel, and Save.");
 

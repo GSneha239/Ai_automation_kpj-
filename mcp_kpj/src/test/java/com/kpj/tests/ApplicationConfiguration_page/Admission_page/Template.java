@@ -23,7 +23,7 @@ public class Template extends DevHisBase {
     /** How many times to re-enter fresh details when the server says the code / remark already exists. */
     private static final int MAX_ATTEMPTS = 40;
 
-    public Template() { super("ApplicationConfig_Template"); }
+    public Template() { super("ApplicationConfig_Admission_Template"); }
 
     public static void main(String[] args) {
         Template t = new Template();
@@ -35,7 +35,7 @@ public class Template extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Application Configuration - Template", "Application Configuration > Admission > Template",
+        meta("Application Configuration - Admission - Template", "Application Configuration > Admission > Template",
                 "Add a Template: Add, enter Code + Remark, select a Template, enter text, Submit.");
 
         LoginPage loginPage = new LoginPage(page);

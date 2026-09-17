@@ -30,7 +30,7 @@ public class ProcedureChecklist extends DevHisBase {
     /** DevHIS only builds the nav menu for an outpatient counter. Override with {@code -Dcounter=}. */
     public static final String COUNTER_FOR_MENU = "OPD-B-01";
 
-    public ProcedureChecklist() { super("ApplicationConfiguration_ProcedureChecklist"); }
+    public ProcedureChecklist() { super("ApplicationConfiguration_OTConfiguration_ProcedureChecklist"); }
 
     public static void main(String[] args) {
         ProcedureChecklist t = new ProcedureChecklist();
@@ -42,7 +42,7 @@ public class ProcedureChecklist extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Procedure Checklist", "Application Configuration > OT Configuration > Procedure Checklist",
+        meta("Application Configuration - OT Configuration - Procedure Checklist", "Application Configuration > OT Configuration > Procedure Checklist",
                 "&#9888; Creates a REAL procedure checklist: Add, enter the Code and Remark, select the Store, "
                         + "Submit.");
 

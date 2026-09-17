@@ -30,10 +30,19 @@ public class BillStatus extends BasePage {
 
     private static final int TOAST_SHOT_WAIT_MS = 5000;
 
-    /** JS helper: the visible Code / Remark inputs, whatever they are called on this screen. */
+    /**
+     * JS helper: the visible Code / Remark inputs, whatever they are called on this screen.
+     *
+     * <p>The {@code textAngular-editableFix-...} input is a genuine artefact, not a mis-named Remark box —
+     * verified live: it carries {@code class="ta-hidden-input" aria-hidden="true"}, no {@code ng-model}, no
+     * {@code name}, and no real rich-text editor ({@code [contenteditable]}/{@code [ta-bind]}) exists
+     * anywhere on this screen either. So when only Code resolves, this screen genuinely offers NO Remark
+     * field at all — the same "Code + Store only" defect confirmed elsewhere in this suite (AMC Agent and
+     * ~34 sibling generic-master screens), not a locator miss to be fixed by finding a substitute field.</p>
+     */
     private static final String FIND_FIELDS =
             " const skip=m=>!m || /colFilter|paginationCurrentPage|textAngular|^q$|txtUserName|txtOldPassword|txtNewPassword|txtConfNewPassword/i.test(m);"
-            + " const boxes=[...document.querySelectorAll('input,textarea')].filter(e=>e.offsetParent!==null && !skip(e.getAttribute('ng-model')));"
+            + " const boxes=[...document.querySelectorAll('input,textarea')].filter(e=>e.offsetParent!==null && !skip(e.getAttribute('ng-model')||e.getAttribute('id')));"
             + " const byModel=re=>boxes.find(e=>re.test(e.getAttribute('ng-model')||''));"
             + " const byPh=re=>boxes.find(e=>re.test(e.placeholder||''));"
             + " const codeEl = byModel(/\\.code(id)?$/i) || byModel(/code/i) || byPh(/^\\s*code\\s*$/i);"

@@ -28,7 +28,7 @@ public class ChecklistMaster extends DevHisBase {
     /** DevHIS only builds the nav menu for an outpatient counter. Override with {@code -Dcounter=}. */
     public static final String COUNTER_FOR_MENU = "OPD-B-01";
 
-    public ChecklistMaster() { super("ApplicationConfiguration_ChecklistMaster"); }
+    public ChecklistMaster() { super("ApplicationConfiguration_OTConfiguration_ChecklistMaster"); }
 
     public static void main(String[] args) {
         ChecklistMaster t = new ChecklistMaster();
@@ -40,7 +40,7 @@ public class ChecklistMaster extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Checklist Master", "Application Configuration > OT Configuration > Checklist Master",
+        meta("Application Configuration - OT Configuration - Checklist Master", "Application Configuration > OT Configuration > Checklist Master",
                 "&#9888; Creates a REAL checklist: Add, enter Code and Checklist Name, select Tag and Checklist Category, enter Remark, Submit.");
 
         String counter = System.getProperty("counter", COUNTER_FOR_MENU);

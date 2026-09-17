@@ -61,7 +61,7 @@ public class PatientFeedback extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Patient Feedback", "Ancillary Services > Patient Feedback",
+        meta("Ancillary Services - Patient Feedback", "Ancillary Services > Patient Feedback",
                 "&#9888; Creates a REAL patient feedback record: Add, search the patient by MRN, "
                         + "select the feedback template, Save.");
 

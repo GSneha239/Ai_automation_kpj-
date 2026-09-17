@@ -31,7 +31,7 @@ public class Compliance extends DevHisBase {
     /** DevHIS only builds the nav menu for an outpatient counter. Override with {@code -Dcounter=}. */
     public static final String COUNTER_FOR_MENU = "OPD-B-01";
 
-    public Compliance() { super("ApplicationConfiguration_Compliance"); }
+    public Compliance() { super("ApplicationConfiguration_Equipment_Compliance"); }
 
     public static void main(String[] args) {
         Compliance t = new Compliance();
@@ -43,7 +43,7 @@ public class Compliance extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Compliance", "Application Configuration > Equipment > Compliance",
+        meta("Application Configuration - Equipment - Compliance", "Application Configuration > Equipment > Compliance",
                 "&#9888; Creates a REAL compliance record: Add, enter Code and Remark, select the "
                         + "Compliance, Submit.");
 

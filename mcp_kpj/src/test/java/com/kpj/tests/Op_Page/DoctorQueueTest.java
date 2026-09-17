@@ -40,7 +40,7 @@ public class DoctorQueueTest extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Doctor Queue (Close Visit / Revoke Visit)", "OP > Doctor Queue",
+        meta("OP - Doctor Queue", "OP > Doctor Queue",
                 "Open Doctor Queue, search a 1-month range ending today, select a patient, then Close Visit and "
                         + "Revoke Visit (each: action -> remark -> Save -> success toast).");
 

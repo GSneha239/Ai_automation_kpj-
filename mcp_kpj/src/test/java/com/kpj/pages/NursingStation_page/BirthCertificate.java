@@ -240,7 +240,11 @@ public class BirthCertificate extends BasePage {
                 + " try { const e=byNg('BirthCertificate.MRNo');"
                 + "   const s=window.angular.element(e).scope();"
                 + "   const o=s && (s.BirthCertificate || s.BirthCertificate1);"
-                + "   if(o){ const keys=Object.keys(o).filter(k=>/name|patient|mrn|age|gender|id$/i.test(k)"
+                // Exclude MRNo itself: it is the field this test just TYPED the search value into, so it is
+                // always non-empty regardless of whether the search actually found anyone — counting it as
+                // "patient attached" evidence was a false positive (e.g. "patient: MRNo=100000684" with no
+                // other field at all, for an MRN the server had already rejected as Not Found).
+                + "   if(o){ const keys=Object.keys(o).filter(k=>/name|patient|mrn|age|gender|id$/i.test(k) && !/^mrno$/i.test(k)"
                 + "        && o[k]!==null && o[k]!=='' && o[k]!==0 && typeof o[k]!=='object' && typeof o[k]!=='function');"
                 + "     patient = keys.length? keys.slice(0,8).map(k=>k+'='+String(o[k]).slice(0,24)).join(', ')"
                 + "                          : '(model has no patient fields set)'; } }"
@@ -329,23 +333,27 @@ public class BirthCertificate extends BasePage {
         System.out.println("BirthCertificate.discoverMrns: " + opened);
         waitForAngular(2500);
 
-        Object r = page.evaluate("(max) => {"
-                + " const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                + " const vis=e=>!!e && !!(e.offsetWidth||e.offsetHeight||e.getClientRects().length);"
-                + " const dlg=[...document.querySelectorAll('.modal,.modal-content,[role=dialog]')].filter(vis)[0];"
-                + " const root=dlg||document;"
-                + " const text=[...root.querySelectorAll('tr,.ui-grid-row')].filter(vis)"
-                + "   .map(t=>norm(t.textContent)).join(' ');"
-                + " const hits=[...new Set((text.match(/\\b1\\d{8}\\b/g)||[]))].slice(0,max);"
-                + " return hits; }", max);
-        if (r instanceof java.util.List) {
-            for (Object o : (java.util.List<?>) r) found.add(o.toString());
-        }
+        // The popup is a patient SEARCH: an EMPTY search returns nothing (verified live on the same shared
+        // "Search Patient" popup elsewhere in this suite — see [[ambulance-mrn-popup-search]] in memory), so
+        // type a short MRN filter into it BEFORE ever clicking Search. Real patients on this environment
+        // carry an "11"-prefixed MRN (the "10..." prefix used by this class's own FALLBACK_MRNS/DEFAULT_MRN
+        // does not resolve here), so try that first.
+        for (String filter : new String[]{"11", "10", "12"}) {
+            Object tagged = page.evaluate("(f) => {"
+                    + " const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                    + " const vis=e=>!!e && !!(e.offsetWidth||e.offsetHeight||e.getClientRects().length);"
+                    + " const dlg=[...document.querySelectorAll('.modal,.modal-content,[role=dialog]')].filter(vis)[0];"
+                    + " const root=dlg||document;"
+                    + " const inp=[...root.querySelectorAll('input')].filter(vis).find(x=>/mrno?$/i.test(x.getAttribute('ng-model')||''));"
+                    + " if(!inp) return false; inp.id='__bcPopupMrn'; return true; }", filter);
+            if (Boolean.TRUE.equals(tagged)) {
+                try { page.locator("#__bcPopupMrn").fill(filter, new com.microsoft.playwright.Locator.FillOptions().setTimeout(4000)); }
+                catch (Exception e) { System.out.println("BirthCertificate.discoverMrns: fill(" + filter + ") failed - " + e.getMessage()); }
+                page.evaluate("() => { const e=document.getElementById('__bcPopupMrn'); if(e) e.removeAttribute('id'); }");
+            } else {
+                System.out.println("BirthCertificate.discoverMrns: no MRN field found in the popup for filter " + filter);
+            }
 
-        if (found.isEmpty()) {
-            // The popup is a patient SEARCH: it lists nothing until its own Search is run. Drive that,
-            // then read the results — otherwise this reports "no MRNs" for a lookup that simply had not
-            // been asked anything yet.
             Object searched = page.evaluate("() => {"
                     + " const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
                     + " const vis=e=>!!e && !!(e.offsetWidth||e.offsetHeight||e.getClientRects().length);"
@@ -356,10 +364,10 @@ public class BirthCertificate extends BasePage {
                     + "        || /search/i.test(x.getAttribute('ng-click')||''));"
                     + " if(!b) return '(no Search in the popup)';"
                     + " b.click(); return 'popup Search clicked [ng-click='+(b.getAttribute('ng-click')||'-')+']'; }");
-            System.out.println("BirthCertificate.discoverMrns: " + searched);
-            waitForAngular(3000);
+            System.out.println("BirthCertificate.discoverMrns[" + filter + "]: " + searched);
+            waitForAngular(2500);
 
-            Object again = page.evaluate("(max) => {"
+            Object hits = page.evaluate("(max) => {"
                     + " const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
                     + " const vis=e=>!!e && !!(e.offsetWidth||e.offsetHeight||e.getClientRects().length);"
                     + " const dlg=[...document.querySelectorAll('.modal,.modal-content,[role=dialog]')].filter(vis)[0];"
@@ -367,25 +375,25 @@ public class BirthCertificate extends BasePage {
                     + " const text=[...root.querySelectorAll('tr,.ui-grid-row')].filter(vis)"
                     + "   .map(t=>norm(t.textContent)).join(' ');"
                     + " return [...new Set((text.match(/\\b1\\d{8}\\b/g)||[]))].slice(0,max); }", max);
-            if (again instanceof java.util.List) {
-                for (Object o : (java.util.List<?>) again) found.add(o.toString());
-            }
+            if (hits instanceof java.util.List) for (Object o : (java.util.List<?>) hits) if (!found.contains(o.toString())) found.add(o.toString());
+            if (!found.isEmpty()) break;
+        }
 
-            if (found.isEmpty()) {
-                Object dump = page.evaluate("() => {"
-                        + " const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                        + " const vis=e=>!!e && !!(e.offsetWidth||e.offsetHeight||e.getClientRects().length);"
-                        + " const dlg=[...document.querySelectorAll('.modal,.modal-content,[role=dialog]')].filter(vis)[0];"
-                        + " if(!dlg) return '(no popup open)';"
-                        + " const ctl=[...dlg.querySelectorAll('select,input,button')].filter(vis)"
-                        + "   .map(e=>e.tagName+' \"'+norm(e.placeholder||e.textContent||'').slice(0,25)+'\" [ng='"
-                        + "     +(e.getAttribute('ng-model')||e.getAttribute('ng-click')||'?')+']');"
-                        + " const rows=[...dlg.querySelectorAll('tr,.ui-grid-row')].filter(vis)"
-                        + "   .map(t=>norm(t.textContent).slice(0,70)).filter(t=>t).slice(0,4);"
-                        + " return 'popup controls: '+[...new Set(ctl)].slice(0,12).join(' | ')"
-                        + "   +' || rows: '+(rows.length? rows.join(' / ') : '(none)'); }");
-                System.out.println("BirthCertificate.discoverMrns: " + dump);
-            }
+        if (found.isEmpty()) {
+            // Still nothing after every filter — dump the popup's own controls/rows for diagnosis.
+            Object dump = page.evaluate("() => {"
+                    + " const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                    + " const vis=e=>!!e && !!(e.offsetWidth||e.offsetHeight||e.getClientRects().length);"
+                    + " const dlg=[...document.querySelectorAll('.modal,.modal-content,[role=dialog]')].filter(vis)[0];"
+                    + " if(!dlg) return '(no popup open)';"
+                    + " const ctl=[...dlg.querySelectorAll('select,input,button')].filter(vis)"
+                    + "   .map(e=>e.tagName+' \"'+norm(e.placeholder||e.textContent||'').slice(0,25)+'\" [ng='"
+                    + "     +(e.getAttribute('ng-model')||e.getAttribute('ng-click')||'?')+']');"
+                    + " const rows=[...dlg.querySelectorAll('tr,.ui-grid-row')].filter(vis)"
+                    + "   .map(t=>norm(t.textContent).slice(0,70)).filter(t=>t).slice(0,4);"
+                    + " return 'popup controls: '+[...new Set(ctl)].slice(0,12).join(' | ')"
+                    + "   +' || rows: '+(rows.length? rows.join(' / ') : '(none)'); }");
+            System.out.println("BirthCertificate.discoverMrns: " + dump);
         }
 
         // Close whatever opened, so the form is usable again.

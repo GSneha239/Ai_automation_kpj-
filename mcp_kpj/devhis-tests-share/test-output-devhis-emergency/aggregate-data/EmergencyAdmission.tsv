@@ -1,5 +1,0 @@
-PASS	Emergency Admission	TC12_EmergencyAdmission	Login	Authenticated; Patient Dashboard	Logged in
-PASS	Emergency Admission	TC12_EmergencyAdmission	Open Emergency Admission (via menu tab)	The Emergency Admission form is shown	Emergency Admission opened
-PASS	Emergency Admission	TC12_EmergencyAdmission	Fill · Patient Information	Patient section populated	Patient: Ms. Linda Carter | Female | 13/02/1986 | NRIC 860213071500 | carter8493@example.com | 1244626868
-PASS	Emergency Admission	TC12_EmergencyAdmission	Fill · Admission Information	Admission section populated	Admission: Dept=1 | AttendingDoctor=15300 | Type=Emergency Admission | Source=1 | BedClass=Emergency Room | Ward=Emergency | Billing=Emergency | Purpose=Emergency | Dept=ACCIDENT & EMERGENCY (DepartmentID=6) | Doctor=(no options)
-FAIL	Emergency Admission	TC12_EmergencyAdmission	Save admission	'Patient Admitted Successfully.' toast	×KPJ PortalPlease Enter Patient Name!

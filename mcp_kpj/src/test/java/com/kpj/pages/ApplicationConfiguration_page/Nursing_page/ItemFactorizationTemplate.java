@@ -65,11 +65,28 @@ public class ItemFactorizationTemplate extends BasePage {
             waitForAngular(1200);
             page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const a=[...document.querySelectorAll('a')].find(x=>/^\\s*nursing\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null && (x.getAttribute('href')||'')==='#'); if(a) a.click(); }");
             waitForAngular(1500);
-            Object href = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); document.querySelectorAll('#__ifMenu').forEach(e=>e.removeAttribute('id')); const a=[...document.querySelectorAll('a[href]')].find(x=>/factoriz/i.test(x.textContent||'') || (x.getAttribute('href')||'')==='#/ItemFactorizationTemplateList'); if(!a) return ''; a.id='__ifMenu'; return a.getAttribute('href')||'link'; }");
+            // EXACT href/text match FIRST — a bare /factoriz/i substring match previously picked the sibling
+            // "Item Factorization Compounding Template" menu item instead (same trap as CancellationReason's
+            // "Receipt Cancellation"), landing on #/ItemFactorizationCompoundingTemplate and failing the whole
+            // flow with "WRONG PAGE".
+            Object href = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); document.querySelectorAll('#__ifMenu').forEach(e=>e.removeAttribute('id'));"
+                    + " const links=[...document.querySelectorAll('a[href]')];"
+                    + " const a = links.find(x=>(x.getAttribute('href')||'')==='#/ItemFactorizationTemplateList')"
+                    + "   || links.find(x=>/^\\s*item\\s*factorization\\s*template\\s*$/i.test(norm(x.textContent)))"
+                    + "   || links.find(x=>/factoriz/i.test(x.textContent||'') && !/compound/i.test(x.textContent||''));"
+                    + " if(!a) return ''; a.id='__ifMenu'; return a.getAttribute('href')||'link'; }");
             if (href == null || href.toString().isEmpty()) { System.out.println("ItemFactorizationTemplate.nav: menu link not found (attempt " + (attempt + 1) + ")"); continue; }
             try { page.locator("#__ifMenu").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(4000)); }
-            catch (Exception e) { page.evaluate("() => { const a=document.getElementById('__ifMenu'); if(a) a.click(); }"); }
-            page.evaluate("() => { const e=document.getElementById('__ifMenu'); if(e) e.removeAttribute('id'); }");
+            catch (Exception e) {
+                try { page.evaluate("() => { const a=document.getElementById('__ifMenu'); if(a) a.click(); }"); }
+                catch (Exception ignore) { /* the click itself may have already navigated away */ }
+            }
+            // The click above navigates to #/ItemFactorizationTemplateList, which can destroy this
+            // evaluate's execution context before it runs (an uncaught "Execution context was destroyed"
+            // here previously aborted the WHOLE test after Login, with no later step ever logged) — the
+            // cleanup is a nicety, not required, so a destroyed-context race is safe to ignore.
+            try { page.evaluate("() => { const e=document.getElementById('__ifMenu'); if(e) e.removeAttribute('id'); }"); }
+            catch (Exception ignore) { }
             try {
                 page.waitForFunction("() => [...document.querySelectorAll('[ng-click]')].some(e=>/AddNewItemFactorization\\s*\\(/.test(e.getAttribute('ng-click')||'') && e.offsetParent!==null)",
                         null, new Page.WaitForFunctionOptions().setTimeout(20000));

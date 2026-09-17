@@ -273,6 +273,101 @@ public class AmbulanceBooking extends BasePage {
         return lastPatientName != null && !lastPatientName.trim().isEmpty();
     }
 
+    /**
+     * Alternative to {@link #searchByMrn}: open the <b>Search Patient</b> popup
+     * ({@code OpenPopupScreen()}, the person-icon button beside the MRN field) instead of typing an exact
+     * MRN, search it with a short MRN filter, and pick the first real row from the results table
+     * ({@code SetSearchPatient(PR)}).
+     *
+     * <p>Only works under <b>OPD</b> — the popup button and the popup's own MRN field are
+     * {@code ng-disabled} unless the OPD/IPD/External radio is set to OPD, and inside the popup itself the
+     * "IPD" and "ALL" registration-scope radios are themselves disabled, leaving OPD the only usable
+     * scope. Verified live 2026-09-02: a full/exact MRN belonging to a real patient elsewhere in this
+     * environment ({@code 100000684}) still answers "Record not found!" here, and so does a "10"-prefixed
+     * filter — but "11" (the prefix this OPD counter's own patients actually use, e.g. the row this test
+     * itself has already booked) returns real rows. Tries each of {@code filters} in turn and stops at the
+     * first that yields a selectable row, so a config change to the underlying data does not need a code
+     * change here.
+     */
+    public String searchByPopup(String... filters) {
+        // OPD must be selected for the popup button (and its own MRN field) to be enabled at all.
+        page.evaluate("() => {" + JS
+                + " const r=[...document.querySelectorAll(\"input[type=radio][ng-model='" + M + "OPDIPD']\")].filter(vis)"
+                + "   .find(x=>{ const g=x.closest('label,div,td'); return g && /^\\s*opd\\s*$/i.test(norm(g.textContent)); });"
+                + " if(r && !r.checked) r.click(); }");
+        waitForAngular(500);
+
+        for (String filter : filters) {
+            Object opened = page.evaluate("() => {" + JS
+                    + " const b=[...document.querySelectorAll('button')].filter(vis)"
+                    + "   .find(x=>/OpenPopupScreen/i.test(x.getAttribute('ng-click')||''));"
+                    + " if(!b || b.disabled) return false; b.id='__ambPopupOpen'; return true; }");
+            if (!Boolean.TRUE.equals(opened)) {
+                System.out.println("AmbulanceBooking.searchByPopup: Search Patient button not found/disabled");
+                break;
+            }
+            try { page.locator("#__ambPopupOpen").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000)); }
+            catch (Exception e) { System.out.println("AmbulanceBooking.searchByPopup: open failed - " + e.getMessage()); continue; }
+            page.evaluate("() => { const e=document.getElementById('__ambPopupOpen'); if(e) e.removeAttribute('id'); }");
+
+            try {
+                page.waitForFunction(
+                        "() => [...document.querySelectorAll(\"input[ng-model='PatientData.MRNo']\")].some(e=>e.offsetParent!==null && !e.disabled)",
+                        null, new Page.WaitForFunctionOptions().setTimeout(6000));
+            } catch (Exception e) {
+                System.out.println("AmbulanceBooking.searchByPopup: popup MRN field never became usable for filter " + filter);
+                continue;
+            }
+
+            page.evaluate("() => {" + JS
+                    + " const e=[...document.querySelectorAll(\"input[ng-model='PatientData.MRNo']\")].filter(vis)[0];"
+                    + " if(e) e.id='__ambPopupMrn';"
+                    + " const b=[...document.querySelectorAll('button')].filter(vis)"
+                    + "   .find(x=>/SearchPatient\\(0\\)/.test(x.getAttribute('ng-click')||''));"
+                    + " if(b) b.id='__ambPopupSearch'; }");
+            try {
+                page.locator("#__ambPopupMrn").fill(filter, new com.microsoft.playwright.Locator.FillOptions().setTimeout(6000));
+                page.locator("#__ambPopupSearch").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000));
+            } catch (Exception e) {
+                System.out.println("AmbulanceBooking.searchByPopup: search failed for filter " + filter + " - " + e.getMessage());
+            }
+            page.evaluate("() => { ['__ambPopupMrn','__ambPopupSearch'].forEach(id => {"
+                    + " const e=document.getElementById(id); if(e) e.removeAttribute('id'); }); }");
+            waitForAngular(1200);
+
+            Object picked = page.evaluate("() => {" + JS
+                    + " const tbl=[...document.querySelectorAll('table')].filter(vis)"
+                    + "   .find(t=>t.querySelector(\"button[ng-click*='SetSearchPatient']\"));"
+                    + " if(!tbl) return '(no-table)';"
+                    + " const rows=[...tbl.querySelectorAll('tr')].filter(r=>r.querySelector(\"button[ng-click*='SetSearchPatient']\"));"
+                    + " if(!rows.length) return '(no-rows)';"
+                    + " rows[0].querySelector(\"button[ng-click*='SetSearchPatient']\").click();"
+                    + " return 'picked row 0 of ' + rows.length; }");
+            String pickedStr = picked == null ? "" : picked.toString();
+            System.out.println("AmbulanceBooking.searchByPopup[" + filter + "]: " + pickedStr);
+
+            if (pickedStr.startsWith("picked")) {
+                waitForAngular(800);
+                lastMrn = filter;
+                Object pn = page.evaluate("() => {" + JS + " const e=byNg('" + M + "patientname'); return e?norm(e.value):''; }");
+                lastPatientName = pn == null ? "" : pn.toString();
+                lastSearchResult = "popup[filter=" + filter + "] -> patient=" + lastPatientName;
+                System.out.println("AmbulanceBooking: " + lastSearchResult);
+                return lastSearchResult;
+            }
+
+            // No rows for this filter — close the popup before trying the next one.
+            page.evaluate("() => {" + JS
+                    + " const b=[...document.querySelectorAll('button')].filter(vis)"
+                    + "   .find(x=>/CloseModel/i.test(x.getAttribute('ng-click')||''));"
+                    + " if(b) b.click(); }");
+            waitForAngular(500);
+        }
+        lastSearchResult = "popup: no patient found among filters " + java.util.Arrays.toString(filters);
+        System.out.println("AmbulanceBooking: " + lastSearchResult);
+        return lastSearchResult;
+    }
+
     // ---- step 3: booking details -------------------------------------------
 
     /**

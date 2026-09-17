@@ -1,5 +1,0 @@
-PASS	Application Configuration - Blood Bank - Adverse Reaction Master	ApplicationConfig_BloodBank_AdverseReactionMaster	Login	Authenticated; Patient Dashboard	Logged in
-PASS	Application Configuration - Blood Bank - Adverse Reaction Master	ApplicationConfig_BloodBank_AdverseReactionMaster	Open Adverse Reaction Master screen	The Adverse Reaction Master screen is shown	Opened https://devhis.sancyberhad.com/#/AdverseReactionMaster
-PASS	Application Configuration - Blood Bank - Adverse Reaction Master	ApplicationConfig_BloodBank_AdverseReactionMaster	Click Add	The Adverse Reaction add form opens	Add clicked (https://devhis.sancyberhad.com/#/add-AdverseReactionMaster)
-PASS	Application Configuration - Blood Bank - Adverse Reaction Master	ApplicationConfig_BloodBank_AdverseReactionMaster	Enter Code, Remark, Comment	All fields are entered	Code=AR012600 | Remark=Auto adverse reaction AR012600 | Comment=Auto comment AR012600
-PASS	Application Configuration - Blood Bank - Adverse Reaction Master	ApplicationConfig_BloodBank_AdverseReactionMaster	Click Submit & success toast	'... saved successfully.' toast	×KPJ PortalRecord Saved Successfully.

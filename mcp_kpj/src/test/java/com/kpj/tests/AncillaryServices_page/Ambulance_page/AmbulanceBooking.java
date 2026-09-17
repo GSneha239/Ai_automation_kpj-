@@ -43,7 +43,7 @@ public class AmbulanceBooking extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Ambulance Booking", "Ancillary Services > Ambulance > Ambulance Booking",
+        meta("Ancillary Services - Ambulance - Ambulance Booking", "Ancillary Services > Ambulance > Ambulance Booking",
                 "&#9888; Creates a REAL ambulance booking: select Vehicle Type, search the patient by MRN, "
                         + "select Vehicle + Driver1 + Doctor in Booking Details, Save.");
 

@@ -32,7 +32,7 @@ public class ServiceAgent extends DevHisBase {
     /** DevHIS only builds the nav menu for an outpatient counter. Override with {@code -Dcounter=}. */
     public static final String COUNTER_FOR_MENU = "OPD-B-01";
 
-    public ServiceAgent() { super("ApplicationConfiguration_ServiceAgent"); }
+    public ServiceAgent() { super("ApplicationConfiguration_Equipment_ServiceAgent"); }
 
     public static void main(String[] args) {
         ServiceAgent t = new ServiceAgent();
@@ -44,7 +44,7 @@ public class ServiceAgent extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Service Agent", "Application Configuration > Equipment > Service Agent",
+        meta("Application Configuration - Equipment - Service Agent", "Application Configuration > Equipment > Service Agent",
                 "&#9888; Creates a REAL service agent: Add, enter the Agent Code and Name, fill the "
                         + "Contact Details, Add the contact, Submit.");
 

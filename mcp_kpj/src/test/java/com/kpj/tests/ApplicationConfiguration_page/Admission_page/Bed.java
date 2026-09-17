@@ -24,7 +24,7 @@ public class Bed extends DevHisBase {
     /** How many times to re-enter fresh details when the server says the Code / Bed Number already exists. */
     private static final int MAX_ATTEMPTS = 40;
 
-    public Bed() { super("ApplicationConfig_Bed"); }
+    public Bed() { super("ApplicationConfig_Admission_Bed"); }
 
     public static void main(String[] args) {
         Bed t = new Bed();
@@ -36,7 +36,7 @@ public class Bed extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Application Configuration - Bed", "Application Configuration > Admission > Bed",
+        meta("Application Configuration - Admission - Bed", "Application Configuration > Admission > Bed",
                 "Add a Bed Master record: Add, fill the details, tick the Non-Census checkbox, Submit.");
 
         LoginPage loginPage = new LoginPage(page);

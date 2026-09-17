@@ -26,7 +26,7 @@ public class ItemCompany extends DevHisBase {
     /** DevHIS only builds the nav menu for an outpatient counter. Override with {@code -Dcounter=}. */
     public static final String COUNTER_FOR_MENU = "OPD-B-01";
 
-    public ItemCompany() { super("ApplicationConfiguration_ItemCompany"); }
+    public ItemCompany() { super("ApplicationConfiguration_Inventory_ItemCompany"); }
 
     public static void main(String[] args) {
         ItemCompany t = new ItemCompany();
@@ -38,7 +38,7 @@ public class ItemCompany extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Item Company", "Application Configuration > Inventory > Item Company",
+        meta("Application Configuration - Inventory - Item Company", "Application Configuration > Inventory > Item Company",
                 "&#9888; Creates a REAL item company: enter Code and Remark, then Submit.");
 
         String counter = System.getProperty("counter", COUNTER_FOR_MENU);
