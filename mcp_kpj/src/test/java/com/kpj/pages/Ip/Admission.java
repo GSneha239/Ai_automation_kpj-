@@ -138,7 +138,11 @@ public class Admission extends BasePage {
         String nric = identity[1];
         String mobile = "12" + String.format("%08d", rnd.nextInt(90000000) + 10000000); // 10 digits
         String email = "johnpeter" + (rnd.nextInt(9000) + 1000) + "@example.com";
-        String postCode = "50000";
+        // 40500 (Shah Alam, Selangor), per request — also confirms live the postcode -> City/District -> State
+        // cascade below actually works: it fires on ng-blur ("PinCodeLeave();SearchPatientByPostal();"), not on
+        // input/change, so setInp() alone (which only dispatches those two) never triggered it.
+        String postCode = "40500";
+        String tin = "TIN" + String.format("%09d", Math.abs(rnd.nextLong() % 1_000_000_000L));
 
         // ---- ATOMIC fill (exactly like the manual browser run that saved AdmissionID 10450): do the masters,
         // then identity+contact+address, in TWO big ASYNC evaluates with the internal waits — filling field-by-
@@ -185,14 +189,24 @@ public class Admission extends BasePage {
                 + " setInp('Registration.FirstName',a.first); setInp('Registration.FamilyName',a.family);"
                 + " if(a.expiry) setInp('Registration.PassportExpirydate',a.expiry);"
                 + " const nr=[...document.querySelectorAll(\"input[ng-model='Registration.NationalId']\")].find(x=>x.getAttribute('maxlength')==='12'); if(nr){ const c=angular.element(nr).controller('ngModel'); nr.value=a.nric; if(c){c.$setViewValue(a.nric);c.$render();} nr.dispatchEvent(new Event('input',{bubbles:true})); nr.dispatchEvent(new Event('change',{bubbles:true})); }"
-                + " setInp('Registration.DateOfBirth',a.dob); setSel('Registration.MobileCountryCode','60'); setInp('Registration.MobileNo',a.mobile); setInp('Registration.Email',a.email); setInp('Registration.ResPinCode',a.pc); setInp('Registration.ResHouseNo','12'); setInp('Registration.ResStreet','Jalan Test'); setInp('Registration.ResAddress','No 12, Jalan Test');"
+                + " setInp('Registration.DateOfBirth',a.dob); setSel('Registration.MobileCountryCode','60'); setInp('Registration.MobileNo',a.mobile); setInp('Registration.Email',a.email); setInp('Registration.tinno',a.tin);"
+                + " setInp('Registration.ResPinCode',a.pc);"
+                // The postcode -> City/District -> State cascade (PinCodeLeave();SearchPatientByPostal();) is
+                // bound to ng-blur, not input/change — setInp's own events never fire it. A real 'blur' does.
+                + " { const e=[...document.querySelectorAll('input')].find(x=>x.getAttribute('ng-model')==='Registration.ResPinCode'); if(e) e.dispatchEvent(new Event('blur',{bubbles:true})); }"
+                + " setInp('Registration.ResHouseNo','12'); setInp('Registration.ResStreet','Jalan Test'); setInp('Registration.ResAddress','No 12, Jalan Test');"
                 + " await new Promise(r=>setTimeout(r,3000)); }",  // post code auto-fills city/state/country
                 java.util.Map.of("first", fullName, "family", familyName, "nric", nric, "dob", dob, "mobile", mobile,
-                        "email", email, "pc", postCode,
+                        "email", email, "pc", postCode, "tin", tin,
                         // Passport Expiry travels with the same fill for a foreigner; "" leaves it untouched.
                         "expiry", isForeign() ? java.time.LocalDate.now().plusYears(5)
                                 .format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy")) : ""));
         waitForAngular(400);
+        // Verify the postcode cascade actually populated City/District + State — confirmed live (2026-09-18)
+        // postcode 40500 resolves to City="Shah Alam", State="Selangor". Re-fire the blur once if either is
+        // still empty (the async lookup can be slower than the 3s wait above) before giving up and reporting it.
+        String cityStateInfo = verifyPostcodePopulated("Registration.ResPinCode", "Registration.ResCityID", "Registration.ResStateID", postCode);
+        System.out.println("fillPatientSection: " + cityStateInfo);
         // CHECK last, and only re-select when it actually drifted. On a slow environment the Nationality master can
         // arrive after this fill and revert the selection to the environment default. Re-selecting unconditionally
         // is NOT safe here: the ng-change fires the patient lookup, which wipes the form that was just filled
@@ -225,7 +239,8 @@ public class Admission extends BasePage {
             pGender = gender; pFullName = fullName; pNric = ""; pDob = dob;
             pMobile = mobile; pEmail = email; pPostCode = postCode;
             return "Patient: " + prefix + " " + fullName + " | " + gender + " | " + dob + " | " + nationality()
-                    + " | Passport " + familyName + " | Mobile " + mobile + " | Email " + email;
+                    + " | Passport " + familyName + " | Mobile " + mobile + " | Email " + email
+                    + " | TIN " + tin + " | " + cityStateInfo;
         }
         // Verify the NRIC (Identification No) actually committed to the 12-digit field; retry if not (it gets
         // dropped when ICCardType wasn't "New IC" at fill time). This is what blocks Save with "Please Enter NRIC".
@@ -238,7 +253,43 @@ public class Admission extends BasePage {
         }
         pGender = gender; pFullName = fullName; pFamilyName = familyName; pNric = nric; pDob = dob;
         pMobile = mobile; pEmail = email; pPostCode = postCode;
-        return "Patient: " + prefix + " " + fullName + " | " + gender + " | " + dob + " | NRIC " + nric + " | Mobile " + mobile + " | Email " + email;
+        return "Patient: " + prefix + " " + fullName + " | " + gender + " | " + dob + " | NRIC " + nric + " | Mobile " + mobile + " | Email " + email
+                + " | TIN " + tin + " | " + cityStateInfo;
+    }
+
+    /**
+     * Verify a postcode field's ng-blur cascade actually populated its City/District and State selects — re-firing
+     * a real 'blur' once if either is still empty (the async lookup can lag the caller's own wait) before giving
+     * up and reporting it. Generic over patient vs. kin (same shape, different ng-models).
+     *
+     * @return "City=&lt;c&gt; | State=&lt;s&gt;", each "(empty)" if still unset after the retry
+     */
+    private String verifyPostcodePopulated(String pinNgModel, String cityNgModel, String stateNgModel, String postcode) {
+        Object r = page.evaluate("(a) => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                + " const sel=ng=>[...document.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')===ng && x.offsetParent!==null);"
+                + " const val=e=>{ if(!e) return ''; const o=e.options[e.selectedIndex]; const t=o?norm(o.textContent):'';"
+                + "   return (o && o.value && !/^-*\\s*select\\s*-*$/i.test(t)) ? t : ''; };"
+                + " return JSON.stringify({city:val(sel(a.cityNg)), state:val(sel(a.stateNg))}); }",
+                java.util.Map.of("cityNg", cityNgModel, "stateNg", stateNgModel));
+        String city = group(r == null ? "" : r.toString(), "\"city\":\"([^\"]*)\"");
+        String state = group(r == null ? "" : r.toString(), "\"state\":\"([^\"]*)\"");
+        if (city.isEmpty() || state.isEmpty()) {
+            System.out.println("verifyPostcodePopulated: City/State still empty after the fill — re-firing blur on " + pinNgModel);
+            page.evaluate("(ng) => { const e=[...document.querySelectorAll('input')].find(x=>x.getAttribute('ng-model')===ng); if(e) e.dispatchEvent(new Event('blur',{bubbles:true})); }", pinNgModel);
+            waitForAngular(2000);
+            r = page.evaluate("(a) => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                    + " const sel=ng=>[...document.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')===ng && x.offsetParent!==null);"
+                    + " const val=e=>{ if(!e) return ''; const o=e.options[e.selectedIndex]; const t=o?norm(o.textContent):'';"
+                    + "   return (o && o.value && !/^-*\\s*select\\s*-*$/i.test(t)) ? t : ''; };"
+                    + " return JSON.stringify({city:val(sel(a.cityNg)), state:val(sel(a.stateNg))}); }",
+                    java.util.Map.of("cityNg", cityNgModel, "stateNg", stateNgModel));
+            city = group(r == null ? "" : r.toString(), "\"city\":\"([^\"]*)\"");
+            state = group(r == null ? "" : r.toString(), "\"state\":\"([^\"]*)\"");
+        }
+        if (city.isEmpty() || state.isEmpty()) {
+            com.kpj.core.Reasons.add("postcode " + postcode + " did not populate City/District and/or State (" + pinNgModel + ") after two attempts");
+        }
+        return "Postcode=" + postcode + " -> City=" + (city.isEmpty() ? "(empty)" : city) + " | State=" + (state.isEmpty() ? "(empty)" : state);
     }
 
     /**
@@ -351,8 +402,20 @@ public class Admission extends BasePage {
             }
             waitForAngular(700);
             // "Same As Patient Address" does not bring State/City across here — AddKinDetails then refuses with
-            // "Please Select State!" and the row is never added (added=false on every run so far).
-            ensureKinStateAndCity();
+            // "Please Select State!" and the row is never added. Per request: drive the SAME postcode ->
+            // City/District -> State cascade the patient's own address uses (Registration.KinPinCode, ng-blur =
+            // "PinCodeKinLeave();SearchKinByPostal();" — confirmed live, same shape as the patient's ResPinCode),
+            // using the SAME postcode value, instead of relying on the checkbox alone.
+            String kinPostcode = pPostCode.isEmpty() ? "40500" : pPostCode;
+            page.evaluate("(a) => { const e=[...document.querySelectorAll('input')].find(x=>x.getAttribute('ng-model')==='Registration.KinPinCode' && x.offsetParent!==null); if(!e) return;"
+                    + " const c=angular.element(e).controller('ngModel'); e.value=a; if(c){c.$setViewValue(a);c.$render();}"
+                    + " e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('blur',{bubbles:true})); }", kinPostcode);
+            waitForAngular(2500);
+            String kinCityStateInfo = verifyPostcodePopulated("Registration.KinPinCode", "Registration.KinCityID", "Registration.KinStateID", kinPostcode);
+            System.out.println("fillNokSection: " + kinCityStateInfo);
+            // Fall back to the manual State-walk ONLY if the postcode cascade above did not leave a City selected
+            // — keeps the existing safety net for an environment where SearchKinByPostal() itself has no match.
+            if (kinCityStateInfo.contains("City=(empty)")) ensureKinStateAndCity();
             // RE-ASSERT the nationality right before Add — Same-As-Address, Country and City each fire a cascade
             // that can drop it, and AddKinDetails captures whatever is on the form at that instant (the same
             // re-assert OP Registration does). Report what it reads at the moment of Add, not at fill time.
@@ -409,46 +472,56 @@ public class Admission extends BasePage {
     }
 
     /**
-     * Section — <b>Payor Information</b>. Open the Payor accordion ({@code FillSponserDropDown}) so the default
-     * payor GRID ROW loads, then CLICK that row ({@code EditSponser($index)}) which auto-fills the payor form
-     * (Payor Mode = Self / SELFPAY CASH). Tick the Insurer "Self" radio and back-fill any empty mandatory payor
-     * select. Returns a summary incl. the resulting Payor Mode.
+     * Section — <b>Payor Information</b>: <b>Payor Mode</b> → <b>Payor Status</b> → <b>Payor</b>, per request —
+     * the same fix, for the same reason, as OP Registration's {@code RegistrationPage.selectPayorSelf()}.
+     *
+     * <p>This form embeds the identical Payor partial as OP Registration ({@code Registration.receivabletypeid} /
+     * {@code Registration.PayerTypeId} / {@code Registration.receivablename}, id {@code txtSponsorName} —
+     * confirmed live 2026-09-18, byte-identical ids/ng-models), so the previous approach here had the same
+     * defect: it clicked the payor grid's FIRST row assuming it was a selectable "Self" option. That grid lists
+     * payors already added to the registration, not a preset list — clicking the wrong row filled the form as a
+     * COMPANY payor and Save then demanded fields (Payor Code, Priority, Pricing Policy, GL Reference No.) a
+     * self-pay admission never needs. Fixed the same way: select Payor Mode ("ASSOCIATE COMPANY"), select Payor
+     * Status ("Self"), type Payor ("self") — Pricing Policy stays on "--Select--" with no options regardless
+     * (confirmed live, same environment gap as OP Registration) so it is not part of what this waits for or
+     * judges success on.</p>
      */
     public String fillPayorSection() {
         page.evaluate("() => { const a=[...document.querySelectorAll('a,button')].find(x=>x.getAttribute('ng-click')==='FillSponserDropDown();' && x.offsetParent!==null); if(a) a.click(); }");
-        // Payor data loads async and can be slow — WAIT (up to 20s) until the payor table actually has a DATA
-        // row (not "No records"), re-clicking the accordion if needed, before clicking the row.
-        String rowLoaded = "() => { const t=[...document.querySelectorAll('table')].find(x=>/PAYOR MODE|PRICING POLICY/i.test((x.querySelector('thead')||{}).innerText||'')); if(!t) return false;"
-                + " return [...t.querySelectorAll('tbody tr')].some(r=>(r.textContent||'').trim() && !/no records/i.test(r.textContent||'')); }";
-        boolean loaded = false;
-        for (int attempt = 0; attempt < 3 && !loaded; attempt++) {
-            try { page.waitForFunction(rowLoaded, null, new Page.WaitForFunctionOptions().setTimeout(8000)); loaded = true; }
-            catch (Exception ignore) {
-                System.out.println("fillPayorSection: payor row not loaded (attempt " + (attempt + 1) + ") — re-opening accordion");
-                page.evaluate("() => { const a=[...document.querySelectorAll('a,button')].find(x=>x.getAttribute('ng-click')==='FillSponserDropDown();' && x.offsetParent!==null); if(a) a.click(); }");
-                waitForAngular(1500);
-            }
-        }
+        try {
+            page.waitForFunction(
+                    "() => { const e=[...document.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')==='Registration.receivabletypeid'); return e && e.options.length>1; }",
+                    null, new Page.WaitForFunctionOptions().setTimeout(20000));
+        } catch (Exception ignore) { System.out.println("fillPayorSection: Payor Mode list did not populate"); com.kpj.core.Reasons.add("the Payor Mode dropdown did not populate (no options loaded)"); }
+        waitForAngular(500);
+        // 1) Payor Mode.
+        setSelTxt("Registration.receivabletypeid", "ASSOCIATE COMPANY");
         waitForAngular(600);
-        // Click the payor grid row (its EditSponser handler auto-fills the payor form).
-        page.evaluate("() => { const t=[...document.querySelectorAll('table')].find(x=>/PAYOR MODE|PRICING POLICY/i.test((x.querySelector('thead')||{}).innerText||''));"
-                + " if(!t) return; const row=t.querySelector('tbody tr'); if(!row) return;"
-                + " const cell=[...row.querySelectorAll('td')].find(td=>/self|selfpay|cash/i.test(td.textContent||'')) || row.querySelector('td') || row;"
-                + " const sc=angular.element(cell).scope(); if(sc && typeof sc.EditSponser==='function'){ sc.$apply(function(){ sc.EditSponser(sc.$index); }); } else { cell.click(); } }");
+        // 2) Payor Status.
+        setSelTxt("Registration.PayerTypeId", "Self");
         waitForAngular(600);
-        // Ensure Insurer = Self (real click) + back-fill any empty mandatory payor select.
+        // 3) Payor — plain text, no autocomplete selection to make (confirmed live: no suggestion list ever
+        // appears, mouse or scripted, and the app accepts the typed text).
+        try { page.locator("#txtSponsorName").fill("self"); }
+        catch (Exception e) { System.out.println("fillPayorSection: Payor text fill failed - " + e.getMessage()); }
+        waitForAngular(600);
+        // Ensure Insurer = Self (real click) — belt-and-braces; Payor Status already carries the same meaning.
         Object tagged = page.evaluate("()=>{const r=[...document.querySelectorAll('input[ng-model=\"Insurer\"]')].find(x=>x.value==='1'); if(!r) return false; r.id='__payorSelf'; return true;}");
         if (Boolean.TRUE.equals(tagged)) {
             try { page.locator("#__payorSelf").check(new com.microsoft.playwright.Locator.CheckOptions().setTimeout(5000)); }
             catch (Exception e) { try { page.locator("#__payorSelf").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000)); } catch (Exception ignore) {} }
             page.evaluate("()=>{const e=document.getElementById('__payorSelf'); if(e) e.removeAttribute('id');}");
         }
-        page.evaluate("() => { const setSelIfEmpty=(ng,txt)=>{ const e=[...document.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')===ng); if(!e) return; const cur=((e.options[e.selectedIndex]||{}).text||'').trim(); if(cur && !/^-*\\s*select\\s*-*$/i.test(cur)) return;"
-                + " let i=[...e.options].findIndex(o=>(o.text||'').trim().toLowerCase()===txt.toLowerCase()); if(i<1) i=[...e.options].findIndex((o,ix)=>ix>0 && !/select/i.test(o.text||'')); if(i<1) return; e.selectedIndex=i; e.dispatchEvent(new Event('change',{bubbles:true})); const $=window.jQuery||window.$; if($){try{$(e).trigger('change'); $(e).select2('val', e.value);}catch(err){}} };"
-                + " setSelIfEmpty('Registration.receivabletypeid','Self'); setSelIfEmpty('Registration.PayerTypeId','Self'); }");
         waitForAngular(400);
-        Object payorMode = page.evaluate("() => { const e=[...document.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')==='Registration.receivabletypeid'); return e?((e.options[e.selectedIndex]||{}).text||'').trim():''; }");
-        return "Payor: Mode = " + (payorMode == null ? "" : payorMode.toString()) + " (Self, row auto-filled)";
+        Object state = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                + " const val=ng=>{ const e=[...document.querySelectorAll('select,input')].find(x=>(x.getAttribute('ng-model')||'')===ng);"
+                + "   if(!e) return ''; if(e.tagName!=='SELECT') return norm(e.value);"
+                + "   const o=e.options[e.selectedIndex]; const t=o?norm(o.textContent):'';"
+                + "   return (o && o.value && !/^-*\\s*select\\s*-*$/i.test(t)) ? t : ''; };"
+                + " return JSON.stringify({mode:val('Registration.receivabletypeid'), status:val('Registration.PayerTypeId'), name:val('Registration.receivablename')}); }");
+        System.out.println("fillPayorSection: payor form => " + state);
+        String mode = group(state == null ? "" : state.toString(), "\"mode\":\"([^\"]*)\"");
+        return "Payor: Mode = " + mode + " | " + (state == null ? "" : state.toString());
     }
 
     /**
@@ -686,6 +759,121 @@ public class Admission extends BasePage {
         String info = r == null ? "(null)" : r.toString();
         lastBedInfo = info;
         return info;
+    }
+
+    /** What {@link #tickVacantBedRow()} ended up doing. */
+    public String lastVacantBedRow = "";
+
+    /**
+     * Tick ONE available checkbox in the <b>Census Bed List</b> grid ({@code ng-repeat="BedList in
+     * CensusBedList"}) — per request, this is the row-selection {@link #selectRoomTypeAndWard()} deliberately
+     * skips.
+     *
+     * <p>This is NOT the walk that was removed for hanging live for 30+ minutes: that one cross-multiplied
+     * Bed Class × Ward (every combination of both) inside a single unbounded {@code page.evaluate()} call with
+     * no timeout of its own. Confirmed live (2026-09-18) the grid is filtered by <b>Room Type alone</b> — changing
+     * Ward does not change which beds are listed — so there is nothing to gain from varying it. This method
+     * therefore: (1) tries to tick an available row under whatever Room Type is already selected, and only if
+     * that room type's whole list is occupied/under-maintenance, (2) walks OTHER Room Types ONE AT A TIME from
+     * Java — never Ward, never a cross-product — each attempt bounded by its own short poll, capped at
+     * {@code -Dbed.roomtype.walk.max} (default 8) attempts total.</p>
+     *
+     * @return "Bed=&lt;code&gt; &lt;bed&gt; (&lt;ward&gt;) [RoomType=&lt;n&gt;]" on success, or an "ERR:…" string
+     *         naming how many room types were tried
+     */
+    public String tickVacantBedRow() {
+        final int maxRoomTypes = Integer.getInteger("bed.roomtype.walk.max", 8);
+        java.util.LinkedHashSet<String> tried = new java.util.LinkedHashSet<>();
+        for (int attempt = 1; attempt <= maxRoomTypes; attempt++) {
+            String picked = tickFirstAvailableBedRow();
+            if (picked != null && picked.startsWith("Bed=")) { lastVacantBedRow = picked; return picked; }
+            String curRoomType = selectedRoomType();
+            if (!curRoomType.isEmpty()) tried.add(curRoomType);
+            System.out.println("tickVacantBedRow: Room Type \"" + curRoomType + "\" has no available bed (attempt "
+                    + attempt + "/" + maxRoomTypes + ") — trying a different Room Type");
+            String switched = switchToUntriedRoomType(tried);
+            if (switched.isEmpty()) {
+                lastVacantBedRow = "ERR:no-untried-room-type-left (tried " + tried.size() + ": " + tried + ")";
+                com.kpj.core.Reasons.add("Vacant Bed Selection: no Room Type has an available (non-occupied,"
+                        + " non-under-maintenance) bed - tried " + tried.size() + ": " + tried);
+                return lastVacantBedRow;
+            }
+        }
+        lastVacantBedRow = "ERR:no-vacant-bed (tried " + maxRoomTypes + " room types: " + tried + ")";
+        com.kpj.core.Reasons.add("Vacant Bed Selection: no available bed found after trying " + maxRoomTypes
+                + " Room Types (capped by -Dbed.roomtype.walk.max) - " + tried);
+        return lastVacantBedRow;
+    }
+
+    /** The Room Type text currently selected ({@code Admission.BedClassID}), or "" if unset. */
+    private String selectedRoomType() {
+        Object r = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                + " const e=document.querySelector(\"select[ng-model='Admission.BedClassID']\"); if(!e) return '';"
+                + " const o=e.options[e.selectedIndex]; const t=o?norm(o.textContent):'';"
+                + " return (o && o.value && !/^-*\\s*select/i.test(t)) ? t : ''; }");
+        return r == null ? "" : r.toString();
+    }
+
+    /**
+     * Find the FIRST row in the Census Bed List whose checkbox is not {@code ng-disabled} (i.e. neither occupied
+     * nor under maintenance) and tick it with a real click, so its {@code ng-change}/ng-model binding fires the
+     * same way a person clicking it would. Waits briefly for the grid to (re)render after a Room Type change,
+     * bounded — this never loops indefinitely, unlike the removed combination-scanning code it replaces.
+     *
+     * @return "Bed=&lt;code&gt; &lt;bed&gt; (&lt;ward&gt;) [RoomType=&lt;n&gt;]", or "" when this Room Type's
+     *         whole list is occupied/under-maintenance (or the grid never rendered)
+     */
+    private String tickFirstAvailableBedRow() {
+        Object tagged = page.evaluate("async () => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                + " document.querySelectorAll('#__bedRowCb').forEach(e=>e.removeAttribute('id'));"
+                + " let tbl=null;"
+                + " for(let w=0;w<10;w++){ tbl=[...document.querySelectorAll('table')].find(t=>/bed occupied/i.test(norm((t.querySelector('thead')||{}).innerText||'')));"
+                + "   if(tbl && tbl.querySelectorAll('tbody tr').length) break; await new Promise(r=>setTimeout(r,500)); }"
+                + " if(!tbl) return {found:false, reason:'no-grid'};"
+                + " const rows=[...tbl.querySelectorAll('tbody tr')];"
+                + " const row=rows.find(r=>{ const cb=r.querySelector('input[type=checkbox]'); return cb && !cb.disabled; });"
+                + " if(!row) return {found:false, reason:'all-occupied', rows:rows.length};"
+                + " const cb=row.querySelector('input[type=checkbox]'); cb.id='__bedRowCb';"
+                + " const cells=[...row.querySelectorAll('td')].map(td=>norm(td.textContent));"
+                + " return {found:true, code:cells[1]||'', bed:cells[2]||'', roomType:cells[3]||'', ward:cells[4]||''}; }");
+        java.util.Map<?, ?> m = (tagged instanceof java.util.Map) ? (java.util.Map<?, ?>) tagged : java.util.Collections.emptyMap();
+        if (!Boolean.TRUE.equals(m.get("found"))) return "";
+        try { page.locator("#__bedRowCb").check(new com.microsoft.playwright.Locator.CheckOptions().setTimeout(5000)); }
+        catch (Exception e) {
+            System.out.println("tickFirstAvailableBedRow: real check failed, falling back to a script click - " + e.getMessage());
+            try { page.evaluate("() => { const c=document.getElementById('__bedRowCb'); if(c) c.click(); }"); }
+            catch (Exception ignore) { }
+        }
+        Object ok = page.evaluate("() => { const c=document.getElementById('__bedRowCb'); const v=c?c.checked:false; if(c) c.removeAttribute('id'); return v; }");
+        waitForAngular(400);
+        if (!Boolean.TRUE.equals(ok)) return "";
+        return "Bed=" + m.get("code") + " " + m.get("bed") + " (" + m.get("ward") + ") [RoomType=" + m.get("roomType") + "]";
+    }
+
+    /**
+     * Change <b>Room Type</b> ({@code Admission.BedClassID}) to a real option not already in {@code exclude} (by
+     * visible text). Changing it does NOT touch Ward — confirmed live the bed grid ignores Ward entirely, so
+     * there is nothing to re-assert there.
+     *
+     * @return the Room Type text now committed, or "" when every option has already been tried
+     */
+    private String switchToUntriedRoomType(java.util.Set<String> exclude) {
+        String excludeJson = "[" + exclude.stream().map(s -> "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"") + "\"")
+                .reduce((a, b) -> a + "," + b).orElse("") + "]";
+        Object opt = page.evaluate("(exJson) => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const ex=new Set(JSON.parse(exJson));"
+                + " document.querySelectorAll('#__roomTypeSel').forEach(e=>e.removeAttribute('id'));"
+                + " const e=document.querySelector(\"select[ng-model='Admission.BedClassID']\"); if(!e) return '';"
+                + " const cand=[...e.options].find(o=>o.value && !/^-*\\s*select/i.test(norm(o.textContent)) && !ex.has(norm(o.textContent)));"
+                + " if(!cand) return ''; e.id='__roomTypeSel'; return cand.value; }", excludeJson);
+        String value = opt == null ? "" : opt.toString();
+        if (value.isEmpty()) return "";
+        try {
+            page.locator("#__roomTypeSel").selectOption(new com.microsoft.playwright.options.SelectOption().setValue(value),
+                    new com.microsoft.playwright.Locator.SelectOptionOptions().setTimeout(8000));
+        } catch (Exception e) { System.out.println("switchToUntriedRoomType: selectOption failed - " + e.getMessage()); }
+        page.evaluate("() => { const e=document.getElementById('__roomTypeSel'); if(e) e.removeAttribute('id'); }");
+        waitForAngular(1000);
+        return selectedRoomType();
     }
 
     /**

@@ -47,10 +47,13 @@ public class Admission extends DevHisBase {
                 opened ? "PASS" : "FAIL");
         if (!opened) return;
 
-        // Section 1 — Patient Information.
+        // Section 1 — Patient Information + Correspondence Details (same form, one accordion on this screen).
         String patient = ip.fillPatientSection();
-        step(page, "Fill · Patient Information", "Nationality → Prefix/Gender → Race/Religion/Marital/Blood → New IC → Name → NRIC → DOB → Mobile",
-                "Patient section populated", patient, "PASS");
+        // "City=(empty)" or "State=(empty)" means the postcode -> City/District -> State cascade did not fire —
+        // fail the step on that, rather than reporting PASS regardless of what the fill actually left behind.
+        boolean patientOk = !patient.contains("City=(empty)") && !patient.contains("State=(empty)");
+        step(page, "Fill · Patient Information", "Nationality → Prefix/Gender → Race/Religion/Marital/Blood → New IC → Name → NRIC → DOB → Mobile → TIN Number → Postcode (City/District + State auto-populate)",
+                "Patient section populated, incl. TIN Number and City/District + State from the postcode", patient, patientOk ? "PASS" : "FAIL");
 
         // VALIDATION DEFECT CHECK — the same one OP Registration runs: with Nationality = Malaysian the
         // Passport No. field must NOT be enabled (a Malaysian registers on the NRIC, not a passport). The probe
@@ -101,25 +104,34 @@ public class Admission extends DevHisBase {
         // Section 2 — NOK / Guarantor.
         String nok = ip.fillNokSection();
         boolean nokOk = nok != null && nok.contains("added=true");
-        step(page, "Fill · NOK / Guarantor", "Title/Name/Relationship/Mobile+CountryCode/NRIC/Occupation/Country + Same-as-address → Add",
+        step(page, "Fill · NOK / Guarantor", "Title/Name/Relationship/Mobile+CountryCode/NRIC/Occupation/Country, same Postcode as the patient (City/District + State auto-populate) → Add",
                 "A Next-of-Kin row is added", nok, nokOk ? "PASS" : "MANUAL");
 
-        // Section 3 — Payor Information (click the payor row → auto-fills; back-fill any empty mandatory).
+        // Section 3 — Payor Information: select Payor Mode, select Payor Status, enter Payor.
         String payor = ip.fillPayorSection();
         boolean payorOk = payor != null && payor.toLowerCase().contains("self");
-        step(page, "Fill · Payor Information", "Open Payor accordion → click the default payor row (EditSponser auto-fills) → ensure Self + mandatory filled",
-                "Payor is set to Self (row auto-filled)", payor, payorOk ? "PASS" : "MANUAL");
+        step(page, "Fill · Payor Information", "Select Payor Mode (ASSOCIATE COMPANY) -> select Payor Status (Self) -> enter Payor (self)",
+                "Payor Mode, Payor Status and Payor all hold a value", payor, payorOk ? "PASS" : "MANUAL");
 
         // Section 4 — Admission Information.
         String admission = ip.fillAdmissionSection();
         step(page, "Fill · Admission Information", "Admission Location/Department/Doctor/Type/Source/Billing Class/Purpose (Non-Presence off)",
                 "Admission section populated", admission, "PASS");
 
-        // Section 5 — Room Type + Ward only (no bed picked from the census grid), then Save.
+        // Section 5 — Room Type + Ward, then tick one available row in the Census Bed List grid.
         String bed = ip.selectRoomTypeAndWard();
         boolean bedOk = bed != null && bed.contains("RoomType=") && bed.contains("Ward=") && !bed.startsWith("ERR");
         step(page, "Select Room Type, Ward", "Select Room Type (Bed Class) + Ward",
                 "Room Type and Ward are both set", bed, bedOk ? "PASS" : "FAIL");
+
+        // Tick a vacant bed row — per request, added back after the combination-scanning version of this was
+        // removed for hanging live 30+ minutes (see tickVacantBedRow()'s Javadoc). Only meaningful when a bed
+        // is actually required (Non-Presence off); scrollToSection brings the grid into frame for the screenshot.
+        scrollToSection("Vacant\\s*Bed");
+        String bedRow = ip.tickVacantBedRow();
+        boolean bedRowOk = bedRow != null && bedRow.startsWith("Bed=");
+        step(page, "Tick a Vacant Bed row", "In the Census Bed List grid, tick the checkbox of any available (non-occupied) bed",
+                "A bed row is selected", bedRow, bedRowOk ? "PASS" : "FAIL");
 
         // Section 6 — Additional Doctors (expand the panel, pick Classification + Doctor, Add).
         String addDocs = ip.fillAdditionalDoctors();
@@ -133,7 +145,7 @@ public class Admission extends DevHisBase {
 
         addSummary("NOK / Guarantor", nok == null ? "-" : nok);
         addSummary("Payor", payor == null ? "-" : payor);
-        addSummary("Vacant Bed", bed == null ? "-" : bed);
+        addSummary("Vacant Bed", (bed == null ? "-" : bed) + " | " + (bedRow == null ? "-" : bedRow));
         addSummary("Additional Doctors", addDocs == null ? "-" : addDocs);
 
         int tabsBefore = page.context().pages().size();
