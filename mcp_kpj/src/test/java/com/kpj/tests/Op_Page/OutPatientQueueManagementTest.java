@@ -51,7 +51,7 @@ public class OutPatientQueueManagementTest extends DevHisBase {
     protected void body() {
         meta("OP - Outpatient Queue Management",
                 "OP > Outpatient Queue Management",
-                "One run exercising the Outpatient Queue Management actions: Attach Signature, Change Doctor, New Case, Close Visit, Medico Legal and Consent/Forms.");
+                "One run exercising the Outpatient Queue Management actions: Change Doctor, Company Approved Amount, New Case, Close Visit, Medico Legal and Consent/Forms.");
 
         LoginPage loginPage = new LoginPage(page);
         loginPage.login(BASE, USER, PASS);
@@ -60,7 +60,6 @@ public class OutPatientQueueManagementTest extends DevHisBase {
         // Every section runs through runSection so its popup is ALWAYS closed afterwards — pass, fail, early
         // return or exception. A modal (or just its backdrop) left on screen intercepts the next section's clicks:
         // that is how a failing Change Doctor previously took Generate Queue and New Case down with it.
-        runSection("Signature", this::sectionSignature);
         runSection("Change Doctor", this::sectionChangeDoctor);
         runSection("Generate Queue", this::sectionGenerateQueue);
         runSection("Call Patient", this::sectionCallPatient);
@@ -140,32 +139,6 @@ public class OutPatientQueueManagementTest extends DevHisBase {
                 + " const names=vis.map(x=>norm(x.textContent).slice(0,40));"
                 + " return (names.length? names.join(' | ') : '') + (back? (names.length?' + ':'')+back+' backdrop(s)' : ''); }");
         return r == null ? "" : r.toString().trim();
-    }
-
-    private static final String SIGNATURE_FILE = "C:\\Users\\Siva Sankar\\Downloads\\sinature.jpeg";
-
-    // ===== Section: Attach Signature =====================================
-    private void sectionSignature() {
-        OutPatientQueueManagementPage qm = new OutPatientQueueManagementPage(page);
-        qm.navigateTo(BASE);
-        qm.searchQueue(FROM_DATE, TO_DATE);
-        step("Signature · Open queue & search", "OP > Outpatient Queue Management; 1-month range + Search",
-                "Queued patients are listed", "Queue searched", "PASS");
-
-        String patient = qm.selectFirstQueueRow();
-        step("Signature · Select a patient", "Select any patient row (ui-grid API)",
-                "One patient selected", patient == null ? "No patient in the queue" : "Selected: " + patient,
-                patient == null ? "FAIL" : "PASS");
-        if (patient == null) return;
-
-        String toast = qm.attachSignatureAndGetToast(SIGNATURE_FILE);
-        boolean ok = toast != null && (toast.toLowerCase().contains("signature") || toast.toLowerCase().contains("success"));
-        step(page, "Signature · Attach & success toast", "Attach signature from " + SIGNATURE_FILE + "; wait for the toast",
-                "'Digital Signature Saved Successfully.' toast",
-                toast == null || toast.isEmpty() ? "No success toast appeared" : toast, ok ? "PASS" : "FAIL");
-
-        addSummary("Signature · Patient", patient);
-        addSummary("Signature · Result", ok ? toast : "Not confirmed");
     }
 
     // ===== Section: Change Doctor ========================================
@@ -398,21 +371,49 @@ public class OutPatientQueueManagementTest extends DevHisBase {
                 opened ? "PASS" : "FAIL");
         if (!opened) { addSummary("Company Approved Amount · Result", "Modal did not open"); return; }
 
-        // Fail fast and explicitly if any mandatory dropdown has nothing to select from.
-        String filled = qm.fillCompanyApprovedAmountDetails();
-        boolean emptyDropdown = filled.startsWith("EMPTY DROPDOWN:");
-        step(page, "Company Approved Amount · Fill all mandatory details",
-                "Fill Payor/Company, PayerType, Amount, Applied/GL Date, File No., GL Consumed/Balance/Max Limit, Remarks",
-                "All fields accepted (both dropdowns have a real option)", filled,
-                emptyDropdown ? "FAIL" : "PASS");
-        if (emptyDropdown) { addSummary("Company Approved Amount · Result", filled); return; }
+        // The three starred (mandatory) fields, in the order a person fills them: Payor, GL Approved Amount,
+        // Payor Status. Applied/Approved Date are pre-filled with today by the app.
+        String payor = qm.selectCompanyApprovedPayor();
+        boolean payorOk = !payor.isEmpty() && !payor.contains("NOT BOUND");
+        step(page, "Company Approved Amount · Select Payor", "Select a Payor in the modal (Payor *)",
+                "A Payor is selected", payor.isEmpty() ? "EMPTY DROPDOWN: the Payor list has no real option" : payor,
+                payorOk ? "PASS" : "FAIL");
+        if (!payorOk) { addSummary("Company Approved Amount · Result", "Payor not selected"); return; }
 
-        // Master-detail form: Add commits the filled row before Save persists it (same shape as Medico Legal's
-        // Document List) — going straight to Save without this left nothing to save (no toast at all).
+        String amountText = "100";
+        String amount = qm.enterCompanyGlApprovedAmount(amountText);
+        boolean amountOk = amount.startsWith(amountText) && !amount.contains("[MODEL");
+        step(page, "Company Approved Amount · Enter GL Approved Amount", "Enter " + amountText + " in GL Approved Amount (*)",
+                "The amount is entered", amount.isEmpty() ? "GL Approved Amount field not found" : amount,
+                amountOk ? "PASS" : "FAIL");
+        if (!amountOk) { addSummary("Company Approved Amount · Result", "GL Approved Amount not entered"); return; }
+
+        String status = qm.selectCompanyApprovedPayorStatus();
+        boolean statusOk = !status.isEmpty() && !status.contains("NOT BOUND");
+        step(page, "Company Approved Amount · Select Payor Status", "Select a Payor Status (Payor Status *)",
+                "A Payor Status is selected", status.isEmpty() ? "EMPTY DROPDOWN: the Payor Status list has no real option" : status,
+                statusOk ? "PASS" : "FAIL");
+        if (!statusOk) { addSummary("Company Approved Amount · Result", "Payor Status not selected"); return; }
+
+        // Master-detail form: Add commits the filled row into the list; Save then persists the list (same shape as
+        // Medico Legal's Document List) — going straight to Save without Add left nothing to save (no toast).
+        int rowsBefore = qm.companyApprovedAmountListRows();
         boolean added = qm.addCompanyApprovedAmountRow();
-        step(page, "Company Approved Amount · Add row", "Click 'Add' (AddCompanyDetails) to commit the filled row",
-                "The row is added", added ? "Add clicked" : "Add button not found", added ? "PASS" : "FAIL");
+        step(page, "Company Approved Amount · Click Add", "Click 'Add' (AddCompanyDetails) to commit the filled row",
+                "Add is clicked", added ? "Add clicked" : "Add button not found", added ? "PASS" : "FAIL");
         if (!added) { addSummary("Company Approved Amount · Result", "Add button not found"); return; }
+
+        boolean grew = qm.waitCompanyApprovedAmountListGrowth(rowsBefore);
+        String listText = qm.companyApprovedAmountListText();
+        boolean listed = grew && listText.toLowerCase().contains(payor.toLowerCase());
+        step(page, "Company Approved Amount · Verify list populated",
+                "The added row (Payor / Approved Amount / Payor Status) appears in the list",
+                "List holds the added row for the selected Payor",
+                listed ? qm.companyApprovedAmountListRows() + " row(s) (was " + rowsBefore + "): " + listText
+                        : (grew ? "Row count grew but the selected Payor '" + payor + "' is not in it: " + listText
+                                : "List did not populate (rows still " + rowsBefore + ")"),
+                listed ? "PASS" : "FAIL");
+        if (!listed) { addSummary("Company Approved Amount · Result", "List not populated after Add"); return; }
 
         String toast = qm.saveCompanyApprovedAmountAndGetToast();
         boolean ok = toast != null && !toast.isEmpty()

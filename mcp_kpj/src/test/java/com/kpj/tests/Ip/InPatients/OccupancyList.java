@@ -328,7 +328,10 @@ public class OccupancyList extends DevHisBase {
     }
 
     // ===== Section: Attach Signature ====================================
-    private static final String SIGNATURE_FILE = "C:\\Users\\Siva Sankar\\Downloads\\sinature.jpeg";
+    // Was hardcoded to another machine's Downloads folder, which never existed here; ATTACH (inherited from
+    // DevHisBase) resolves to a real image on any machine — the newest file in this machine's Screenshots folder,
+    // or the bundled placeholder.png when that folder is empty.
+    private static final String SIGNATURE_FILE = ATTACH.toString();
 
     private void sectionAttachSignature() {
         com.kpj.pages.Ip.InPatients.OccupancyList occ = openSearchSelect("Attach Signature");

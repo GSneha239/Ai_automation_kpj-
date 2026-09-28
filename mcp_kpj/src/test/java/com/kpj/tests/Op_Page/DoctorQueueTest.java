@@ -26,7 +26,10 @@ import com.microsoft.playwright.Page;
  */
 public class DoctorQueueTest extends DevHisBase {
 
-    private static final String SIGNATURE_FILE = "C:\\Users\\Siva Sankar\\Downloads\\sinature.jpeg";
+    // File attached in the Medico Legal Document List. Was hardcoded to another machine's Downloads folder, which
+    // never existed here; ATTACH (inherited from DevHisBase) resolves to a real image on any machine — the newest
+    // file in this machine's Screenshots folder, or the bundled placeholder.png when that folder is empty.
+    private static final String SIGNATURE_FILE = ATTACH.toString();
 
     public DoctorQueueTest() { super("DoctorQueue"); }
 
@@ -61,7 +64,6 @@ public class DoctorQueueTest extends DevHisBase {
         sectionViewConsent();
         sectionChangeDoctor();
         sectionAssignTriage();
-        sectionAttachSignature();
         sectionNewCase();
         sectionCloseVisit();
         sectionMedicoLegal();
@@ -717,27 +719,6 @@ public class DoctorQueueTest extends DevHisBase {
 
         addSummary("Assign Triage · Patient", patient);
         addSummary("Assign Triage · Result", reason);
-    }
-
-    // ===== Section: Attach Signature =====================================
-    private void sectionAttachSignature() {
-        DoctorQueuePage dq = openSearchSelect("Signature");
-        if (dq == null) { addSummary("Signature · Result", "Doctor Queue not reached"); return; }
-
-        String patient = dq.selectFirstQueueRow();
-        step(page, "Signature · Select a patient", "Select any patient row (ui-grid API)",
-                "One patient selected", patient == null ? "No patient in the queue" : "Selected: " + patient,
-                patient == null ? "FAIL" : "PASS");
-        if (patient == null) return;
-
-        String toast = dq.attachSignatureAndGetToast(SIGNATURE_FILE);
-        boolean ok = toast != null && (toast.toLowerCase().contains("signature") || toast.toLowerCase().contains("success"));
-        step(page, "Signature · Attach & success toast", "Attach signature (set #PhotoData / queue.PhotoFileData); wait for the toast",
-                "'Digital Signature Saved Successfully.' toast",
-                toast == null || toast.isEmpty() ? "No success toast appeared" : toast, ok ? "PASS" : "FAIL");
-
-        addSummary("Signature · Patient", patient);
-        addSummary("Signature · Result", ok ? toast : "Not confirmed");
     }
 
     // ===== Section: New Case =============================================

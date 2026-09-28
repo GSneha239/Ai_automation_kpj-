@@ -1419,10 +1419,23 @@ public class OutPatientQueueManagementPage extends BasePage {
     // ---- Attach Signature -------------------------------------------------
 
     /**
-     * Attach a digital signature image to the selected patient. The footer "Attach Signature" control is
-     * a {@code <label for="PhotoData">} over the hidden file input {@code #PhotoData}
-     * ({@code ng-model="queue.PhotoFileData"}); setting that input uploads the signature. Returns the
-     * success toast (verified live: <b>"Digital Signature Saved Successfully."</b>).
+     * Attach a digital signature image to the selected patient. The footer "Attach Signature" control used
+     * to be a {@code <label for="PhotoData">} over the hidden file input {@code #PhotoData}
+     * ({@code ng-model="queue.PhotoFileData"}); setting that input uploaded the signature and returned the
+     * success toast ("Digital Signature Saved Successfully.").
+     *
+     * <p><b>Confirmed live (2026-09-23), via direct DOM/footer inspection:</b> this screen's footer no longer
+     * has an Attach Signature control at all — {@code #PhotoData} does not exist anywhere on the page, and
+     * none of the 18 footer buttons currently present (Close Visit, Revoke Visit, New Case, Change Doctor,
+     * Consent/Forms, View Consent/Form, Generate Queue, Referred Patients, Call Patient, Call for Triage,
+     * View Details, Company Approved Amount, Patient Task, CancelVisit, Convert IPD Charges, Request MRD
+     * File, Return MRD File, Fall Risk Assessment) mention "signature" or "photo". Medico Legal is likewise
+     * gone. This is an app-side removal on THIS screen (OP Outpatient Queue Management, and — since
+     * {@code DoctorQueuePage} explicitly reuses these same footer actions — Doctor Queue and Emergency
+     * Visits too), not a script defect: no selector or timing change here can attach to a control the app no
+     * longer renders. The OP Queue Management, Emergency Visits and Doctor Queue tests therefore no longer have
+     * an Attach Signature step. The equivalent action on OTHER screens (IP &gt; Occupancy List, Emergency List
+     * View) is unaffected and still works — each has its own, still-present {@code #PhotoData} input.</p>
      */
     public String attachSignatureAndGetToast(String filePath) {
         // Watch .toast-message AND .toast (the toast title "KPJ Portal" + body live in a .toast container),
@@ -2169,39 +2182,89 @@ public class OutPatientQueueManagementPage extends BasePage {
     }
 
     /**
-     * Fill the Company Approved Amount row's fields, by their CONFIRMED ng-models (verified live — this modal
-     * marks NO field with a starred label or {@code required}/{@code ng-required} attribute, so the usual
-     * asterisk-based mandatory scan found nothing to fill at all, leaving every field genuinely empty and Save
-     * silently rejecting it with no toast): {@code Company.companyid} (Payor/Company select), {@code
-     * Registration.PayerTypeId} (select), {@code Company.companyamount}, {@code Company.AppliedDate}, {@code
-     * Company.Date}, {@code Company.FileNo}, {@code Company.GLConsumed}, {@code Company.GLBalance}, {@code
-     * Company.GLMaxLimit}, {@code Company.Remarks}. If either select has NO real option, that is called out
-     * explicitly as {@code "EMPTY DROPDOWN: <ng-model>"} so the caller can fail the run on it.
+     * Select a real option in the modal's <b>Payor</b> dropdown ({@code Company.companyid}, starred/mandatory) —
+     * the first real option. Returns the selected text, {@code ""} when the list has no real option, with
+     * {@code " [MODEL NOT BOUND]"} appended if Angular's model did not take the value.
      */
-    public String fillCompanyApprovedAmountDetails() {
-        Object r = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+    public String selectCompanyApprovedPayor() { return caaSelect("Company.companyid", ""); }
+
+    /**
+     * Select the modal's <b>Payor Status</b> ({@code Registration.PayerTypeId}, starred/mandatory) — "GL Approved"
+     * when offered (this modal is about an approved GL amount), else the first real option. Same return contract
+     * as {@link #selectCompanyApprovedPayor()}.
+     */
+    public String selectCompanyApprovedPayorStatus() { return caaSelect("Registration.PayerTypeId", "GL Approved"); }
+
+    /** The modal's dropdowns are filled by an async fetch AFTER it opens (the Payor list is hundreds of companies),
+     *  so an empty list right after opening is normal — poll up to ~10s before calling it genuinely empty. */
+    private String caaSelect(String ngModel, String preferred) {
+        String out = "";
+        for (int k = 0; k < 20 && out.isEmpty(); k++) {
+            out = caaSelectOnce(ngModel, preferred);
+            if (out.isEmpty()) page.waitForTimeout(500);
+        }
+        return out;
+    }
+
+    private String caaSelectOnce(String ngModel, String preferred) {
+        Object r = page.evaluate("(a) => { const ng=a[0], pref=(a[1]||'').toLowerCase(); const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
                 + " const m=" + CAA_MODAL_JS + "; const scope=m||document;"
-                + " const out=[]; const emptyDropdowns=[];"
-                + " const pick=(ng)=>{ const sel=[...scope.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')===ng && x.offsetParent!==null); if(!sel) return;"
-                + "   const real=[...sel.options].filter(o=>o.value && !/^-*\\s*select\\s*-*$/i.test(norm(o.textContent)));"
-                + "   if(!real.length){ emptyDropdowns.push(ng); return; }"
-                + "   const cur=sel.options[sel.selectedIndex];"
-                + "   if(cur && cur.value && !/^-*\\s*select\\s*-*$/i.test(norm(cur.textContent))){ out.push(ng+'='+norm(cur.textContent)+' (kept)'); return; }"
-                + "   const i=[...sel.options].findIndex(o=>o.value && !/^-*\\s*select\\s*-*$/i.test(norm(o.textContent)));"
-                + "   sel.selectedIndex=i; sel.dispatchEvent(new Event('change',{bubbles:true})); const $=window.jQuery||window.$; if($){try{$(sel).trigger('change');}catch(e){}}"
-                + "   out.push(ng+'='+norm(sel.options[i].textContent)); };"
-                + " pick('Company.companyid'); pick('Registration.PayerTypeId');"
-                + " const set=(ng,v)=>{ const e=[...scope.querySelectorAll('input,textarea')].find(x=>x.getAttribute('ng-model')===ng && x.offsetParent!==null); if(!e) return;"
-                + "   if((e.value||'').trim()){ out.push(ng+'='+e.value+' (kept)'); return; }"
-                + "   const c=angular.element(e).controller('ngModel'); e.value=v; if(c){c.$setViewValue(v);c.$render();}"
-                + "   e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true})); out.push(ng+'='+v); };"
-                + " const d=new Date(); const p2=n=>('0'+n).slice(-2); const today=p2(d.getDate())+'/'+p2(d.getMonth()+1)+'/'+d.getFullYear();"
-                + " set('Company.companyamount','100'); set('Company.AppliedDate',today); set('Company.Date',today);"
-                + " set('Company.FileNo','AUTO'+Date.now()%100000); set('Company.GLConsumed','0'); set('Company.GLBalance','1000');"
-                + " set('Company.GLMaxLimit','1000'); set('Company.Remarks','Automated test');"
-                + " return (emptyDropdowns.length? 'EMPTY DROPDOWN: '+emptyDropdowns.join(', ')+' | ':'') + out.join(' | '); }");
+                + " const sel=[...scope.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')===ng && x.offsetParent!==null); if(!sel) return '';"
+                + " const real=[...sel.options].filter(o=>o.value && !/^-*\\s*select\\s*-*$/i.test(norm(o.textContent)));"
+                + " if(!real.length) return '';"
+                + " const pick=(pref && real.find(o=>norm(o.textContent).toLowerCase()===pref)) || real[0];"
+                + " sel.selectedIndex=[...sel.options].indexOf(pick);"
+                + " sel.dispatchEvent(new Event('change',{bubbles:true})); const $=window.jQuery||window.$; if($){try{$(sel).trigger('change');}catch(e){}}"
+                + " const c=window.angular?angular.element(sel).controller('ngModel'):null;"
+                + " const bound=!c || (c.$modelValue!==undefined && c.$modelValue!==null && c.$modelValue!=='');"
+                + " return norm(pick.textContent) + (bound ? '' : ' [MODEL NOT BOUND]'); }",
+                java.util.Arrays.asList(ngModel, preferred));
         waitForAngular(400);
         return r == null ? "" : r.toString();
+    }
+
+    /**
+     * Enter the modal's <b>GL Approved Amount</b> ({@code Company.companyamount}, starred/mandatory). Commits
+     * through the ngModel controller so the model — not just the box — holds it. Returns the value now in the
+     * box ({@code ""} if the field was not found), with {@code " [MODEL=..]"} appended if the model differs.
+     */
+    public String enterCompanyGlApprovedAmount(String amount) {
+        Object r = page.evaluate("(v) => { const m=" + CAA_MODAL_JS + "; const scope=m||document;"
+                + " const e=[...scope.querySelectorAll('input')].find(x=>x.getAttribute('ng-model')==='Company.companyamount' && x.offsetParent!==null); if(!e) return '';"
+                + " const c=angular.element(e).controller('ngModel'); e.focus(); e.value=v; if(c){c.$setViewValue(v);c.$render();}"
+                + " e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true})); e.dispatchEvent(new Event('blur',{bubbles:true}));"
+                + " return e.value + ((c && String(c.$modelValue)!==String(v)) ? ' [MODEL='+c.$modelValue+']' : ''); }", amount);
+        waitForAngular(400);
+        return r == null ? "" : r.toString();
+    }
+
+    /** Rows currently listed in the modal's approved-amount grid (the table with Payor + Approved Amount columns). */
+    public int companyApprovedAmountListRows() {
+        Object r = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                + " const m=" + CAA_MODAL_JS + "; const scope=m||document;"
+                + " const t=[...scope.querySelectorAll('table')].find(x=>{ const h=norm((x.querySelector('thead')||{}).textContent||''); return /payor/i.test(h) && /approved amount/i.test(h); });"
+                + " if(!t) return 0;"
+                + " return [...t.querySelectorAll('tbody tr')].filter(r=>{ const tx=norm(r.textContent); return tx && !/no\\s*(records|data)/i.test(tx); }).length; }");
+        return r instanceof Number ? ((Number) r).intValue() : 0;
+    }
+
+    /** Text of every row in the approved-amount grid, joined with " ;; " ("" when the list is empty). */
+    public String companyApprovedAmountListText() {
+        Object r = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                + " const m=" + CAA_MODAL_JS + "; const scope=m||document;"
+                + " const t=[...scope.querySelectorAll('table')].find(x=>{ const h=norm((x.querySelector('thead')||{}).textContent||''); return /payor/i.test(h) && /approved amount/i.test(h); });"
+                + " if(!t) return '';"
+                + " return [...t.querySelectorAll('tbody tr')].map(r=>norm(r.textContent)).filter(tx=>tx && !/no\\s*(records|data)/i.test(tx)).join(' ;; '); }");
+        return r == null ? "" : r.toString();
+    }
+
+    /** Wait (up to ~6s) for the approved-amount grid to hold MORE rows than {@code before}; true once it does. */
+    public boolean waitCompanyApprovedAmountListGrowth(int before) {
+        for (int k = 0; k < 12; k++) {
+            if (companyApprovedAmountListRows() > before) return true;
+            page.waitForTimeout(500);
+        }
+        return false;
     }
 
     /**

@@ -1,6 +1,7 @@
 package com.kpj.tests.Op_Page;
 
 import com.kpj.core.DevHisBase;
+import com.kpj.pages.LoginPage;
 import com.kpj.pages.Op_page.RegistrationPage;
 import com.kpj.pages.Op_page.RegistrationPage.PatientProfile;
 import com.kpj.pages.Op_page.RegistrationPage.SaveOutcome;
@@ -41,7 +42,11 @@ public class RegistrationForeignTest extends DevHisBase {
 
         RegistrationPage reg = new RegistrationPage(page);
 
-        login();
+        // Use LoginPage.login(), not the bare inherited login() — the exact same gap found and fixed in
+        // RegistrationTest.java and EmergencyRegistrationConscious.java: this is the only other test class in
+        // the suite (350/352 already used it) still calling DevHisBase's own single-credential login(), which
+        // throws immediately on a rejected attempt instead of falling back through tieba -> farisha -> sandhya.
+        new LoginPage(page).login(BASE, USER, PASS);
         step("Login", USER + " login", "Patient Dashboard", "Logged in as " + USER, "PASS");
 
         boolean ok = registerOne(reg);

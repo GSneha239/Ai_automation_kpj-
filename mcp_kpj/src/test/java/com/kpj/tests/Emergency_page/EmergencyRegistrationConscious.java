@@ -1,6 +1,7 @@
 package com.kpj.tests.Emergency_page;
 
 import com.kpj.core.DevHisBase;
+import com.kpj.pages.LoginPage;
 import com.kpj.pages.Op_page.RegistrationPage;
 import com.kpj.pages.Op_page.RegistrationPage.PatientProfile;
 import com.kpj.pages.Op_page.RegistrationPage.SaveOutcome;
@@ -52,8 +53,11 @@ public class EmergencyRegistrationConscious extends DevHisBase {
                                                      : PatientProfile.randomForeign(wantNationality);
         System.out.println("Emergency (Conscious) registering: " + p.patientLine());
 
-        // 1) Login
-        login();
+        // 1) Login — LoginPage.login(), not the bare inherited login(); see RegistrationTest's comment on the
+        // identical gap (confirmed live 2026-09-23): this was one of only two tests in the core-flows batch
+        // still using DevHisBase's single-credential login(), while every other test's LoginPage.login() falls
+        // back through tieba/Tieba@123 -> farisha/Tcare@123 -> sandhya/User@123 and passed on the same run.
+        new LoginPage(page).login(BASE, USER, PASS);
         step("Login", USER + " / " + PASS, "Patient Dashboard", "Logged in as " + USER, "PASS");
 
         // 2) Open Emergency > Emergency Registration (Conscious) — reuses the OP Registration form.

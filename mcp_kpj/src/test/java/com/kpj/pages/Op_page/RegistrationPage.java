@@ -960,6 +960,11 @@ public class RegistrationPage extends BasePage {
         snap("Registration.MobileNo", p.mobile);
         fillModel("Registration.ResiNo", p.phone);
         fillModel("Registration.Email", p.email);
+        // TIN Number (Registration.tinno) — confirmed live (2026-09-23) via diagnoseNgInvalidFields(): this build
+        // marks it required (errors=[required]) and Save is silently rejected with "Please fill in all the
+        // mandatory fields!" while it is empty, same shape as the TIN Number gap already fixed on IP Admission
+        // (Admission.java). PatientProfile.tin is already generated — it just was not wired in here yet.
+        fillModel("Registration.tinno", p.tin);
         // The postcode fires an ASYNC lookup that loads the City/State/Country dropdowns. Wait for the City select
         // to actually get its options before we read/commit them — else ResCityID is empty at Save and the app
         // rejects it with "Please Select City".
@@ -1550,6 +1555,15 @@ public class RegistrationPage extends BasePage {
             if (deptNow.equalsIgnoreCase(intendedDept)) return committed;              // preserved — done
             System.out.println("pickDoctorPreservingDepartment: \"" + committed + "\" moved Department to \""
                     + deptNow + "\" (wanted \"" + intendedDept + "\") — trying the next doctor");
+            // RESTORE Department before the next candidate. Confirmed live 2026-09-23: without this, `doctors`
+            // (captured ONCE, from intendedDept's own list, before this loop started) is matched against the
+            // Doctor dropdown that just RELOADED for the department it flipped to — none of those names exist
+            // in that list, so every remaining setSelTxt() call silently falls back to ITS first real option,
+            // which is the SAME doctor every time (seen live: 11 straight "SABARINATHAN -> Anaesthesiology &
+            // Critical Care" repeats). Re-selecting the intended department reloads the doctor list back to the
+            // one `doctors` was actually drawn from, so the next candidate name can genuinely be found and tried.
+            setSelTxt("Visit.DepartmentID", intendedDept);
+            waitForAngular(1200);
         }
         return "";
     }
@@ -1995,6 +2009,12 @@ public class RegistrationPage extends BasePage {
                 if (fallbackDoctor.isEmpty()) fallbackDoctor = doctor;
                 System.out.println("tryOtherDoctorsForVisitType: Doctor=" + doctor + " resolved Visit Type but moved Department"
                         + " to \"" + deptNow + "\" (wanted \"" + intendedDept + "\") — still looking for one that keeps both");
+                // RESTORE Department before the next candidate — same fix, same reason, as
+                // pickDoctorPreservingDepartment(): `list` was captured from intendedDept's OWN doctor list
+                // before this loop started, so leaving Department flipped reloads the dropdown to a DIFFERENT
+                // list that none of the remaining names exist in, and every subsequent setSelTxt() silently
+                // falls back to that list's first option — the same doctor, repeatedly.
+                if (!intendedDept.isEmpty()) { setSelTxt("Visit.DepartmentID", intendedDept); waitForAngular(1200); }
                 continue;
             }
             System.out.println("tryOtherDoctorsForVisitType: Doctor=" + doctor + " also has no Visit Type — trying the next one");
@@ -2499,7 +2519,41 @@ public class RegistrationPage extends BasePage {
                 + " return clicked; }"));
     }
 
+    /**
+     * Fill the bare scope variable {@code inputTime} when the screen left it empty.
+     *
+     * <p>Confirmed live (2026-09-23) via {@link #diagnoseFlaggedFieldsScopeVsDom()}: on EVERY run the app's own
+     * aggregated validator ({@code fnFATCollectMandatory()}, tagging offenders with {@code has-error}) flags only
+     * this one field — {@code inputTime}, not part of {@code Registration.*}/{@code Visit.*}, hidden
+     * ({@code offsetParent===null}) and with an {@code undefined} scope value — while our own asterisk scan
+     * separately (and wrongly) blamed Payor/Visit Information selects that were already filled correctly. Same
+     * shape as the identical bug already fixed on IP Admission ({@link com.kpj.pages.Ip.Admission#fillAdmissionTimeIfEmpty()}),
+     * EXCEPT this field is a native {@code <input type="time">} (confirmed live via {@link #diagnoseNgInvalidFields()}:
+     * {@code errors=[time]}, AngularJS's own key for that directive), which strictly requires 24-hour
+     * {@code HH:mm} — Admission's {@code hh:mm a} (12-hour + AM/PM) parses as a NON-empty but still-invalid value
+     * here, leaving {@code $error.time} set even though the box visibly shows a value.
+     * Writes through the ngModel controller AND onto every scope holding the variable, since the timepicker
+     * directive that owns it reads the scope rather than the input.</p>
+     */
+    private void fillRegistrationTimeIfEmpty() {
+        String now = java.time.LocalTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"));
+        Object r = page.evaluate("(v) => { const A=window.angular;"
+                + " const e=[...document.querySelectorAll('input')].find(x=>(x.getAttribute('ng-model')||'')==='inputTime');"
+                + " if(!e) return '(no inputTime field)';"
+                + " if((e.value||'').trim()) return 'already \"'+e.value.trim()+'\"';"
+                + " const c=A.element(e).controller('ngModel'); e.value=v;"
+                + " if(c){ c.$setViewValue(v); if(c.$commitViewValue) c.$commitViewValue(); c.$render(); }"
+                + " e.dispatchEvent(new Event('input',{bubbles:true}));"
+                + " e.dispatchEvent(new Event('change',{bubbles:true}));"
+                + " e.dispatchEvent(new Event('blur',{bubbles:true}));"
+                + " try{ let s=A.element(e).scope(); for(let i=0;i<15&&s;i++){ if('inputTime' in s){ s.$apply(()=>{ s.inputTime=v; }); break; } s=s.$parent; } }catch(x){}"
+                + " return 'set \"'+v+'\"'; }", now);
+        System.out.println("fillRegistrationTimeIfEmpty: " + r);
+        waitForAngular(500);
+    }
+
     public String clickSaveAwaitConfirm(PatientProfile p) {
+        fillRegistrationTimeIfEmpty();   // fill it FIRST — the app rejects Save while inputTime is empty (see javadoc)
         // The NOK row can disappear before Save — re-ensure it's present, re-adding the kin if it's gone.
         for (int attempt = 0; attempt < 5; attempt++) {
             boolean kinPresent = Boolean.TRUE.equals(page.evaluate("(a)=>{ const fam=(a[0]||'').toLowerCase(), nric=(a[1]||'');"

@@ -24,9 +24,6 @@ public class EmergencyVisits extends DevHisBase {
     private static final java.time.format.DateTimeFormatter DMY = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy");
     private static final String FROM_DATE = java.time.LocalDate.now().minusMonths(1).format(DMY);
     private static final String TO_DATE   = java.time.LocalDate.now().format(DMY);
-    /** Signature image attached in the Attach Signature section. */
-    private static final java.nio.file.Path SIGNATURE =
-            java.nio.file.Paths.get("C:\\Users\\Siva Sankar\\Downloads\\sinature.jpeg");
 
     public EmergencyVisits() { super("TC17_EmergencyVisits"); }
 
@@ -47,7 +44,6 @@ public class EmergencyVisits extends DevHisBase {
         loginPage.login(BASE, USER, PASS);
         step("Login", USER + " / " + PASS, "Authenticated; Patient Dashboard", "Logged in", "PASS");
 
-        sectionAttachSignature();
         sectionChangeDoctor();
         sectionConsentForms();
         sectionViewConsent();
@@ -424,29 +420,6 @@ public class EmergencyVisits extends DevHisBase {
                     + "   let v='NA'; if(/date/.test(key)) v=today; else if(type==='email'||/email/.test(key)) v='test@example.com'; else if(type==='number'||type==='tel'||/mobile|phone|no\\b|number|amount|age/.test(key)) v='1';"
                     + "   e.value=v; e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true})); }); }");
         } catch (Exception e) { System.out.println("fillConsentReportForm: " + e.getMessage()); }
-    }
-
-    // ===== Attach Signature =====
-    private void sectionAttachSignature() {
-        com.kpj.pages.Emergency_page.EmergencyVisits qm = open();
-        qm.searchQueue(FROM_DATE, TO_DATE);
-        step("Attach Signature · Open Emergency Visits & search", "Emergency → Emergency Visits; 1-month range + Search",
-                "Emergency visits are listed", "Queue searched", "PASS");
-
-        String patient = qm.selectRandomQueueRow();
-        step("Attach Signature · Select a patient", "Select any patient row",
-                "One patient selected", patient == null ? "No patient in the queue" : "Selected: " + patient,
-                patient == null ? "FAIL" : "PASS");
-        if (patient == null) return;
-
-        String toast = qm.attachSignatureAndGetToast(SIGNATURE.toString());
-        boolean ok = toast != null && toast.toLowerCase().matches(".*(signature|saved|success).*");
-        step(page, "Attach Signature · Attach image & toast",
-                "Click 'Attach Signature' and upload the signature image (" + SIGNATURE.getFileName() + ")",
-                "'Digital Signature Saved Successfully.' toast is shown",
-                toast == null || toast.isEmpty() ? "No success toast appeared" : toast, ok ? "PASS" : "FAIL");
-        addSummary("Attach Signature · Patient", patient);
-        addSummary("Attach Signature · Result", ok ? toast : "Not confirmed");
     }
 
     // ===== Close Visit =====

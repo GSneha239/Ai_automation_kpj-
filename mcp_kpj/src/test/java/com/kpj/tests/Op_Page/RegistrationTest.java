@@ -1,6 +1,7 @@
 package com.kpj.tests.Op_Page;
 
 import com.kpj.core.DevHisBase;
+import com.kpj.pages.LoginPage;
 import com.kpj.pages.Op_page.RegistrationPage;
 import com.kpj.pages.Op_page.RegistrationPage.PatientProfile;
 import com.kpj.pages.Op_page.RegistrationPage.SaveOutcome;
@@ -41,7 +42,15 @@ public class RegistrationTest extends DevHisBase {
         RegistrationPage reg = new RegistrationPage(page);
 
         // 1) Login ONCE — then loop the whole registration flow TOTAL times.
-        login();
+        //
+        // Use LoginPage.login(), not the bare inherited login() — confirmed live (2026-09-23): this test was
+        // the ONLY one in the core-flows batch (alongside EmergencyRegistrationConscious, same gap) that still
+        // called DevHisBase's own login(), which tries exactly ONE credential pair and throws immediately if it
+        // does not authenticate. Every other test in the suite already uses LoginPage.login(), which
+        // automatically falls back through tieba/Tieba@123 -> farisha/Tcare@123 -> sandhya/User@123 on a
+        // rejected/stuck attempt — and in that same batch run, every one of THEM passed login even though it
+        // used the identical primary credentials. So the failure was this gap, not a real credential change.
+        new LoginPage(page).login(BASE, USER, PASS);
         step("Login", USER + " / " + PASS, "Patient Dashboard", "Logged in as " + USER, "PASS");
 
         int success = 0;

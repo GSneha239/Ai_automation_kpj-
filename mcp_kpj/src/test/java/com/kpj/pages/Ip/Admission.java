@@ -771,37 +771,60 @@ public class Admission extends BasePage {
      *
      * <p>This is NOT the walk that was removed for hanging live for 30+ minutes: that one cross-multiplied
      * Bed Class × Ward (every combination of both) inside a single unbounded {@code page.evaluate()} call with
-     * no timeout of its own. Confirmed live (2026-09-18) the grid is filtered by <b>Room Type alone</b> — changing
-     * Ward does not change which beds are listed — so there is nothing to gain from varying it. This method
-     * therefore: (1) tries to tick an available row under whatever Room Type is already selected, and only if
-     * that room type's whole list is occupied/under-maintenance, (2) walks OTHER Room Types ONE AT A TIME from
-     * Java — never Ward, never a cross-product — each attempt bounded by its own short poll, capped at
-     * {@code -Dbed.roomtype.walk.max} (default 8) attempts total.</p>
+     * no timeout of its own. The 2026-09-18 note on this method claimed the grid is filtered by Room Type alone
+     * and Ward never changes it — <b>disproven live (2026-09-23)</b>: a diagnostic sweep over 4 of this
+     * environment's 15 Wards under one fixed Room Type returned row totals of 2, 16, 1 and 3 respectively, so
+     * Ward plainly does filter the grid and the Room-Type-only walk was leaving real vacancies unexplored (the
+     * exhaustion report this fixes — "16/1 FAIL Vacant Bed exhaustion" — tried all 8 Room Types against a single
+     * Ward and never varied it). This method now walks BOTH dimensions, still one bounded DOM step at a time from
+     * Java (never a JS-side cross-product): for each Room Type, try an available row, then cycle Wards one at a
+     * time (capped at {@code -Dbed.ward.walk.max}, default 15 — this environment's full list) until one has a
+     * free bed or the Wards are exhausted, then move to the next Room Type (capped at
+     * {@code -Dbed.roomtype.walk.max}, default 8). An overall {@code -Dbed.combo.walk.max} (default 60) bounds
+     * total combinations tried so a fully-occupied environment still fails fast instead of grinding through the
+     * full 8×15 space.</p>
      *
      * @return "Bed=&lt;code&gt; &lt;bed&gt; (&lt;ward&gt;) [RoomType=&lt;n&gt;]" on success, or an "ERR:…" string
-     *         naming how many room types were tried
+     *         naming how many Room Type / Ward combinations were tried
      */
     public String tickVacantBedRow() {
         final int maxRoomTypes = Integer.getInteger("bed.roomtype.walk.max", 8);
-        java.util.LinkedHashSet<String> tried = new java.util.LinkedHashSet<>();
-        for (int attempt = 1; attempt <= maxRoomTypes; attempt++) {
-            String picked = tickFirstAvailableBedRow();
-            if (picked != null && picked.startsWith("Bed=")) { lastVacantBedRow = picked; return picked; }
+        final int maxWardsPerRoomType = Integer.getInteger("bed.ward.walk.max", 15);
+        final int maxCombosTotal = Integer.getInteger("bed.combo.walk.max", 60);
+        java.util.LinkedHashSet<String> triedRoomTypes = new java.util.LinkedHashSet<>();
+        int combosTried = 0;
+        for (int rtAttempt = 1; rtAttempt <= maxRoomTypes; rtAttempt++) {
+            java.util.LinkedHashSet<String> triedWards = new java.util.LinkedHashSet<>();
+            for (int wAttempt = 1; wAttempt <= maxWardsPerRoomType; wAttempt++) {
+                if (++combosTried > maxCombosTotal) {
+                    lastVacantBedRow = "ERR:no-vacant-bed (combo budget exhausted after " + (combosTried - 1)
+                            + " Room Type x Ward combinations; Room Types tried: " + triedRoomTypes + ")";
+                    com.kpj.core.Reasons.add("Vacant Bed Selection: " + lastVacantBedRow);
+                    return lastVacantBedRow;
+                }
+                String picked = tickFirstAvailableBedRow();
+                if (picked != null && picked.startsWith("Bed=")) { lastVacantBedRow = picked; return picked; }
+                String curRoomType = selectedRoomType();
+                String curWard = selectedWard();
+                if (!curWard.isEmpty()) triedWards.add(curWard);
+                System.out.println("tickVacantBedRow: Room Type \"" + curRoomType + "\" / Ward \"" + curWard
+                        + "\" has no available bed (combo " + combosTried + "/" + maxCombosTotal + ") — trying a different Ward");
+                if (switchToUntriedWard(triedWards).isEmpty()) break; // Wards exhausted for this Room Type
+            }
             String curRoomType = selectedRoomType();
-            if (!curRoomType.isEmpty()) tried.add(curRoomType);
-            System.out.println("tickVacantBedRow: Room Type \"" + curRoomType + "\" has no available bed (attempt "
-                    + attempt + "/" + maxRoomTypes + ") — trying a different Room Type");
-            String switched = switchToUntriedRoomType(tried);
+            if (!curRoomType.isEmpty()) triedRoomTypes.add(curRoomType);
+            String switched = switchToUntriedRoomType(triedRoomTypes);
             if (switched.isEmpty()) {
-                lastVacantBedRow = "ERR:no-untried-room-type-left (tried " + tried.size() + ": " + tried + ")";
+                lastVacantBedRow = "ERR:no-untried-room-type-left (tried " + triedRoomTypes.size() + ": " + triedRoomTypes + ")";
                 com.kpj.core.Reasons.add("Vacant Bed Selection: no Room Type has an available (non-occupied,"
-                        + " non-under-maintenance) bed - tried " + tried.size() + ": " + tried);
+                        + " non-under-maintenance) bed across every Ward tried - " + triedRoomTypes.size() + ": " + triedRoomTypes);
                 return lastVacantBedRow;
             }
         }
-        lastVacantBedRow = "ERR:no-vacant-bed (tried " + maxRoomTypes + " room types: " + tried + ")";
-        com.kpj.core.Reasons.add("Vacant Bed Selection: no available bed found after trying " + maxRoomTypes
-                + " Room Types (capped by -Dbed.roomtype.walk.max) - " + tried);
+        lastVacantBedRow = "ERR:no-vacant-bed (tried " + maxRoomTypes + " room types x up to " + maxWardsPerRoomType
+                + " wards each: " + triedRoomTypes + ")";
+        com.kpj.core.Reasons.add("Vacant Bed Selection: no available bed found after the full Room Type x Ward walk"
+                + " (capped by -Dbed.roomtype.walk.max / -Dbed.ward.walk.max) - " + triedRoomTypes);
         return lastVacantBedRow;
     }
 
@@ -809,6 +832,15 @@ public class Admission extends BasePage {
     private String selectedRoomType() {
         Object r = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
                 + " const e=document.querySelector(\"select[ng-model='Admission.BedClassID']\"); if(!e) return '';"
+                + " const o=e.options[e.selectedIndex]; const t=o?norm(o.textContent):'';"
+                + " return (o && o.value && !/^-*\\s*select/i.test(t)) ? t : ''; }");
+        return r == null ? "" : r.toString();
+    }
+
+    /** The Ward text currently selected ({@code Admission.WardID}), or "" if unset. */
+    private String selectedWard() {
+        Object r = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                + " const e=document.querySelector(\"select[ng-model='Admission.WardID']\"); if(!e) return '';"
                 + " const o=e.options[e.selectedIndex]; const t=o?norm(o.textContent):'';"
                 + " return (o && o.value && !/^-*\\s*select/i.test(t)) ? t : ''; }");
         return r == null ? "" : r.toString();
@@ -852,8 +884,8 @@ public class Admission extends BasePage {
 
     /**
      * Change <b>Room Type</b> ({@code Admission.BedClassID}) to a real option not already in {@code exclude} (by
-     * visible text). Changing it does NOT touch Ward — confirmed live the bed grid ignores Ward entirely, so
-     * there is nothing to re-assert there.
+     * visible text). Leaves Ward exactly as it is — {@link #tickVacantBedRow()} walks Ward separately, in its own
+     * inner loop, since (disproven 2026-09-23, see that method's Javadoc) Ward DOES filter which beds are listed.
      *
      * @return the Room Type text now committed, or "" when every option has already been tried
      */
@@ -874,6 +906,32 @@ public class Admission extends BasePage {
         page.evaluate("() => { const e=document.getElementById('__roomTypeSel'); if(e) e.removeAttribute('id'); }");
         waitForAngular(1000);
         return selectedRoomType();
+    }
+
+    /**
+     * Change <b>Ward</b> ({@code Admission.WardID}) to a real option not already in {@code exclude} (by visible
+     * text). Leaves Room Type untouched — the reverse pairing to {@link #switchToUntriedRoomType(java.util.Set)},
+     * used by {@link #tickVacantBedRow()}'s inner loop to walk Wards under the currently-selected Room Type.
+     *
+     * @return the Ward text now committed, or "" when every option has already been tried
+     */
+    private String switchToUntriedWard(java.util.Set<String> exclude) {
+        String excludeJson = "[" + exclude.stream().map(s -> "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"") + "\"")
+                .reduce((a, b) -> a + "," + b).orElse("") + "]";
+        Object opt = page.evaluate("(exJson) => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const ex=new Set(JSON.parse(exJson));"
+                + " document.querySelectorAll('#__wardSel').forEach(e=>e.removeAttribute('id'));"
+                + " const e=document.querySelector(\"select[ng-model='Admission.WardID']\"); if(!e) return '';"
+                + " const cand=[...e.options].find(o=>o.value && !/^-*\\s*select/i.test(norm(o.textContent)) && !ex.has(norm(o.textContent)));"
+                + " if(!cand) return ''; e.id='__wardSel'; return cand.value; }", excludeJson);
+        String value = opt == null ? "" : opt.toString();
+        if (value.isEmpty()) return "";
+        try {
+            page.locator("#__wardSel").selectOption(new com.microsoft.playwright.options.SelectOption().setValue(value),
+                    new com.microsoft.playwright.Locator.SelectOptionOptions().setTimeout(8000));
+        } catch (Exception e) { System.out.println("switchToUntriedWard: selectOption failed - " + e.getMessage()); }
+        page.evaluate("() => { const e=document.getElementById('__wardSel'); if(e) e.removeAttribute('id'); }");
+        waitForAngular(1000);
+        return selectedWard();
     }
 
     /**

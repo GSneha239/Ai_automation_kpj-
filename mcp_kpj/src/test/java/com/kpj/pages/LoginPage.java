@@ -48,6 +48,7 @@ public class LoginPage extends BasePage {
             {"tieba", "Tieba@123"},   // password reset 2026-09-10 (was User@123)
             {"farisha", "Tcare@123"},
             {"sandhya", "User@123"},
+            {"Tieba", "User@123"},    // added 2026-09-24 — confirmed live: authenticates (Location/Counter load, lands on dashboard)
     };
 
     public void login(String baseUrl, String username, String password, String counter) {

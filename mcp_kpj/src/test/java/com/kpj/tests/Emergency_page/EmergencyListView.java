@@ -30,8 +30,10 @@ public class EmergencyListView extends DevHisBase {
     // "enter any single-digit number in MRN" — a random 1-9 each run (if it matches nothing the search
     // falls back to the full date-range list, so any value is fine).
     private static final String MRN       = String.valueOf(new java.util.Random().nextInt(9) + 1);
-    // Signature image attached in the Attach Signature step.
-    private static final String SIGNATURE_FILE = "C:\\Users\\Siva Sankar\\Downloads\\sinature.jpeg";
+    // Signature image attached in the Attach Signature step. Was hardcoded to another machine's Downloads
+    // folder, which never existed here; ATTACH (inherited from DevHisBase) resolves to a real image on any
+    // machine — the newest file in this machine's Screenshots folder, or the bundled placeholder.png.
+    private static final String SIGNATURE_FILE = ATTACH.toString();
 
     public EmergencyListView() { super("TC13_EmergencyListView"); }
 

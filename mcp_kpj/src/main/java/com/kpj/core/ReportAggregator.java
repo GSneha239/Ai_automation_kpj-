@@ -10,19 +10,28 @@ import java.util.stream.Collectors;
  * its <b>page name</b>. Also writes the run's exit code (0 = all steps passed, 1 = one or more failed)
  * to {@code test-output/aggregate-exit.txt} so the CI batch file can gate the build on it.
  *
- * <p>Usage: {@code java com.kpj.core.ReportAggregator [markerFile]} — if {@code markerFile} is given,
+ * <p>Usage: {@code java com.kpj.core.ReportAggregator [markerFile [moduleOutDir ...]]} — if {@code markerFile} is given,
  * only report folders modified at/after that file's timestamp are counted (so only the CURRENT run's
  * reports are aggregated). Omit it to scan every report under {@code test-output/reports}.</p>
+ *
+ * <p>Any {@code moduleOutDir} arguments after the marker are extra output folders (each with its own
+ * {@code aggregate-data}) whose results are merged into ONE combined report written to {@code -Ddevhis.outdir}
+ * — e.g. run OP, IP and Emergency into separate folders, then aggregate the three into a single summary.
+ * The combined report gains a Module column (the folder name). With none given, only {@code -Ddevhis.outdir}
+ * is scanned, exactly as before.</p>
  */
 public class ReportAggregator {
 
     public static void main(String[] args) {
         // Output folder is configurable (-Ddevhis.outdir) so each environment aggregates its own reports.
         Path root = Paths.get(System.getProperty("devhis.outdir", "test-output"));
-        // Per-step data lives in the hidden aggregate-data folder (the reports folder is HTML-only). Fall back to
-        // reports/ for older runs whose .tsv were still written there.
-        Path dataDir = root.resolve("aggregate-data");
-        Path reportsDir = Files.isDirectory(dataDir) ? dataDir : root.resolve("reports");
+        // Folders to scan: the module folders passed after the marker, else just the output folder itself.
+        // A module folder's per-step data lives in its hidden aggregate-data folder (the reports folder is
+        // HTML-only); fall back to reports/ for older runs whose .tsv were still written there.
+        List<Path> modules = new ArrayList<>();
+        for (int i = 1; i < args.length; i++) if (args[i] != null && !args[i].isBlank()) modules.add(Paths.get(args[i]));
+        boolean combined = !modules.isEmpty();
+        if (!combined) modules.add(root);
 
         long since = 0L, startMs = 0L;
         if (args.length > 0 && args[0] != null && !args[0].isBlank()) {
@@ -41,48 +50,53 @@ public class ReportAggregator {
         if (startMs > 0) { long sec = Math.max(0, (endMs - startMs) / 1000); durStr = (sec / 60) + "m " + (sec % 60) + "s"; }
         else durStr = "-";
 
-        List<String[]> fails = new ArrayList<>();   // {page, testId, step, expected, actual}
-        List<String[]> runs = new ArrayList<>();    // {page, testId, pass, fail, manual}
+        List<String[]> fails = new ArrayList<>();   // {module, page, testId, step, expected, actual}
+        List<String[]> runs = new ArrayList<>();    // {module, page, testId, pass, fail, manual}
         int totalSteps = 0, totalFail = 0, totalManual = 0;
         Set<String> failedPages = new LinkedHashSet<>();
 
-        try {
-            if (Files.isDirectory(reportsDir)) {
-                // Reports are written flat: test-output/reports/<Page>.html + <Page>.tsv (one per test).
-                List<Path> tsvs = Files.list(reportsDir)
-                        .filter(p -> p.getFileName().toString().toLowerCase().endsWith(".tsv"))
-                        .sorted().collect(Collectors.toList());
-                for (Path tsv : tsvs) {
-                    if (since > 0) {
-                        try { if (Files.getLastModifiedTime(tsv).toMillis() < since) continue; } catch (Exception ignore) { }
-                    }
-                    int pass = 0, fail = 0, manual = 0;
-                    String page = "", testId = "";
-                    for (String line : Files.readAllLines(tsv)) {
-                        String[] c = line.split("\t", -1);
-                        if (c.length < 6) continue;
-                        String status = c[0].trim();
-                        page = c[1]; testId = c[2];
-                        totalSteps++;
-                        if (status.equalsIgnoreCase("FAIL")) {
-                            fail++; totalFail++; failedPages.add(page);
-                            fails.add(new String[]{page, testId, c[3], c[4], c[5]});
-                        } else if (status.equalsIgnoreCase("MANUAL")) {
-                            manual++; totalManual++;
-                        } else {
-                            pass++;
+        for (Path module : modules) {
+            String moduleName = module.getFileName() == null ? module.toString() : module.getFileName().toString();
+            Path dataDir = module.resolve("aggregate-data");
+            Path reportsDir = Files.isDirectory(dataDir) ? dataDir : module.resolve("reports");
+            try {
+                if (Files.isDirectory(reportsDir)) {
+                    // Reports are written flat: <outdir>/reports/<Page>.html + <Page>.tsv (one per test).
+                    List<Path> tsvs = Files.list(reportsDir)
+                            .filter(p -> p.getFileName().toString().toLowerCase().endsWith(".tsv"))
+                            .sorted().collect(Collectors.toList());
+                    for (Path tsv : tsvs) {
+                        if (since > 0) {
+                            try { if (Files.getLastModifiedTime(tsv).toMillis() < since) continue; } catch (Exception ignore) { }
                         }
+                        int pass = 0, fail = 0, manual = 0;
+                        String page = "", testId = "";
+                        for (String line : Files.readAllLines(tsv)) {
+                            String[] c = line.split("\t", -1);
+                            if (c.length < 6) continue;
+                            String status = c[0].trim();
+                            page = c[1]; testId = c[2];
+                            totalSteps++;
+                            if (status.equalsIgnoreCase("FAIL")) {
+                                fail++; totalFail++; failedPages.add(page);
+                                fails.add(new String[]{moduleName, page, testId, c[3], c[4], c[5]});
+                            } else if (status.equalsIgnoreCase("MANUAL")) {
+                                manual++; totalManual++;
+                            } else {
+                                pass++;
+                            }
+                        }
+                        if (!page.isEmpty()) runs.add(new String[]{moduleName, page, testId, String.valueOf(pass), String.valueOf(fail), String.valueOf(manual)});
                     }
-                    if (!page.isEmpty()) runs.add(new String[]{page, testId, String.valueOf(pass), String.valueOf(fail), String.valueOf(manual)});
                 }
+            } catch (Exception e) {
+                System.out.println("ReportAggregator: scan error in " + module + " - " + e.getMessage());
             }
-        } catch (Exception e) {
-            System.out.println("ReportAggregator: scan error - " + e.getMessage());
         }
 
         try {
             Files.createDirectories(root);
-            Files.writeString(root.resolve("FAILED_STEPS.html"), buildHtml(runs, fails, totalSteps, totalFail, totalManual, startStr, endStr, durStr));
+            Files.writeString(root.resolve("FAILED_STEPS.html"), buildHtml(runs, fails, combined, totalSteps, totalFail, totalManual, startStr, endStr, durStr));
         } catch (Exception e) {
             System.out.println("ReportAggregator: could not write FAILED_STEPS.html - " + e.getMessage());
         }
@@ -91,7 +105,7 @@ public class ReportAggregator {
         System.out.println("============================================================");
         System.out.println(" Aggregate : " + totalSteps + " steps | " + totalFail + " FAILED | "
                 + totalManual + " MANUAL | pages with failures: " + failedPages.size());
-        for (String[] f : fails) System.out.println("   FAIL [" + f[0] + "] " + f[2] + "  ->  " + f[4]);
+        for (String[] f : fails) System.out.println("   FAIL [" + (combined ? f[0] + " / " : "") + f[1] + "] " + f[3] + "  ->  " + f[5]);
         System.out.println(" Report    : " + root.resolve("FAILED_STEPS.html").toAbsolutePath());
         System.out.println(" Exit code : " + (totalFail > 0 ? 1 : 0));
         System.out.println("============================================================");
@@ -101,7 +115,7 @@ public class ReportAggregator {
         return s == null ? "" : s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
     }
 
-    private static String buildHtml(List<String[]> runs, List<String[]> fails, int steps, int fail, int manual,
+    private static String buildHtml(List<String[]> runs, List<String[]> fails, boolean combined, int steps, int fail, int manual,
                                     String startStr, String endStr, String durStr) {
         StringBuilder sb = new StringBuilder();
         sb.append("<!doctype html><html><head><meta charset='utf-8'><title>Failed Steps Report</title><style>")
@@ -119,11 +133,14 @@ public class ReportAggregator {
           .append("<div class='sub'>Start: <b>").append(esc(startStr)).append("</b> &middot; End: <b>").append(esc(endStr))
           .append("</b> &middot; Duration: <b>").append(esc(durStr)).append("</b></div></header><div class='wrap'>");
 
-        sb.append("<h3>Runs</h3><table><tr><th>Page</th><th>Test</th><th>Passed</th><th>Failed</th><th>Manual</th><th>Result</th></tr>");
+        // The Module column (the run folder: Op / Ip / Emergency ...) only appears in a combined multi-module report.
+        String modTh = combined ? "<th>Module</th>" : "";
+        sb.append("<h3>Runs</h3><table><tr>").append(modTh).append("<th>Page</th><th>Test</th><th>Passed</th><th>Failed</th><th>Manual</th><th>Result</th></tr>");
         for (String[] r : runs) {
-            boolean ok = "0".equals(r[3]);
-            sb.append("<tr><td>").append(esc(r[0])).append("</td><td>").append(esc(r[1])).append("</td><td>").append(r[2])
-              .append("</td><td class='").append(ok ? "ok" : "fail").append("'>").append(r[3]).append("</td><td>").append(r[4])
+            boolean ok = "0".equals(r[4]);
+            sb.append("<tr>").append(combined ? "<td>" + esc(r[0]) + "</td>" : "")
+              .append("<td>").append(esc(r[1])).append("</td><td>").append(esc(r[2])).append("</td><td>").append(r[3])
+              .append("</td><td class='").append(ok ? "ok" : "fail").append("'>").append(r[4]).append("</td><td>").append(r[5])
               .append("</td><td><span class='pill ").append(ok ? "ppass" : "pfail").append("'>").append(ok ? "PASS" : "FAIL").append("</span></td></tr>");
         }
         sb.append("</table>");
@@ -132,10 +149,11 @@ public class ReportAggregator {
         if (fails.isEmpty()) {
             sb.append("<p class='ok'>No failed steps &#127881;</p>");
         } else {
-            sb.append("<table><tr><th>Page</th><th>Test</th><th>Step</th><th>Expected</th><th>Actual / Reason</th></tr>");
+            sb.append("<table><tr>").append(modTh).append("<th>Page</th><th>Test</th><th>Step</th><th>Expected</th><th>Actual / Reason</th></tr>");
             for (String[] f : fails) {
-                sb.append("<tr><td>").append(esc(f[0])).append("</td><td>").append(esc(f[1])).append("</td><td>").append(esc(f[2]))
-                  .append("</td><td>").append(esc(f[3])).append("</td><td class='fail'>").append(esc(f[4])).append("</td></tr>");
+                sb.append("<tr>").append(combined ? "<td>" + esc(f[0]) + "</td>" : "")
+                  .append("<td>").append(esc(f[1])).append("</td><td>").append(esc(f[2])).append("</td><td>").append(esc(f[3]))
+                  .append("</td><td>").append(esc(f[4])).append("</td><td class='fail'>").append(esc(f[5])).append("</td></tr>");
             }
             sb.append("</table>");
         }
