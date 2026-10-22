@@ -57,43 +57,55 @@ public class DepartmentGroup extends DevHisBase {
         // 3) Select Department + Group and Submit. Department+Group is a unique combo and the environment already
         // holds most of them, so walk BOTH axes (Department x Group) — cycling Group against a single Department
         // only explores one row of the combination space and runs out.
+        // The Department and Group lists are filled from the server AFTER the form opens; counting straight away once read
+        // "1 x 57" (Departments not loaded yet) and the walk had nothing to select. Wait for both to fill (up to 15 s).
+        for (int w = 0; w < 30 && (dg.departmentCount() < 2 || dg.groupCount() < 2); w++) page.waitForTimeout(500);
         int deptCount = Math.max(1, dg.departmentCount());
         int groupCount = Math.max(1, dg.groupCount());
-        int maxDepts = Math.min(deptCount, 12), maxGroups = Math.min(groupCount, 10), maxAttempts = 40;
+        int maxAttempts = 40;
+        // Every Department x Group pair can be saved only once, and earlier runs have used up the START of both lists (the old
+        // walk only ever tried the first 12 Departments x 10 Groups, so every one of its 40 attempts hit "Group Already Assigned
+        // to the Department!"). So begin at a RANDOM combination and walk on from there, wrapping round the whole
+        // Department x Group space (174 x 43), instead of re-trying the same used-up pairs every run.
+        java.util.Random rnd = new java.util.Random();
+        int startD = rnd.nextInt(deptCount), startG = rnd.nextInt(groupCount);
+        System.out.println("DepartmentGroup: starting at Department #" + (startD + 1) + " / Group #" + (startG + 1)
+                + " of " + deptCount + " x " + groupCount);
 
         String dept = "", group = "", toast = "";
         boolean ok = false, exists = false, selStepDone = false;
-        int used = 0;
-        outer:
-        for (int d = 1; d <= maxDepts; d++) {
-            String dsel = dg.selectDepartmentOrdinal(d);
-            // realSelectOrdinal()'s failure placeholders are exactly "(no-opt)", "(no)" and "(err)" — a
-            // blanket "starts with (" check is too broad: the real Department master list includes an
-            // entry literally named "(NAMA DR) MR C/N", and that false-failed here before Group was ever
-            // selected or Submit ever clicked (0 combination attempts, no toast).
-            if (isPlaceholder(dsel)) break;
-            dept = dsel;
-            for (int g = 1; g <= maxGroups; g++) {
-                String gsel = dg.selectGroupOrdinal(g);
-                if (isPlaceholder(gsel)) break;
-                group = gsel;
-                if (!selStepDone) {
-                    boolean selOk = !isPlaceholder(dept) && !isPlaceholder(group);
-                    step(page, "Select Department and Group", "Select a Department and a Group",
-                            "Department and Group are selected", "Department=" + dept + " | Group=" + group,
-                            selOk ? "PASS" : "FAIL");
-                    selStepDone = true;
-                }
-                used++;
-                toast = dg.submitAndGetToast();
-                String tl = toast == null ? "" : toast.toLowerCase();
-                ok = tl.contains("saved") || tl.contains("success") || tl.contains("added") || tl.contains("updated");
-                exists = tl.contains("exist") || tl.contains("already");
-                if (ok || !exists) break outer;
-                System.out.println("DepartmentGroup: attempt " + used + " (Dept=" + dept + ", Group=" + group
-                        + ") exists — trying the next combination");
-                if (used >= maxAttempts) break outer;
+        int used = 0, lastD = -1;
+        for (int k = 0; k < maxAttempts; k++) {
+            int g = (startG + k) % groupCount + 1;                                   // 1-based Group ordinal
+            int d = (startD + (startG + k) / groupCount) % deptCount + 1;            // moves to the next Department when Groups wrap
+            if (d != lastD) {
+                String dsel = dg.selectDepartmentOrdinal(d);
+                // realSelectOrdinal()'s failure placeholders are exactly "(no-opt)", "(no)" and "(err)" — a
+                // blanket "starts with (" check is too broad: the real Department master list includes an
+                // entry literally named "(NAMA DR) MR C/N", and that false-failed here before Group was ever
+                // selected or Submit ever clicked (0 combination attempts, no toast).
+                if (isPlaceholder(dsel)) break;
+                dept = dsel;
+                lastD = d;
             }
+            String gsel = dg.selectGroupOrdinal(g);
+            if (isPlaceholder(gsel)) break;
+            group = gsel;
+            if (!selStepDone) {
+                boolean selOk = !isPlaceholder(dept) && !isPlaceholder(group);
+                step(page, "Select Department and Group", "Select a Department and a Group",
+                        "Department and Group are selected", "Department=" + dept + " | Group=" + group,
+                        selOk ? "PASS" : "FAIL");
+                selStepDone = true;
+            }
+            used++;
+            toast = dg.submitAndGetToast();
+            String tl = toast == null ? "" : toast.toLowerCase();
+            ok = tl.contains("saved") || tl.contains("success") || tl.contains("added") || tl.contains("updated");
+            exists = tl.contains("exist") || tl.contains("already");
+            if (ok || !exists) break;
+            System.out.println("DepartmentGroup: attempt " + used + " (Dept=" + dept + ", Group=" + group
+                    + ") exists — trying the next combination");
         }
 
         String actual = toast == null || toast.isEmpty() ? "No toast appeared"

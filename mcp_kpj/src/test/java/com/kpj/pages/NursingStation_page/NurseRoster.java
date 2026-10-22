@@ -71,15 +71,37 @@ public class NurseRoster extends BasePage {
     // ---- navigation --------------------------------------------------------
 
     /** Navigate to Nurse Roster, escalating menu click → hash route → full page load. */
+    /** Failing responses (HTTP 400+) and unanswered requests seen while opening the screen, to name the cause of a blank page. */
+    public final java.util.List<String> httpErrors = new java.util.concurrent.CopyOnWriteArrayList<>();
+
     public boolean navigateViaMenu(String baseUrl) {
+        final java.util.function.Consumer<com.microsoft.playwright.Response> onResp = r -> {
+            try {
+                if (r.status() >= 400) httpErrors.add("HTTP " + r.status() + " " + r.request().method() + " " + r.url());
+            } catch (Exception ignore) { }
+        };
+        final java.util.function.Consumer<com.microsoft.playwright.Request> onFail = q -> {
+            try { httpErrors.add("FAILED " + q.method() + " " + q.url() + " -> " + q.failure()); } catch (Exception ignore) { }
+        };
+        page.onResponse(onResp);
+        page.onRequestFailed(onFail);
+        try {
+            return walkMenu(baseUrl);
+        } finally {
+            page.offResponse(onResp);
+            page.offRequestFailed(onFail);
+        }
+    }
+
+    private boolean walkMenu(String baseUrl) {
         try {
             page.waitForFunction("() => document.querySelectorAll('a').length > 20",
                     null, new Page.WaitForFunctionOptions().setTimeout(30000));
         } catch (Exception ignore) { }
 
-        page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                + " const a=[...document.querySelectorAll('a')].find(x=>/^\\s*nursing\\s*station\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null); if(a) a.click(); }");
-        waitForAngular(1200);
+        // Open Nursing Station only if it is closed and wait for its children (a blind click toggles an open entry shut).
+        expandMenuEntry(null, "^\\s*nursing\\s*station\\s*$");
+        waitForAngular(800);
         page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
                 + " const a=[...document.querySelectorAll('a[href]')].filter(x=>x.offsetParent!==null)"
                 + "   .find(x=>/^nurse\\s*roster$/i.test(norm(x.textContent))"

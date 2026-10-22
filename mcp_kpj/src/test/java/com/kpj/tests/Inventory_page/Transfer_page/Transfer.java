@@ -274,8 +274,16 @@ public class Transfer extends DevHisBase {
         if (!printClickedOk) { addSummary("Print result", "FAILED — the Print button was not found"); return; }
 
         PdfReport.Result pdf = PdfReport.capture(page, tabsBeforePrint, 15000);
-        step(page, "[Print] Verify pdf report generated", "Wait for the report to open",
-                "A non-blank PDF is generated", pdf.diagnostics, pdf.blank ? "FAIL" : "PASS");
+        if (pdf.png != null && pdf.png.length > 0) {
+            // Chrome's PDF viewer screenshots blank, so the screenshot is the PDF's first page rendered from the file.
+            step(pdf.png, "[Print] Verify pdf report generated", "Wait for the report to open",
+                    "A non-blank PDF is generated",
+                    pdf.diagnostics + " The screenshot is the PDF's first page rendered from the file itself.",
+                    pdf.blank ? "FAIL" : "PASS");
+        } else {
+            step(page, "[Print] Verify pdf report generated", "Wait for the report to open",
+                    "A non-blank PDF is generated", pdf.diagnostics, pdf.blank ? "FAIL" : "PASS");
+        }
 
         addSummary("Row selected (Print)", trf.lastRowTick);
         addSummary("Print PDF result", pdf.diagnostics);
@@ -298,8 +306,15 @@ public class Transfer extends DevHisBase {
         if (!patientPrintClickedOk) { addSummary("Patient Print result", "FAILED — the Patient Print button was not found"); return; }
 
         PdfReport.Result patientPdf = PdfReport.capture(page, tabsBeforePatientPrint, 15000);
-        step(page, "[Patient Print] Verify pdf report generated", "Wait for the report to open",
-                "A non-blank PDF is generated", patientPdf.diagnostics, patientPdf.blank ? "FAIL" : "PASS");
+        if (patientPdf.png != null && patientPdf.png.length > 0) {
+            step(patientPdf.png, "[Patient Print] Verify pdf report generated", "Wait for the report to open",
+                    "A non-blank PDF is generated",
+                    patientPdf.diagnostics + " The screenshot is the PDF's first page rendered from the file itself.",
+                    patientPdf.blank ? "FAIL" : "PASS");
+        } else {
+            step(page, "[Patient Print] Verify pdf report generated", "Wait for the report to open",
+                    "A non-blank PDF is generated", patientPdf.diagnostics, patientPdf.blank ? "FAIL" : "PASS");
+        }
 
         addSummary("Patient Print PDF result", patientPdf.diagnostics);
     }

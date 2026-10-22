@@ -370,6 +370,47 @@ public class Shift extends BasePage {
                 && !lastColour.matches("^-*\\s*[Ss]elect.*");
     }
 
+    /** What {@link #selectApplicableFor} chose, e.g. {@code Nurse [AccountingShift.applicablefor, model=...]}. */
+    public String lastApplicable = "";
+
+    /**
+     * Select <b>Applicable for</b> — the <b>Nurse</b> / <b>Medical Officer</b> radio pair
+     * ({@code ng-model="AccountingShift.applicablefor"}). Submit refuses a shift without one:
+     * "Please select Applicable for (Nurse / Medical Officer)!".
+     *
+     * @param which the option's label, e.g. {@code "Nurse"} or {@code "Medical Officer"} (matched whole, case-insensitive)
+     */
+    public String selectApplicableFor(String which) {
+        Object tagged = page.evaluate("(w) => {" + JS
+                + " const radios=[...document.querySelectorAll('input[type=radio]')].filter(e=>/applicablefor/i.test(tail(e)));"
+                + " if(!radios.length) return '(no-applicable-for-control)';"
+                + " const rx=new RegExp('^\\\\s*'+w.replace(/[.*+?^${}()|[\\]\\\\\\/]/g,'\\\\$&')+'\\\\s*$','i');"
+                + " const r=radios.find(e=>rx.test(labelOf(e)));"
+                + " if(!r) return '(no-option) offered: '+radios.map(labelOf).join(' / ');"
+                + " r.setAttribute('data-shapp','1'); return 'ok'; }", which);
+        String t = tagged == null ? "" : tagged.toString();
+        if (!"ok".equals(t)) { lastApplicable = t; System.out.println("Shift: Applicable for = " + t); return t; }
+        try { page.locator("[data-shapp='1']").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000)); }
+        catch (Exception e) {
+            // A styled radio can be covered by its own label — click through the DOM instead.
+            page.evaluate("() => { const r=document.querySelector(\"[data-shapp='1']\"); if(r) r.click(); }");
+        }
+        waitForAngular(500);
+        Object r = page.evaluate("() => {" + JS
+                + " const r=document.querySelector(\"[data-shapp='1']\"); if(!r) return '(no-control)';"
+                + " let m=''; try{ const o=angular.element(r).scope().AccountingShift;"
+                + "   if(o) m=', model='+JSON.stringify(o.applicablefor); }catch(e){}"
+                + " const text=labelOf(r); r.removeAttribute('data-shapp');"
+                + " return (r.checked ? text : '(not-checked) '+text)+' ['+ngOf(r)+m+']'; }");
+        lastApplicable = r == null ? "" : r.toString();
+        System.out.println("Shift: Applicable for = " + lastApplicable);
+        return lastApplicable;
+    }
+
+    public boolean applicableSelected() {
+        return lastApplicable != null && !lastApplicable.isEmpty() && !lastApplicable.startsWith("(");
+    }
+
     /**
      * A success message, judged strictly.
      *

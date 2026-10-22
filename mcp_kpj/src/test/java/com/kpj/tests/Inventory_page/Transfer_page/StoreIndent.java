@@ -110,6 +110,16 @@ public class StoreIndent extends DevHisBase {
                 issuingStoreOk ? "PASS" : "FAIL");
         if (!issuingStoreOk) { addSummary("Result", "FAILED — no issuing store could be selected"); return; }
 
+        // 4b) Requesting Store (the form's own Store, StoreIndent.SearchStoreID) — chosen from its dropdown AFTER the Issuing
+        // Store, since its list may be filled from that choice. The Item Search dialog's Search refuses to run without it.
+        String ownStore = si.selectOwnStore();
+        boolean ownStoreOk = si.ownStoreSelected();
+        step(page, "Select Requesting Store", "Select the Requesting Store from the dropdown",
+                "A Requesting Store is selected",
+                ownStoreOk ? "PASSES: Requesting Store = " + ownStore : "FAILS: " + ownStore
+                        + " — without it the Item Search dialog answers \"Please Select Store Name !!!!\"",
+                ownStoreOk ? "PASS" : "FAIL");
+
         // 5) Click Get Items
         String getItemsResult = si.clickGetItems();
         boolean dialogOpenOk = si.dialogOpen();
@@ -120,6 +130,14 @@ public class StoreIndent extends DevHisBase {
         if (!dialogOpenOk) { addSummary("Result", "FAILED — the Item Search dialog never opened"); return; }
 
         addSummary("Item Search dialog controls", si.describeControls());
+
+        // 5b) The dialog's own Store dropdown — its Search refuses to run while no Store is chosen.
+        String dialogStore = si.selectDialogStore();
+        boolean dialogStoreOk = si.dialogStoreSelected();
+        step(page, "In dialog popup -Item Search, select the Store", "Select the Store from the dialog's Store dropdown",
+                "A Store is selected in the dialog",
+                dialogStoreOk ? "PASSES: Store = " + dialogStore : "FAILS: " + dialogStore,
+                dialogStoreOk ? "PASS" : "FAIL");
 
         // 6) In dialog popup - Item Search, click the search button
         String dialogSearchResult = si.clickSearchInDialog();
@@ -155,7 +173,7 @@ public class StoreIndent extends DevHisBase {
         boolean unitQtyOk = si.unitQuantityEntered(qty);
         step(page, "Enter unit quantity", "Enter Unit Quantity " + qty,
                 "The Unit Quantity is entered",
-                unitQtyOk ? "PASSES: " + unitQtyResult : "FAILS: " + unitQtyResult,
+                unitQtyOk ? "PASSES: " + unitQtyResult + si.quantityNote() : "FAILS: " + unitQtyResult + si.quantityNote(),
                 unitQtyOk ? "PASS" : "FAIL");
 
         // 10) Enter remarks
@@ -188,8 +206,16 @@ public class StoreIndent extends DevHisBase {
 
         // 13) Verify report generation
         PdfReport.Result pdf = PdfReport.capture(page, tabsBeforeSave, 15000);
-        step(page, "Verify report generation", "Wait for the report to open",
-                "A non-blank PDF is generated", pdf.diagnostics, pdf.blank ? "FAIL" : "PASS");
+        if (pdf.png != null && pdf.png.length > 0) {
+            // Chrome's PDF viewer screenshots blank, so the screenshot is the PDF's first page rendered from the file.
+            step(pdf.png, "Verify report generation", "Wait for the report to open",
+                    "A non-blank PDF is generated",
+                    pdf.diagnostics + " The screenshot is the PDF's first page rendered from the file itself.",
+                    pdf.blank ? "FAIL" : "PASS");
+        } else {
+            step(page, "Verify report generation", "Wait for the report to open",
+                    "A non-blank PDF is generated", pdf.diagnostics, pdf.blank ? "FAIL" : "PASS");
+        }
 
         // 14) In the indent number pop up, click ok
         String indentNumberResult = si.clickIndentNumberOk();
@@ -294,8 +320,15 @@ public class StoreIndent extends DevHisBase {
 
         // 23) Verify report generation
         PdfReport.Result autoPdf = PdfReport.capture(page, tabsBeforeAutoSave, 15000);
-        step(page, "Verify report generation", "Wait for the report to open",
-                "A non-blank PDF is generated", autoPdf.diagnostics, autoPdf.blank ? "FAIL" : "PASS");
+        if (autoPdf.png != null && autoPdf.png.length > 0) {
+            step(autoPdf.png, "Verify report generation", "Wait for the report to open",
+                    "A non-blank PDF is generated",
+                    autoPdf.diagnostics + " The screenshot is the PDF's first page rendered from the file itself.",
+                    autoPdf.blank ? "FAIL" : "PASS");
+        } else {
+            step(page, "Verify report generation", "Wait for the report to open",
+                    "A non-blank PDF is generated", autoPdf.diagnostics, autoPdf.blank ? "FAIL" : "PASS");
+        }
 
         addSummary("[Auto Indent] Requesting/Issuing store", storesResult);
         addSummary("[Auto Indent] Item selected", si.lastAutoIndentItemTick);

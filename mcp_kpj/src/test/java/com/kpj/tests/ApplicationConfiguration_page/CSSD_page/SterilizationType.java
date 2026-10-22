@@ -52,9 +52,13 @@ public class SterilizationType extends DevHisBase {
         String fill = "", toast = "";
         boolean ok = false, exists = false;
         int used = 0;
+        byte[] filledPng = null;
         for (int attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
             fill = st.fillDetails(attempt);
             used++;
+            // Screenshot the FILLED form before Submit — Submit clears the form, so a shot taken after it shows empty boxes.
+            try { filledPng = page.screenshot(new com.microsoft.playwright.Page.ScreenshotOptions().setTimeout(8000)); }
+            catch (Exception e) { System.out.println("SterilizationType: filled-form screenshot failed - " + e.getMessage()); }
             toast = st.submitAndGetToast();
             String tl = toast == null ? "" : toast.toLowerCase();
             ok = tl.contains("saved") || tl.contains("success") || tl.contains("added") || tl.contains("updated");
@@ -65,9 +69,15 @@ public class SterilizationType extends DevHisBase {
 
         boolean fillOk = fill != null && fill.contains("Code=ST");
         String fillActual = fill + (used > 1 ? "  [details changed " + (used - 1) + "x after 'already exists']" : "");
-        step(page, "Enter Code, Remark, Alert Threshold (%), Standard TAT (Mins)",
-                "Enter Code, Remark, Alert Threshold (%), Standard TAT (Mins)",
-                "All fields are entered", fillActual, fillOk ? "PASS" : "FAIL");
+        if (filledPng != null && filledPng.length > 0) {
+            step(filledPng, "Enter Code, Remark, Alert Threshold (%), Standard TAT (Mins)",
+                    "Enter Code, Remark, Alert Threshold (%), Standard TAT (Mins)",
+                    "All fields are entered", fillActual, fillOk ? "PASS" : "FAIL");
+        } else {
+            step(page, "Enter Code, Remark, Alert Threshold (%), Standard TAT (Mins)",
+                    "Enter Code, Remark, Alert Threshold (%), Standard TAT (Mins)",
+                    "All fields are entered", fillActual, fillOk ? "PASS" : "FAIL");
+        }
 
         String actual = toast == null || toast.isEmpty() ? "No toast appeared"
                 : (ok ? toast : (exists ? "Still 'already exists' after " + used + " attempt(s) with different details: \"" + toast + "\""

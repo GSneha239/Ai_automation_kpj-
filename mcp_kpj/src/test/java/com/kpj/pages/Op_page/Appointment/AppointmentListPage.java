@@ -158,7 +158,20 @@ public class AppointmentListPage extends BasePage {
         } catch (Exception ignore) {
             System.out.println("searchAppointments: no rows rendered within timeout (empty result?)");
         }
-        waitForAngular(800);
+        // "> 0" is only "the first row landed", not "the grid finished loading" — confirmed live (devhis,
+        // 30/09/2026): Reschedule re-entered the list fresh after this same search read a stale 11 rows, and the
+        // FRESH search's row count was captured at just 1 (of what should again have been ~25), leaving only one
+        // rescheduleable candidate for the whole section to try before giving up. Poll a bit further for the
+        // count to stop growing, capped so a genuinely small result set is not mistaken for a slow-loading one.
+        int prevCount = -1;
+        for (int i = 0; i < 8; i++) {
+            waitForAngular(500);
+            Object n = page.evaluate("() => document.querySelectorAll(\"tr[ng-click*='fnSelectAppointment']\").length");
+            int count = (n instanceof Number) ? ((Number) n).intValue() : 0;
+            if (count == prevCount) break; // stopped growing
+            prevCount = count;
+        }
+        waitForAngular(300);
     }
 
     /**
@@ -528,23 +541,22 @@ public class AppointmentListPage extends BasePage {
     // ---- cancel appointment ----------------------------------------------
 
     /**
-     * Tick the Cancellation checkbox (app.isenabled — what fnCancelAppointment reads) of the first
-     * cancellable appointment row. Returns "PatientName / AppointmentNo", or null if none is
-     * cancellable (all checkboxes disabled).
+     * Select an appointment row for cancellation. Returns "PatientName / AppointmentNo", or null if the
+     * grid has no rows.
+     *
+     * <p>This used to tick a per-row Cancellation checkbox ({@code app.isenabled}) — confirmed live (devhis
+     * build v2026.09.29.149) that checkbox no longer exists anywhere in the Appointment List grid (the
+     * table has no {@code <input type=checkbox>} in any row at all any more). The screen now works the
+     * same way as every other footer action here (History, Executor, Registration, Reschedule): select
+     * ANY row via {@code fnSelectAppointment}, then click the footer button — confirmed live that simply
+     * selecting a row and clicking "Cancel Appointment" opens the "Do you want to Cancel?" confirm
+     * directly, no checkbox involved. Eligibility (if the app enforces any) is left to the app itself to
+     * reject via {@link #clickCancelAppointment()}'s confirm / the save toast, the same way a genuinely
+     * un-cancellable appointment would be reported today.</p>
      */
     public String selectFirstCancellableAppointment() {
-        Object r = page.evaluate("() => {"
-                + "window.__alerts=[];"
-                + "const tables=[...document.querySelectorAll('table')].filter(t=>/patient name|appointment no/i.test(t.innerText||''));"
-                + "const t=tables.sort((a,b)=>b.querySelectorAll('tbody tr').length-a.querySelectorAll('tbody tr').length)[0]; if(!t) return null;"
-                + "const rows=[...t.querySelectorAll('tbody tr')].filter(r=>r.offsetParent!==null);"
-                + "rows.forEach(r=>{const cb=[...r.querySelectorAll('input[type=checkbox]')].find(c=>c.getAttribute('ng-model')==='app.isenabled'); if(cb&&cb.checked) cb.click();});"
-                + "for(const r of rows){ const sc=angular.element(r).scope(); if(!sc||!sc.app) continue;"
-                + "  const cb=[...r.querySelectorAll('input[type=checkbox]')].find(c=>c.getAttribute('ng-model')==='app.isenabled');"
-                + "  if(cb && !cb.disabled){ cb.click(); return ((sc.app.PatientName||sc.app.patientname||'')+'').trim()+' / '+(sc.app.AppointmentNo||sc.app.appointmentno||''); } }"
-                + "return null; }");
-        waitForAngular(400);
-        return r == null ? null : r.toString();
+        page.evaluate("() => { window.__alerts=[]; }");
+        return selectFirstAppointment();
     }
 
     /**
@@ -640,6 +652,11 @@ public class AppointmentListPage extends BasePage {
     public static class MRDResult {
         /** "PatientName / AppointmentNo" of the selected appointment. */
         public String label;
+        /** patientid of the selected row — lets a caller exclude every appointment for the SAME patient
+         *  on retry, not just the one row tried (a patient with many rows can otherwise dominate every
+         *  attempt — confirmed live 2026-09-30: one patient with ~8 appointments got "no response" on
+         *  all of them, exhausting a per-ROW retry budget without ever reaching a different patient). */
+        public long patientId;
         /** True if the file already existed and the report opened directly (see {@link #reportTab}). */
         public boolean fileExists;
         /** True if the "File is not generated ... create one?" confirm appeared (create flow needed). */
@@ -710,15 +727,27 @@ public class AppointmentListPage extends BasePage {
         MRDResult res = new MRDResult();
         mrdRowIndex = rowIndex;
         int baseTabs = page.context().pages().size();
-        Object label = page.evaluate("(i) => { const rows=[...document.querySelectorAll(\"tr[ng-click*='fnSelectAppointment']\")].filter(x=>x.offsetParent!==null);"
+        Object info = page.evaluate("(i) => { const rows=[...document.querySelectorAll(\"tr[ng-click*='fnSelectAppointment']\")].filter(x=>x.offsetParent!==null);"
                 + "const row=rows[i]; if(!row) return null; row.click();"
                 + "const s=angular.element(row).scope(); const a=(s&&s.app)?s.app:{};"
-                + "return ((a.PatientName||a.patientname||'')+'').trim()+' / '+(a.AppointmentNo||a.appointmentno||''); }", rowIndex);
-        res.label = label == null ? null : label.toString();
+                + "return {label:((a.PatientName||a.patientname||'')+'').trim()+' / '+(a.AppointmentNo||a.appointmentno||''), patientId:+(a.patientid||0)}; }", rowIndex);
+        java.util.Map<?, ?> m = (info instanceof java.util.Map) ? (java.util.Map<?, ?>) info : java.util.Collections.emptyMap();
+        res.label = m.get("label") == null ? null : m.get("label").toString();
+        res.patientId = (m.get("patientId") instanceof Number) ? ((Number) m.get("patientId")).longValue() : 0L;
         waitForAngular(500);
-        page.evaluate("() => { window.__alerts=[]; const b=[...document.querySelectorAll(\"button[ng-click='fnRequestMRDFile()']\")].find(x=>x.offsetParent!==null); if(b && !b.disabled) b.click(); }");
+        Object clickDiag = page.evaluate("() => { window.__alerts=[]; const all=[...document.querySelectorAll(\"button[ng-click='fnRequestMRDFile()']\")];"
+                + "const b=all.find(x=>x.offsetParent!==null);"
+                + "if(!b) return 'not-found (total-in-dom=' + all.length + ')';"
+                + "if(b.disabled) return 'found-but-disabled';"
+                + "b.click(); return 'clicked'; }");
+        System.out.println("selectRowAndRequestMRD: button click diag = " + clickDiag);
         // Poll for whichever comes first: the "create one?" confirm, or a report tab (file exists).
-        for (int t = 0; t < 24; t++) {
+        // 30s, not the previous 6s (24*250ms) — confirmed live (2026-09-30) the devhis backend can be
+        // measurably slow today (the same class of slowness already hardened for in LoginPage and
+        // BookAppointmentPage/DoctorwiseAppointmentSchedulePage's navigateTo()); 4 DIFFERENT patients in a
+        // row all showed "no response" within the old 6s window, which pointed at a too-short wait rather
+        // than a real per-patient gap.
+        for (int t = 0; t < 120; t++) {
             boolean confirm = Boolean.TRUE.equals(page.evaluate(
                     "() => !![...document.querySelectorAll('.ng-confirm-box, .jconfirm')].find(m=>m.getBoundingClientRect().width>0 && /not generated|create one/i.test(m.textContent||''))"));
             if (confirm) { res.needsCreate = true; return res; }
@@ -739,13 +768,29 @@ public class AppointmentListPage extends BasePage {
      * same condition that makes "Request MRD File" show the "create one?" confirm). Returns -1 if
      * every listed appointment already has a file. Reads the scope only — no clicks, no side effects.
      */
-    public int findRowNeedingMRDFile() {
-        Object r = page.evaluate("() => {"
+    public int findRowNeedingMRDFile() { return findRowNeedingMRDFile(java.util.Set.of()); }
+
+    /**
+     * Same as {@link #findRowNeedingMRDFile()}, but skipping every row belonging to a patientid already
+     * tried this run — lets the caller retry against a genuinely DIFFERENT patient when "Request MRD
+     * File" got no response (neither the report nor the "create one?" confirm appeared). Excluding by
+     * PATIENT rather than by row is required: confirmed live (2026-09-30) one patient can hold several
+     * appointments in the list, and a per-row exclusion just kept re-selecting the SAME unresponsive
+     * patient's other rows without ever reaching a different one.
+     */
+    public int findRowNeedingMRDFile(java.util.Set<Long> excludePatientIds) {
+        // Playwright Java's evaluate() argument serialization does not accept a bare Long ("Unsupported
+        // type of argument") — confirmed live (2026-09-30) — so convert to int first; a patientid fits
+        // comfortably in that range.
+        java.util.List<Integer> exArg = excludePatientIds.stream().map(Long::intValue).collect(java.util.stream.Collectors.toList());
+        Object r = page.evaluate("(ex) => {"
+                + "const exSet=new Set(ex);"
                 + "const rows=[...document.querySelectorAll(\"tr[ng-click*='fnSelectAppointment']\")].filter(x=>x.offsetParent!==null);"
-                + "for(let i=0;i<rows.length;i++){ const s=angular.element(rows[i]).scope(); const a=(s&&s.app)?s.app:{};"
-                // skip patientid=0 (AutoBook) rows — Request MRD File does nothing for them
-                + "  if((+(a.patientid||0))>0 && !((a.mrdfileno||'').toString().trim())) return i; }"
-                + "return -1; }");
+                + "for(let i=0;i<rows.length;i++){ const s=angular.element(rows[i]).scope(); const a=(s&&s.app)?s.app:{}; const pid=+(a.patientid||0);"
+                // skip patientid=0 (AutoBook) rows — Request MRD File does nothing for them — and any
+                // patient already tried this run.
+                + "  if(pid>0 && !exSet.has(pid) && !((a.mrdfileno||'').toString().trim())) return i; }"
+                + "return -1; }", exArg);
         return r instanceof Number ? ((Number) r).intValue() : -1;
     }
 
@@ -772,8 +817,15 @@ public class AppointmentListPage extends BasePage {
         Object r = page.evaluate("(a) => { const ft=a[0], pt=a[1], al=a[2];"
                 + "const setSel=(ng,text)=>{const e=[...document.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')===ng && x.offsetParent!==null);"
                 + "  if(!e) return '(missing)'; let i=[...e.options].findIndex(o=>o.text.trim().toLowerCase()===text.toLowerCase());"
-                + "  if(i<0) i=[...e.options].findIndex(o=>o.text.trim().toLowerCase().includes(text.toLowerCase())); if(i<0) return '(no-opt)';"
-                + "  e.selectedIndex=i; e.dispatchEvent(new Event('change',{bubbles:true})); const $=window.jQuery||window.$; if($){try{$(e).trigger('change');}catch(err){}} return e.options[i].text.trim(); };"
+                + "  if(i<0) i=[...e.options].findIndex(o=>o.text.trim().toLowerCase().includes(text.toLowerCase()));"
+                // Fall back to the first REAL option rather than leaving the field on "-Select-" — confirmed live
+                // (devhis build v2026.09.29.149) that a stale/renamed preferred value (e.g. the old "MRD file")
+                // left this select untouched and Save was rejected with "Please fill all fields!" for a field the
+                // caller clearly intended to fill. Every other option-picker in this codebase already falls back
+                // this way; this one did not, which is why a screen-side rename silently broke Save here.
+                + "  if(i<0) i=[...e.options].findIndex(o=>o.value && !/^-*\\s*select\\s*-*$/i.test(o.text.trim()));"
+                + "  if(i<0) return '(no-opt)';"
+                + "  e.selectedIndex=i; e.dispatchEvent(new Event('change',{bubbles:true})); const $=window.jQuery||window.$; if($){try{$(e).trigger('change');}catch(err){}} return e.options[i].text.trim()+(text.toLowerCase()!==e.options[i].text.trim().toLowerCase()&&!e.options[i].text.trim().toLowerCase().includes(text.toLowerCase())?' [fallback, wanted \\''+text+'\\']':''); };"
                 + "const a1=setSel('MRDAllocation.mrdfiletypeid',ft), a2=setSel('MRDAllocation.mrdpatienttypeid',pt), a3=setSel('MRDAllocation.allocationlocationid',al);"
                 + "const nm=(([...document.querySelectorAll('input')].find(x=>x.getAttribute('ng-model')==='MRDAllocation.name' && x.offsetParent!==null)||{}).value)||'';"
                 + "return 'Patient Name='+nm+' | File Type='+a1+' | Patient Type='+a2+' | Allocation Location='+a3; }",
@@ -839,12 +891,20 @@ public class AppointmentListPage extends BasePage {
      * only return a file that was issued). Returns -1 if no listed appointment has a file yet. Reads
      * the scope only — no clicks, no side effects. (Opposite of {@link #findRowNeedingMRDFile}.)
      */
-    public int findRowWithMRDFile() {
-        Object r = page.evaluate("() => {"
+    public int findRowWithMRDFile() { return findRowWithMRDFile(java.util.Set.of()); }
+
+    /** Same as {@link #findRowWithMRDFile()}, but skipping every row belonging to a patientid already
+     *  tried this run (see {@link #findRowNeedingMRDFile(java.util.Set)} for why patient- not row-level
+     *  exclusion is needed). */
+    public int findRowWithMRDFile(java.util.Set<Long> excludePatientIds) {
+        // See findRowNeedingMRDFile(Set) — Playwright evaluate() rejects a bare Long argument.
+        java.util.List<Integer> exArg = excludePatientIds.stream().map(Long::intValue).collect(java.util.stream.Collectors.toList());
+        Object r = page.evaluate("(ex) => {"
+                + "const exSet=new Set(ex);"
                 + "const rows=[...document.querySelectorAll(\"tr[ng-click*='fnSelectAppointment']\")].filter(x=>x.offsetParent!==null);"
-                + "for(let i=0;i<rows.length;i++){ const s=angular.element(rows[i]).scope(); const a=(s&&s.app)?s.app:{};"
-                + "  if((+(a.patientid||0))>0 && ((a.mrdfileno||'').toString().trim())) return i; }"
-                + "return -1; }");
+                + "for(let i=0;i<rows.length;i++){ const s=angular.element(rows[i]).scope(); const a=(s&&s.app)?s.app:{}; const pid=+(a.patientid||0);"
+                + "  if(pid>0 && !exSet.has(pid) && ((a.mrdfileno||'').toString().trim())) return i; }"
+                + "return -1; }", exArg);
         return r instanceof Number ? ((Number) r).intValue() : -1;
     }
 
@@ -1107,6 +1167,15 @@ public class AppointmentListPage extends BasePage {
                 + "   for(let i=0;i<5&&n;i++){ const l=n.querySelector('label,.control-label'); if(l && norm(l.textContent)) return norm(l.textContent); n=n.parentElement; } return ''; };"
                 + " const out=[];"
                 + " [...document.querySelectorAll('input,select,textarea')].filter(e=>e.offsetParent!==null && e.type!=='hidden' && e.type!=='button' && e.type!=='checkbox' && e.type!=='radio')"
+                // select2 replaces each real <select> with a styled widget and leaves a companion, LABEL-LESS
+                // "focusser" <input> (class select2-focusser, no ng-model) sitting in the SAME .form-group as the
+                // visible label — confirmed live (devhis build v2026.09.29.149, VisitScreen > Visit Information):
+                // this focusser is what the scan below was matching for EVERY select2 dropdown (Encounter Type,
+                // Cash Counter, Location, Registration Department, Sub Dept, Primary Doctor, Visit Type, Admission
+                // Source), not the real <select> — so a correctly-filled select2 field was still reported "still
+                // empty" with ng-model "[?]" (the focusser has none), which is why Registration failures on this
+                // screen always list ALL of the above together rather than the one field genuinely at fault.
+                + "  .filter(e=>!e.classList.contains('select2-focusser'))"
                 + "  .filter(e=>(e.getAttribute('ng-model')||'').indexOf('colFilter')<0 && (e.getAttribute('ng-model')||'').indexOf('grid.')<0)"
                 + "  .forEach(e=>{ const lab=labelOf(e);"
                 + "    const mandatory=/\\*/.test(lab) || e.hasAttribute('required') || e.hasAttribute('ng-required')"
@@ -1144,6 +1213,15 @@ public class AppointmentListPage extends BasePage {
                 + "   for(let i=0;i<5&&n;i++){ const l=n.querySelector('label,.control-label'); if(l && norm(l.textContent)) return norm(l.textContent); n=n.parentElement; } return ''; };"
                 + " const fixed=[], stillEmpty=[];"
                 + " [...document.querySelectorAll('input,select,textarea')].filter(e=>e.offsetParent!==null && e.type!=='hidden' && e.type!=='button' && e.type!=='checkbox' && e.type!=='radio')"
+                // select2 replaces each real <select> with a styled widget and leaves a companion, LABEL-LESS
+                // "focusser" <input> (class select2-focusser, no ng-model) sitting in the SAME .form-group as the
+                // visible label — confirmed live (devhis build v2026.09.29.149, VisitScreen > Visit Information):
+                // this focusser is what the scan below was matching for EVERY select2 dropdown (Encounter Type,
+                // Cash Counter, Location, Registration Department, Sub Dept, Primary Doctor, Visit Type, Admission
+                // Source), not the real <select> — so a correctly-filled select2 field was still reported "still
+                // empty" with ng-model "[?]" (the focusser has none), which is why Registration failures on this
+                // screen always list ALL of the above together rather than the one field genuinely at fault.
+                + "  .filter(e=>!e.classList.contains('select2-focusser'))"
                 + "  .filter(e=>(e.getAttribute('ng-model')||'').indexOf('colFilter')<0 && (e.getAttribute('ng-model')||'').indexOf('grid.')<0)"
                 + "  .forEach(e=>{ const lab=labelOf(e); const ng=e.getAttribute('ng-model')||'?';"
                 + "    const mandatory=/\\*/.test(lab) || e.hasAttribute('required') || e.hasAttribute('ng-required')"

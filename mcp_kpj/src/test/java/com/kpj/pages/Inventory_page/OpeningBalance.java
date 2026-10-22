@@ -231,8 +231,75 @@ public class OpeningBalance extends BasePage {
                 && !lastItemSearch.contains("(no-item-name-field)");
     }
 
+    /** What {@link #selectPickerStore()} chose, or why it could not. */
+    public String lastPickerStore = "";
+
+    /**
+     * Select the <b>Store</b> INSIDE the item-picker dialog ({@code ItemSearch.SearchStoreID}) — this screen's only Store
+     * control. Its Search lists nothing ("Please Select Store Name !!!!") while none is chosen. The stock-bearing
+     * "Pharmacy (Central)" is preferred, else any pharmacy store, else the first real option; the choice is read back, so a
+     * selection that does not stick is reported rather than assumed.
+     */
+    public String selectPickerStore() {
+        final String css = ".modal select[ng-model='ItemSearch.SearchStoreID']";
+        try {
+            page.waitForFunction("(s) => { const e=[...document.querySelectorAll(s)].find(x=>x.offsetWidth||x.offsetHeight||x.getClientRects().length);"
+                    + " return !!e && [...e.options].some(o=>o.value && !/^-*\\s*select/i.test((o.text||'').trim())); }",
+                    css, new Page.WaitForFunctionOptions().setTimeout(15000));
+        } catch (Exception ignore) { /* reported below from what is really there */ }
+        Object r = page.evaluate("(s) => {" + JS
+                + " const e=[...document.querySelectorAll(s)].find(vis);"
+                + " if(!e) return '(no dialog Store dropdown found)';"
+                + " const reals=[...e.options].map((o,i)=>({o,i})).filter(x=>x.o.value && !/^-*\\s*select/i.test(norm(x.o.text)));"
+                + " if(!reals.length) return '(the dialog Store list is empty: '+e.options.length+' option(s), none selectable)';"
+                + " const pick=reals.find(x=>norm(x.o.text)==='Pharmacy (Central)')"
+                + "   || reals.find(x=>/^pharmacy/i.test(norm(x.o.text))) || reals[0];"
+                + " e.selectedIndex=pick.i;"
+                + " e.dispatchEvent(new Event('change',{bubbles:true}));"
+                + " try{ angular.element(e).triggerHandler('change'); }catch(x){}"
+                + " return 'ok|'+reals.length; }", css);
+        waitForAngular(900);
+        String res = r == null ? "" : r.toString();
+        if (!res.startsWith("ok|")) {
+            lastPickerStore = res;
+        } else {
+            Object shown = page.evaluate("(s) => { const e=[...document.querySelectorAll(s)].find(x=>x.offsetWidth||x.offsetHeight||x.getClientRects().length);"
+                    + " return e ? ((e.options[e.selectedIndex]||{}).text||'').replace(/\\s+/g,' ').trim() : ''; }", css);
+            String text = shown == null ? "" : shown.toString();
+            lastPickerStore = (text.isEmpty() || text.matches("^-*\\s*[Ss]elect.*"))
+                    ? "(the dialog Store did not stay selected: shows \"" + text + "\")"
+                    : text + " (of " + res.substring(3) + " store(s))";
+        }
+        // Choosing the store makes the dialog load its item list; a Search clicked before that finishes returned 0 rows on
+        // some runs (and not others). Wait, up to 12s, for it to list items — not fatal if it never does.
+        if (pickerStoreSelected()) {
+            for (int i = 0; i < 12 && rowCount() == 0; i++) page.waitForTimeout(1000);
+        }
+        page.waitForTimeout(500);
+        System.out.println("OpeningBalance: dialog Store = " + lastPickerStore);
+        return lastPickerStore;
+    }
+
+    public boolean pickerStoreSelected() {
+        return lastPickerStore != null && !lastPickerStore.isEmpty() && !lastPickerStore.startsWith("(");
+    }
+
     /** Click <b>Search</b> inside the item-picker dialog. */
     public String clickSearch() {
+        // Record what the server answers to the search itself (status, path, start of the body), so "0 rows" can be told
+        // apart: an empty result, a rejected request, or a missing search condition.
+        final java.util.List<String> seen = new java.util.concurrent.CopyOnWriteArrayList<>();
+        final java.util.function.Consumer<com.microsoft.playwright.Response> onResp = r -> {
+            try {
+                if (r.url().toLowerCase().contains("/api/") && r.request().resourceType().matches("xhr|fetch")) {
+                    String body = r.text();
+                    body = body == null ? "" : body.replaceAll("\\s+", " ");
+                    seen.add(r.status() + " " + r.request().method() + " " + r.url().replaceFirst("^https?://[^/]+", "")
+                            + " -> " + body.substring(0, Math.min(140, body.length())));
+                }
+            } catch (Exception ignore) { }
+        };
+        page.onResponse(onResp);
         page.evaluate("() => {" + JS
                 + " const d=topDialog(); if(!d) return;"
                 + " const b=[...d.querySelectorAll('button,a')].filter(vis)"
@@ -240,8 +307,23 @@ public class OpeningBalance extends BasePage {
                 + "   || [...d.querySelectorAll('button,a')].filter(vis)"
                 + "     .find(x=>/^\\s*search\\s*$/i.test(norm(x.textContent)));"
                 + " if(b) b.click(); }");
+        // A validation message (toast / alert) the screen shows instead of searching — read it before it fades.
+        String shown = "";
+        try {
+            page.waitForTimeout(600);
+            Object msg = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                    + " return [...document.querySelectorAll('.toast-message,.toast,.jAlert,.sweet-alert,.alert,[id^=toast]')]"
+                    + "   .filter(e=>e.offsetWidth||e.offsetHeight||e.getClientRects().length)"
+                    + "   .map(e=>norm(e.textContent).replace(/^\\S?\\s*KPJ Portal\\s*/i,'')).filter(t=>t)"
+                    + "   .filter((t,i,a)=>a.indexOf(t)===i).join(' | ').slice(0,200); }");
+            shown = msg == null ? "" : msg.toString();
+        } catch (Exception ignore) { }
         waitForAngular(3500);
-        lastSearch = "clicked Search -> " + rowCount() + " row(s) in the item picker";
+        page.offResponse(onResp);
+        String http = String.join(" | ", seen);
+        lastSearch = "clicked Search -> " + rowCount() + " row(s) in the item picker"
+                + (shown.isEmpty() ? "" : "; the screen said: \"" + shown + "\"")
+                + (http.isEmpty() ? " (no API request was made by the search)" : "; server: " + http);
         System.out.println("OpeningBalance: " + lastSearch);
         return lastSearch;
     }
@@ -493,11 +575,33 @@ public class OpeningBalance extends BasePage {
         waitForAngular(500);
         Object back = page.evaluate("(i) => { const e=document.getElementById(i);"
                 + " return e? (e.value||'') : '(gone)'; }", id);
-        return (back == null ? "" : back.toString()) + " [Itm.expirydate]";
+        String got = back == null ? "" : back.toString();
+        if (!value.equals(got)) {
+            // A pre-filled picker box (class txtDate, inputmode=none, maxlength 10): typed keystrokes are discarded and the
+            // box ends up empty. Set the value through the box's own model instead, as the other screens here do.
+            Object set = page.evaluate("(a) => { const e=document.getElementById(a.id); if(!e) return '(gone)';"
+                    + " e.value=a.v;"
+                    + " try{ const c=angular.element(e).controller('ngModel'); if(c){ c.$setViewValue(a.v); c.$render(); } }catch(x){}"
+                    + " e.dispatchEvent(new Event('input',{bubbles:true}));"
+                    + " e.dispatchEvent(new Event('change',{bubbles:true}));"
+                    + " e.dispatchEvent(new Event('blur',{bubbles:true}));"
+                    + " return e.value||''; }", java.util.Map.of("id", id, "v", value));
+            waitForAngular(500);
+            got = set == null ? "" : set.toString();
+            Object dbg = page.evaluate("(i) => { const e=document.getElementById(i); if(!e) return '(gone)';"
+                    + " let m=''; try{ const c=angular.element(e).controller('ngModel');"
+                    + "   m=' view='+JSON.stringify(c.$viewValue)+' model='+JSON.stringify(c.$modelValue)+' err='+JSON.stringify(c.$error); }catch(x){ m=' (no ngModel: '+x+')'; }"
+                    + " return e.outerHTML.slice(0,420)+m; }", id);
+            System.out.println("OpeningBalance: expiry field -> " + dbg);
+        }
+        dismissDatePicker();   // close the calendar the date entry left open
+        return got + " [Itm.expirydate]";
     }
 
     public boolean detailsEntered() {
-        return lastDetails != null && !lastDetails.contains("(no-");
+        // An empty Expiry Date (the picker discarding the entry) used to pass here and Save then silently did nothing.
+        return lastDetails != null && !lastDetails.contains("(no-")
+                && !lastDetails.matches(".*ExpiryDate=\\s*\\[.*");
     }
 
     // ---- save ---------------------------------------------------------------
@@ -513,6 +617,9 @@ public class OpeningBalance extends BasePage {
     }
 
     /** Click <b>Save</b> and return the toast. Toasts are cleared first so a repeat still reads. */
+    /** What the server answered to the last Save (status, path, start of the body); empty when Save made no write request. */
+    public String lastSaveHttp = "";
+
     public String saveAndGetToast() {
         try {
             page.evaluate("() => { try{ if(window.toastr) toastr.clear(); }catch(e){}"
@@ -521,6 +628,21 @@ public class OpeningBalance extends BasePage {
         } catch (Exception ignore) { }
         waitForAngular(300);
 
+        final java.util.List<String> saveHttp = new java.util.concurrent.CopyOnWriteArrayList<>();
+        final java.util.function.Consumer<com.microsoft.playwright.Response> onSaveResp = r -> {
+            try {
+                String m = r.request().method();
+                if (r.url().toLowerCase().contains("/api/") && r.request().resourceType().matches("xhr|fetch")
+                        && ("POST".equals(m) || "PUT".equals(m) || "DELETE".equals(m))
+                        && !r.url().contains("getInternalmsgCountOnly")) {
+                    String body = r.text();
+                    body = body == null ? "" : body.replaceAll("\\s+", " ");
+                    saveHttp.add(r.status() + " " + m + " " + r.url().replaceFirst("^https?://[^/]+", "")
+                            + " -> " + body.substring(0, Math.min(260, body.length())));
+                }
+            } catch (Exception ignore) { }
+        };
+        page.onResponse(onSaveResp);
         Object clicked = page.evaluate("() => {" + JS
                 + " const b=[...document.querySelectorAll('button,a,input[type=submit],input[type=button]')]"
                 + "   .filter(vis).find(x=>/^\\s*save\\s*$/i.test(norm(x.textContent)||x.value||'')"
@@ -548,7 +670,10 @@ public class OpeningBalance extends BasePage {
             } catch (Exception ignore) { }
             if (toast.isEmpty()) page.waitForTimeout(400);
         }
-        lastSaveDiagnostics = clickedText + (toast.isEmpty() ? "; no message within 15s" : "");
+        page.offResponse(onSaveResp);
+        lastSaveHttp = String.join(" | ", saveHttp);
+        lastSaveDiagnostics = clickedText + (toast.isEmpty() ? "; no message within 15s" : "")
+                + (lastSaveHttp.isEmpty() ? "" : "; server: " + lastSaveHttp);
         lastSave = toast;
         System.out.println("OpeningBalance: save -> " + lastSaveDiagnostics + " toast=\"" + toast + "\"");
         return toast;

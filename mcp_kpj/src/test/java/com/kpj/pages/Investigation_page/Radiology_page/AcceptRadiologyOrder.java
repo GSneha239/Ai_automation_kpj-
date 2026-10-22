@@ -51,15 +51,21 @@ public class AcceptRadiologyOrder extends BasePage {
 
         Object href = null;
         for (int attempt = 1; attempt <= 3; attempt++) {
-            clickMenu("^\\s*investigation\\s*$");
-            // The entry sits under Radiology in some builds and under Lab in others; open both.
-            clickMenu("^\\s*radiology\\s*$");
-            clickMenu("^\\s*lab\\s*$");
-            lastMenu = describeMenu();
-            href = page.evaluate("() => {" + JS
-                    + " const a=[...document.querySelectorAll('a[href]')]"
+            // Open each level only if it is not already open: a click on an open entry CLOSES it (the old blind
+            // Investigation / Radiology / Lab clicks left Radiology shut), and Radiology is looked up INSIDE Investigation.
+            expandMenuEntry(null, "^\\s*investigation\\s*$");
+            // The entry sits under Radiology in some builds and under Lab in others: Radiology first, Lab only if it is not there.
+            expandMenuEntry("^\\s*investigation\\s*$", "^\\s*radiology\\s*$");
+            final String leafJs = "() => {" + JS
+                    + " const a=[...document.querySelectorAll('a[href]')].filter(vis)"
                     + "   .find(x=>/^\\s*accept\\s*radiology\\s*order\\s*$/i.test(norm(x.textContent)));"
-                    + " if(!a) return ''; a.id='__arMenu'; return a.getAttribute('href')||''; }");
+                    + " if(!a) return ''; a.id='__arMenu'; return a.getAttribute('href')||''; }";
+            href = page.evaluate(leafJs);
+            if (href == null || href.toString().isEmpty()) {
+                expandMenuEntry("^\\s*investigation\\s*$", "^\\s*lab\\s*$");
+                href = page.evaluate(leafJs);
+            }
+            lastMenu = describeMenu();
             if (href != null && !href.toString().isEmpty()) break;
             page.waitForTimeout(1500);
         }
@@ -120,6 +126,7 @@ public class AcceptRadiologyOrder extends BasePage {
         boolean inDialog = Boolean.TRUE.equals(page.evaluate(
                 "(m) => { const e=document.querySelector(\"input[ng-model='\"+m+\"']\");"
                 + " return !!(e && e.closest('.modal,[role=dialog]')); }", model));
+        String typingError = "";
         try {
             com.microsoft.playwright.Locator box = page.locator("input[ng-model='" + model + "']").first();
             box.click();
@@ -134,11 +141,27 @@ public class AcceptRadiologyOrder extends BasePage {
             } else {
                 box.press("Escape");
             }
-        } catch (Exception e) { return "(typing failed: " + e.getMessage().split("\n")[0] + ")"; }
+        } catch (Exception e) { typingError = e.getMessage().split("\n")[0]; }
         waitForAngular(600);
         Object back = page.evaluate("(m) => { const e=document.querySelector(\"input[ng-model='\"+m+\"']\");"
                 + " return e? (e.value||'') : '(gone)'; }", model);
-        return back == null ? "" : back.toString();
+        String got = back == null ? "" : back.toString();
+        if (!value.equals(got)) {
+            // A pre-filled picker box (class txtDate, inputmode=none, maxlength 10): typed keystrokes are discarded (or the
+            // typing itself fails) and the box ends up empty. Set the value through the box's own model instead.
+            Object set = page.evaluate("(a) => { const e=document.querySelector(\"input[ng-model='\"+a.m+\"']\"); if(!e) return '(gone)';"
+                    + " e.value=a.v;"
+                    + " try{ const c=angular.element(e).controller('ngModel'); if(c){ c.$setViewValue(a.v); c.$render(); } }catch(x){}"
+                    + " e.dispatchEvent(new Event('input',{bubbles:true}));"
+                    + " e.dispatchEvent(new Event('change',{bubbles:true}));"
+                    + " e.dispatchEvent(new Event('blur',{bubbles:true}));"
+                    + " return e.value||''; }", java.util.Map.of("m", model, "v", value));
+            waitForAngular(500);
+            got = set == null ? "" : set.toString();
+            if (!value.equals(got) && !typingError.isEmpty()) return "(typing failed: " + typingError + ")";
+        }
+        dismissDatePicker();   // close the calendar the date entry left open
+        return got;
     }
 
     public boolean datesEntered(String from, String to) {
@@ -329,8 +352,48 @@ public class AcceptRadiologyOrder extends BasePage {
 
     /** Select the <b>Department</b>, <b>Sub Department</b> and <b>Patient Type</b> in Mark Visit. */
     public String fillMarkVisit() {
-        String dept = pick(M + "DepartmentID", "Department");
-        String sub = pick(M + "SubDepartmentID", "Sub Department");
+        // The Sub Department list depends on the Department, and the first Department (ANATOMICAL PATHOLOGY) offers none.
+        // So each Department is tried — a radiology/imaging one first — until one fills the Sub Department list.
+        final String deptModel = M + "DepartmentID", subModel = M + "SubDepartmentID";
+        String dept = "", sub = "";
+        Object listed = page.evaluate("(m) => {" + JS
+                + " const e=[...document.querySelectorAll(\"select[ng-model='\"+m+\"']\")].filter(vis)[0];"
+                + " if(!e) return [];"
+                + " return [...e.options].map((o,i)=>({o,i}))"
+                + "   .filter(x=>x.o.value && !/^-*\\s*select/i.test(norm(x.o.text)))"
+                + "   .map(x=>x.i+'|'+norm(x.o.text)); }", deptModel);
+        java.util.List<String> cands = new java.util.ArrayList<>();
+        if (listed instanceof java.util.List) for (Object o : (java.util.List<?>) listed) cands.add(o.toString());
+        final java.util.regex.Pattern radiology = java.util.regex.Pattern.compile("radiolog|imaging|x.?ray", java.util.regex.Pattern.CASE_INSENSITIVE);
+        cands.sort(java.util.Comparator.comparingInt(s -> radiology.matcher(s).find() ? 0 : 1));   // stable: keeps list order otherwise
+        int tried = 0;
+        for (String cand : cands) {
+            tried++;
+            int idx = Integer.parseInt(cand.substring(0, cand.indexOf('|')));
+            page.evaluate("(a) => {" + JS
+                    + " const e=[...document.querySelectorAll(\"select[ng-model='\"+a[0]+\"']\")].filter(vis)[0]; if(!e) return;"
+                    + " e.selectedIndex=a[1];"
+                    + " e.dispatchEvent(new Event('change',{bubbles:true}));"
+                    + " try{ angular.element(e).triggerHandler('change'); }catch(err){} }",
+                    java.util.List.of(deptModel, idx));
+            boolean hasSub = false;
+            for (int t = 0; t < 6 && !hasSub; t++) {
+                page.waitForTimeout(500);
+                Object n = page.evaluate("(m) => {" + JS
+                        + " const e=[...document.querySelectorAll(\"select[ng-model='\"+m+\"']\")].filter(vis)[0];"
+                        + " return e? [...e.options].filter(o=>o.value && !/^-*\\s*select/i.test(norm(o.text))).length : 0; }", subModel);
+                hasSub = n instanceof Number && ((Number) n).intValue() > 0;
+            }
+            if (hasSub) {
+                dept = cand.substring(cand.indexOf('|') + 1) + " [" + cands.size() + " options; department " + tried + " tried]";
+                sub = pick(subModel, "Sub Department");
+                break;
+            }
+        }
+        if (sub.isEmpty()) {
+            dept = cands.isEmpty() ? pick(deptModel, "Department") : "(" + tried + " departments tried)";
+            sub = "(the list has no real option) — none of the " + tried + " departments tried offers a Sub Department";
+        }
         // "Patient type" is the patient source on this dialog; the visit-type list is the other
         // candidate, so whichever one actually offers options is used and named in the report.
         String type = pick(M + "PatientSourceID", "Patient Type");

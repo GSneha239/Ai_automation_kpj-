@@ -150,8 +150,13 @@ public class Mortuary extends DevHisBase {
         // counting works every time.
         mt.clickAdd();
         java.util.List<String> candidates = new java.util.ArrayList<>(mt.discoverMrns(20));
+        // A patient pinned with -Dmrn= is tried first. The built-in default is NOT: it is a 9-digit MRN this environment answers
+        // with "Patient Not Found!", and a patient that does not exist also has zero mortuary rows — so it would be chosen
+        // as "free" every time. Unpinned, the form's own patient lookup supplies real patients and the default goes last.
+        boolean mrnPinned = System.getProperty("mrn") != null;
         candidates.remove(mrn);
-        candidates.add(0, mrn);                     // try the requested patient first
+        if (mrnPinned) candidates.add(0, mrn);
+        else candidates.add(mrn);
         mt.backToList();
         addSummary("Candidate patients", candidates.toString());
 
@@ -274,11 +279,30 @@ public class Mortuary extends DevHisBase {
         // 13) Save. No toast is asserted — this screen shows none — so the click is reported for what it
         //     is and the verdict comes from the row check below.
         String toast = mt.saveAndGetToast();
+        // The list-based "no existing record" probe is not reliable (the server answered "Mortuary already added for this
+        // patient (active record exists)" for a patient the list showed no row for). So on that refusal, the form is kept
+        // and the next candidate patient is attached to it and Save is clicked again — one active record per patient.
+        StringBuilder savePatients = new StringBuilder(mrn);
+        java.util.List<String> triedMrns = new java.util.ArrayList<>(java.util.List.of(mrn));
+        for (String next : candidates) {
+            String said = ((toast == null ? "" : toast) + " " + mt.lastSaveHttp).toLowerCase();
+            if (!(said.contains("already added") || said.contains("active record exists"))) break;
+            if (triedMrns.contains(next)) continue;
+            if (triedMrns.size() >= Integer.getInteger("maxPatients", 8) + 2) break;
+            triedMrns.add(next);
+            String again = mt.searchByMrn(next);
+            if (!mt.patientAttached()) { savePatients.append(", ").append(next).append(" (not found)"); continue; }
+            savePatients.append(", ").append(next);
+            mrn = next;
+            toast = mt.saveAndGetToast();
+        }
         step(page, "Click Save", "Click Save (IUDMortuary)",
                 "Save is submitted",
                 "Save clicked. " + (toast == null || toast.isEmpty()
                         ? "No toast (none is expected on this screen) — " + mt.lastSaveDiagnostics
-                        : "Screen said: \"" + toast + "\""),
+                        : "Screen said: \"" + toast + "\"")
+                  + (mt.lastSaveHttp.isEmpty() ? "" : "  ||  server: " + mt.lastSaveHttp)
+                  + (triedMrns.size() > 1 ? "  ||  patients tried (one active record each): " + savePatients : ""),
                 "PASS");
 
         // 14) Save should redirect back to the list on its own.

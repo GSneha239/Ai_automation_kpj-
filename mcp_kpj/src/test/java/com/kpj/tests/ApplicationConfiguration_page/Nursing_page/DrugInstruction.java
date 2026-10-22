@@ -68,9 +68,13 @@ public class DrugInstruction extends DevHisBase {
         String details = "", toast = "";
         boolean ok = false, exists = false;
         int used = 0;
+        byte[] filledPng = null;
         for (int attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
             details = di.fillDetails(attempt);
             used++;
+            // Screenshot the FILLED form before Save — Save clears the form, so a later shot shows empty boxes.
+            try { filledPng = page.screenshot(new com.microsoft.playwright.Page.ScreenshotOptions().setTimeout(8000)); }
+            catch (Exception e) { System.out.println("DrugInstruction: filled-form screenshot failed - " + e.getMessage()); }
             toast = di.submitAndGetToast();
             String tl = toast == null ? "" : toast.toLowerCase();
             ok = tl.contains("saved") || tl.contains("success") || tl.contains("added") || tl.contains("updated");
@@ -80,10 +84,14 @@ public class DrugInstruction extends DevHisBase {
         }
 
         boolean detOk = details.contains("Code=DI") && !details.contains("=(no)");
-        step(page, "Enter Code and Drug Instruction", "Enter Code* (unique) and Drug Instruction*",
-                "Both fields are entered",
-                details + (used > 1 ? "  [details changed " + (used - 1) + "x after 'already exists']" : ""),
-                detOk ? "PASS" : "FAIL");
+        String detActual = details + (used > 1 ? "  [details changed " + (used - 1) + "x after 'already exists']" : "");
+        if (filledPng != null && filledPng.length > 0) {
+            step(filledPng, "Enter Code and Drug Instruction", "Enter Code* (unique) and Drug Instruction*",
+                    "Both fields are entered", detActual, detOk ? "PASS" : "FAIL");
+        } else {
+            step(page, "Enter Code and Drug Instruction", "Enter Code* (unique) and Drug Instruction*",
+                    "Both fields are entered", detActual, detOk ? "PASS" : "FAIL");
+        }
 
         String actual = toast == null || toast.isEmpty() ? "No toast appeared"
                 : (ok ? toast

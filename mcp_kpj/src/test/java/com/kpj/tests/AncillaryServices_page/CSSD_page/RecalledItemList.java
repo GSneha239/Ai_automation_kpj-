@@ -66,6 +66,8 @@ public class RecalledItemList extends DevHisBase {
                 onScreen ? "PASS" : "FAIL");
         if (!onScreen) { addSummary("Result", "FAILED — screen not reached"); return; }
 
+        ril.describeControls();   // diagnostics only
+
         // 2) New
         boolean formOpen = ril.clickNew();
         step(page, "Click New", "Click New (fnAddRecalledItem)",

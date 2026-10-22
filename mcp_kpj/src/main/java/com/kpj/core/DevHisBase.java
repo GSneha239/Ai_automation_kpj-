@@ -29,6 +29,7 @@ public abstract class DevHisBase {
     /** Runs this test: start browser (unless attached) -> body() -> ALWAYS write its own report. */
     public final void run() {
         start();
+        installReloadPopupWatcher();
         try {
             body();
         } catch (Throwable e) {
@@ -39,19 +40,55 @@ public abstract class DevHisBase {
         }
     }
 
+    // nHIS can raise "Reload page - Are you sure you want to reload the page? You will be logged out of nHIS."
+    // with No / Yes buttons. Answer **No** whenever it shows, at any step, so the session stays logged in and the
+    // test carries on. (Yes logs the session out, which breaks every step after it.) Playwright 1.40 has no
+    // addLocatorHandler, so the watcher lives in the page itself and survives page reloads via addInitScript.
+    private static final String RELOAD_NO_WATCHER_JS =
+            "(() => { if (window.__nhisReloadWatch) return; window.__nhisReloadWatch = true; let last = 0;"
+            + " setInterval(() => { try {"
+            + "   const t = [...document.querySelectorAll('div,p,span')].find(e => e.children.length === 0"
+            + "     && /are you sure you want to reload the page\\?/i.test(e.textContent || '') && e.offsetParent !== null);"
+            + "   if (!t || Date.now() - last < 1500) return;"
+            + "   let box = t; for (let i = 0; i < 8 && box.parentElement; i++) { box = box.parentElement;"
+            + "     if ([...box.querySelectorAll('button')].some(b => /^\\s*no\\s*$/i.test(b.textContent || ''))) break; }"
+            + "   const no = [...box.querySelectorAll('button')].find(b => /^\\s*no\\s*$/i.test(b.textContent || ''));"
+            + "   if (!no) return;"
+            + "   last = Date.now();"
+            + "   if (window.__nhisReloadPopup) window.__nhisReloadPopup();"
+            + "   no.click();"
+            + " } catch (e) {} }, 300); })();";
+
+    private Page reloadWatcherPage = null;
+
+    private void installReloadPopupWatcher() {
+        try {
+            if (page == null || reloadWatcherPage == page) return;
+            page.exposeFunction("__nhisReloadPopup", args -> {
+                System.out.println("[" + testId + "] 'Reload page' popup showed - clicked No");
+                return null;
+            });
+            page.addInitScript(RELOAD_NO_WATCHER_JS);   // every later navigation / reload
+            page.evaluate(RELOAD_NO_WATCHER_JS);        // the page that is open right now
+            reloadWatcherPage = page;
+        } catch (Exception e) {
+            System.out.println("[" + testId + "] could not install the 'Reload page' popup watcher - " + e.getMessage());
+        }
+    }
+
     // ---- environment config (URL + credentials) --------------------------
     // Resolved at startup so ONE jar can run against any environment. Priority (first non-blank wins):
     //   1) JVM system property   -Ddevhis.url=... -Ddevhis.user=... -Ddevhis.pass=...
     //   2) environment variable  DEVHIS_URL / DEVHIS_USER / DEVHIS_PASS
     //   3) config.properties     (path in -Ddevhis.config=..., else ./config.properties, else next to the jar)
-    //   4) the built-in default  (devhis.sancyberhad.com / tieba - farisha is rejected on devhis since 2026-09-03;
-    //      tieba's password was reset to Tieba@123 on 2026-09-10)
+    //   4) the built-in default  (devhis.sancyberhad.com / Sarannya, password User@123 - farisha is rejected on
+    //      devhis since 2026-09-03)
     private static final java.util.Properties FILE_PROPS = loadProps();
 
     public static final String BASE = cfg("devhis.url", "https://devhis.sancyberhad.com").replaceAll("/+$", "");
     public static final String DASHBOARD = BASE + "/#/PatientDashboard";
-    public static final String USER = cfg("devhis.user", "tieba");
-    public static final String PASS = cfg("devhis.pass", "Tieba@123");
+    public static final String USER = cfg("devhis.user", "Sarannya");
+    public static final String PASS = cfg("devhis.pass", "User@123");
     public static final String COUNTER = null;
     // Some environments (e.g. KS QA) serve a "Local Login" form with a mandatory Organization/Department
     // select that must be chosen BEFORE the Login button will authenticate — confirmed live: without it,
@@ -235,7 +272,17 @@ public abstract class DevHisBase {
                         "--disable-dev-shm-usage",
                         "--disable-gpu",
                         "--start-maximized",
-                        "--kiosk-printing"));
+                        "--kiosk-printing",
+                        // Report tabs (Appointment Slip, MRD report, ...) are opened via window.open() from the
+                        // AJAX-success callback AFTER Save, not synchronously inside the click handler — Chromium's
+                        // popup blocker treats that async gap as outside the user gesture and silently blocks it.
+                        // Confirmed live (devhis, 29/09/2026): Reschedule's Save succeeded ("Appointment Saved
+                        // Successfully.") but the toast that actually fired was "The appointment slip was blocked
+                        // by the browser. Please allow pop-ups for this site to print it.!" — no popup was ever
+                        // blocked by a human to allow, so no report tab opened and the step read as "Save accepted
+                        // but no Appointment Slip was generated". Disabling the blocker for this controlled test
+                        // browser removes that failure mode wherever a report opens as a new tab/window.
+                        "--disable-popup-blocking"));
         if (!exePath.isEmpty()) opts.setExecutablePath(Paths.get(exePath));
         return opts;
     }

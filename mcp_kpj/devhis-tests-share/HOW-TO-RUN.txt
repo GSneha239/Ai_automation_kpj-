@@ -45,24 +45,27 @@ To run ONE flow instead of all, open Command Prompt in the folder and type:
 ------------------------------------------------------------------------
  CHOOSING THE ENVIRONMENT
 ------------------------------------------------------------------------
-There are three QA environments. Which one you hit depends on WHICH FILE you
+There are four environments. Which one you hit depends on WHICH FILE you
 run - the URL and login are built into the wrapper:
 
-       run.bat        -> devhis   https://devhis.sancyberhad.com
-       run-klg.bat    -> KLG QA   https://klg-nhisqa.kpjhealth.com.my
-       run-dsh.bat    -> DSH QA   https://dsh-nhisqa.kpjhealth.com.my
+       run.bat           -> devhis    https://devhis.sancyberhad.com
+       run-klg.bat       -> KLG QA    https://klg-nhisqa.kpjhealth.com.my
+       run-dsh.bat       -> DSH QA    https://dsh-nhisqa.kpjhealth.com.my
+       run-nhistest.bat  -> NHIS Test https://nhistest.sancyberhad.com  (admin Tieba)
 
-All three take the SAME optional flow argument, so the same flow can be run on
+All four take the SAME optional flow argument, so the same flow can be run on
 any environment:
 
-       run.bat        Emergency_page.EmergencyListView      (devhis)
-       run-klg.bat    Emergency_page.EmergencyListView      (KLG)
-       run-dsh.bat    Emergency_page.EmergencyListView      (DSH)
+       run.bat           Emergency_page.EmergencyListView      (devhis)
+       run-klg.bat       Emergency_page.EmergencyListView      (KLG)
+       run-dsh.bat       Emergency_page.EmergencyListView      (DSH)
+       run-nhistest.bat  Emergency_page.EmergencyListView      (NHIS Test)
 
 With no argument they run ALL flows on that environment.
 
 Results go to a SEPARATE folder per environment, so one run never clobbers
-another:   test-output\ (devhis),  test-output-klg\,  test-output-dsh\
+another:   test-output\ (devhis),  test-output-klg\,  test-output-dsh\,
+           test-output-nhistest\
 
 To send a run somewhere else, set OUTDIR first, in the SAME command line:
 
@@ -79,23 +82,29 @@ To send a run somewhere else, set OUTDIR first, in the SAME command line:
 ------------------------------------------------------------------------
  RUN ONE MODULE (all of its flows) ON ONE ENVIRONMENT
 ------------------------------------------------------------------------
-Double-click  run-<module>-<environment>.bat  - 8 modules x 3 environments:
+Double-click  run-<module>-<environment>.bat  - every module x 4 environments
+(devhis, klg, dsh, nhistest):
 
-   MODULE           FILES                                 PACKAGE
-   OP               run-op-devhis|klg|dsh.bat             Op_Page
-   IP               run-ip-devhis|klg|dsh.bat             Ip
-   Emergency        run-emergency-devhis|klg|dsh.bat      Emergency_page
-   System Config    run-sysconfig-devhis|klg|dsh.bat      SystemConfiguration_page
-   Billing          run-billing-devhis|klg|dsh.bat        Billing_page
-   Nursing Station  run-nursing-devhis|klg|dsh.bat        NursingStation_page
-   Telemedicine     run-telemedicine-devhis|klg|dsh.bat   Telemedicine_page
-   App Config       run-appconfig-devhis|klg|dsh.bat      ApplicationConfiguration_page
+   MODULE           FILES                                          PACKAGE
+   OP               run-op-devhis|klg|dsh|nhistest.bat             Op_Page
+   OP - Appointment run-appointment-devhis|klg|dsh|nhistest.bat    Op_Page.Appointment
+   IP               run-ip-devhis|klg|dsh|nhistest.bat             Ip
+   Emergency        run-emergency-devhis|klg|dsh|nhistest.bat      Emergency_page
+   System Config    run-sysconfig-devhis|klg|dsh|nhistest.bat      SystemConfiguration_page
+   Billing          run-billing-devhis|klg|dsh|nhistest.bat        Billing_page
+   Nursing Station  run-nursing-devhis|klg|dsh|nhistest.bat        NursingStation_page
+   Telemedicine     run-telemedicine-devhis|klg|dsh|nhistest.bat   Telemedicine_page
+   App Config       run-appconfig-devhis|klg|dsh|nhistest.bat      ApplicationConfiguration_page
+   Ancillary        run-ancillary-devhis|klg|dsh|nhistest.bat      AncillaryServices_page
+   Inventory        run-inventory-devhis|klg|dsh|nhistest.bat      Inventory_page
+   Investigation    run-investigation-devhis|klg|dsh|nhistest.bat  Investigation_page
+   OT               run-ot-devhis|klg|dsh|nhistest.bat             OT_page
 
 Each writes to its own folder:  test-output-<module>-<environment>\
 e.g.  run-ip-klg.bat  ->  test-output-ip-klg\reports\  +  FAILED_STEPS.html
 
 The module list and the environment URLs live ONCE in module-runner.bat - add a
-module there and all three environments follow. Do NOT run module-runner.bat
+module there and all four environments follow. Do NOT run module-runner.bat
 directly.
 
 (The older run-op.bat / run-ip.bat / run-emergency.bat / run-appconfig.bat still
@@ -105,6 +114,7 @@ work - they are the devhis-only versions and write to test-output-<module>\.)
  RUN THE 6 CORE SCREENS ON ONE ENVIRONMENT
 ------------------------------------------------------------------------
    run-core-flows-devhis.bat  /  run-core-flows-klg.bat  /  run-core-flows-dsh.bat
+   /  run-core-flows-nhistest.bat
 
 Runs OP Registration, OP Queue Management, IP Admission, Emergency Registration
 (Conscious + Unconscious) and System Configuration - User in ONE pass, into

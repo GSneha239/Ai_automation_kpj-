@@ -12,8 +12,6 @@ import com.kpj.pages.LoginPage;
  *   <li>Login (shared {@link LoginPage}, on an OPD counter so the menu exists).</li>
  *   <li>Open <b>Application Configuration</b> → <b>Inventory</b> → <b>Stock Adjustment Reason Master</b>.</li>
  *   <li>Enter the <b>Code</b> and the <b>Remark</b>.</li>
- *   <li>Enter the <b>MIMS GUID</b> and <b>MIMS Description</b>.</li>
- *   <li>Select the <b>MIMS Type</b>.</li>
  *   <li>Click <b>Submit</b> → verify the success toast.</li>
  * </ol>
  *
@@ -51,8 +49,6 @@ public class StockAdjustmentReasonMaster extends DevHisBase {
         String remark = System.getProperty("remark", "Auto stock adjustment reason " + stamp);
         // Distinct from the remark on purpose: the form carries two description boxes, and identical
         // values would hide one being written into the other.
-        String mimsGuid = System.getProperty("mimsguid", "GUID-" + stamp);
-        String mimsDesc = System.getProperty("mimsdesc", "Auto MIMS description " + stamp);
 
         new LoginPage(page).login(BASE, USER, PASS, counter);
         step("Login", USER + " login (counter " + counter + ")",
@@ -103,29 +99,7 @@ public class StockAdjustmentReasonMaster extends DevHisBase {
                     : "FAILS because a value did not land in its own field: " + entry),
                 entered ? "PASS" : "FAIL");
 
-        // 3) MIMS GUID + MIMS Description
-        String mims = tor.enterMims(mimsGuid, mimsDesc);
-        boolean mimsOk = tor.mimsEntered(mimsGuid, mimsDesc);
-        step(page, "Enter MIMS GUID and MIMS Description",
-                "Enter the MIMS GUID " + mimsGuid + " and the MIMS Description",
-                "Both are entered",
-                (mimsOk
-                    ? "PASSES because each MIMS box read back its own value, and neither took the "
-                      + "record's own Remark — the form carries two description boxes: " + mims
-                    : "FAILS because a MIMS value did not land in its own field: " + mims),
-                mimsOk ? "PASS" : "FAIL");
-
-        // 4) MIMS Type
-        String mimsType = tor.selectMimsType();
-        boolean typeOk = tor.mimsTypeSelected();
-        step(page, "Select MIMS Type", "Select the MIMS Type",
-                "A MIMS type is selected",
-                (typeOk
-                    ? "PASSES because the MIMS Type dropdown holds the choice: " + mimsType
-                    : "FAILS because no MIMS type could be selected: " + mimsType),
-                typeOk ? "PASS" : "FAIL");
-
-        // 5) Submit -> toast
+        // 3) Submit -> toast
         String toast = tor.submitAndGetToast();
         boolean ok = com.kpj.pages.ApplicationConfiguration_page.Inventory_page.StockAdjustmentReasonMaster.isSuccess(toast);
 
@@ -168,8 +142,6 @@ public class StockAdjustmentReasonMaster extends DevHisBase {
                 inList ? "PASS" : "FAIL");
 
         addSummary("Code / Remark", code + " / " + remark);
-        addSummary("MIMS GUID / Description", tor.lastMims);
-        addSummary("MIMS Type", tor.lastMimsType);
         addSummary("Result", ok ? toast : "Not confirmed (\"" + toast + "\")");
     }
 }

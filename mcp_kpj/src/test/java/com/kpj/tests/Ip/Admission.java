@@ -129,9 +129,12 @@ public class Admission extends DevHisBase {
         // is actually required (Non-Presence off); scrollToSection brings the grid into frame for the screenshot.
         scrollToSection("Vacant\\s*Bed");
         String bedRow = ip.tickVacantBedRow();
-        boolean bedRowOk = bedRow != null && bedRow.startsWith("Bed=");
-        step(page, "Tick a Vacant Bed row", "In the Census Bed List grid, tick the checkbox of any available (non-occupied) bed",
-                "A bed row is selected", bedRow, bedRowOk ? "PASS" : "FAIL");
+        // A Census bed, else a bed from the Non-Census (Lodger) list, else Non-Presence admission (no bed needed) — the
+        // admission can still be saved in each case, so only a bed step that did none of them is a failure.
+        boolean bedRowOk = bedRow != null && (bedRow.startsWith("Bed=") || bedRow.startsWith("NonPresence="));
+        step(page, "Tick a Vacant Bed row", "Tick an available bed: in the Census Bed List, else in the Non-Census (Lodger) Bed List; "
+                        + "if neither has one, turn Non-Presence on (no bed is needed)",
+                "A bed row is selected, or the admission is switched to Non-Presence", bedRow, bedRowOk ? "PASS" : "FAIL");
 
         // Section 6 — Additional Doctors (expand the panel, pick Classification + Doctor, Add).
         String addDocs = ip.fillAdditionalDoctors();
@@ -148,9 +151,23 @@ public class Admission extends DevHisBase {
         addSummary("Vacant Bed", (bed == null ? "-" : bed) + " | " + (bedRow == null ? "-" : bedRow));
         addSummary("Additional Doctors", addDocs == null ? "-" : addDocs);
 
+        // Every section is filled — now re-check the whole form once more and refill anything that is empty. The app's own
+        // async lookup and the re-render after a bed / Non-Presence change can wipe fields that were entered earlier, and
+        // Save only ever names one missing field at a time.
+        String recheck = ip.recheckAndRefillAll();
+        boolean recheckOk = ip.recheckEmptyAfter.isEmpty();
+        step(page, "Re-check all fields and refill any empty one",
+                "After all sections are filled, scan the whole form for empty mandatory fields (patient, payor, admission, bed, time) and refill them",
+                "No mandatory field is left empty before Save", recheck, recheckOk ? "PASS" : "MANUAL");
+        addSummary("Re-check before Save", recheck);
+
         int tabsBefore = page.context().pages().size();
         String toast = ip.saveAdmissionAndGetToast();
-        boolean ok = toast != null && toast.toLowerCase().contains("admitted");
+        // VERIFY the toast: the exact success message "Patient Admitted Successfully." — not just any text containing
+        // "admitted" (which "Patient is already admitted" would also satisfy). The toast element reads "×KPJ PortalPatient
+        // Admitted Successfully." because its title and message are concatenated, so the prefix is stripped before comparing.
+        String toastText = toast == null ? "" : toast.replaceFirst("^[\\u00d7x\\s]*KPJ\\s*Portal\\s*", "").trim();
+        boolean ok = toastText.toLowerCase().matches(".*\\bpatient\\s+admitted\\s+successfully\\b.*");
         // IUDAdmission rejects an incomplete form WITHOUT a toast, so "no toast" on its own says nothing. Name the
         // mandatory fields that are still empty — otherwise every missing field costs a whole run to discover.
         // Prefer the APP's own verdict where the build offers one (it tags each offender with `has-error`); our
@@ -169,7 +186,7 @@ public class Admission extends DevHisBase {
                         : missing.isEmpty()
                             ? " (and no mandatory field is empty — the save was rejected silently)"
                             : " — mandatory fields still EMPTY (our scan, unconfirmed by the app): " + missing)
-                : toast;
+                : (ok ? "Toast verified — the screen showed \"" + toastText + "\" (expected 'Patient Admitted Successfully.')" : toast);
         // A rejection toast like "Please Enter First Name!" reads as if the field was simply left blank — it
         // was NOT: it was filled, then the app's own async patient-lookup (fired by NRIC/Mobile/Passport) wiped
         // it back out before Save could see it. Lead the FAIL reason with that cause-and-effect explicitly

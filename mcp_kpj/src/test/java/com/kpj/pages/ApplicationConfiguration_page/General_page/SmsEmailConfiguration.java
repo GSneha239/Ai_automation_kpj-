@@ -18,6 +18,39 @@ public class SmsEmailConfiguration extends BasePage {
 
     public SmsEmailConfiguration(Page page) { super(page); }
 
+    /** Screenshot taken while the toast was on screen (the report's toast evidence). */
+    public byte[] toastPng;
+
+    /**
+     * Every row of the "List of SMS/E-mail Configuration" grid, as {@code {t: whole row text, e: event name}}.
+     *
+     * <p>The grid is a virtualised ui-grid: only the rows in view are in the DOM (about 8 of 23), so reading
+     * the DOM as it stands reports most events as "not configured yet" and every save of one of them is then
+     * refused with "Record already exist!". The viewport is therefore scrolled top to bottom, collecting rows
+     * as they render.</p>
+     */
+    @SuppressWarnings("unchecked")
+    public java.util.List<java.util.Map<String, Object>> gridRows() {
+        Object r = page.evaluate("() => new Promise(async (resolve) => {"
+                + " const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                + " const sleep=ms=>new Promise(r=>setTimeout(r,ms));"
+                + " const vis=e=>!!e && !!(e.offsetWidth||e.offsetHeight||e.getClientRects().length);"
+                + " const vp=[...document.querySelectorAll('.ui-grid-viewport')].find(vis);"
+                + " const seen=new Map();"
+                + " const grab=()=>document.querySelectorAll('.ui-grid-row').forEach(row=>{ if(!vis(row)) return;"
+                + "   const t=norm(row.textContent); if(!t || seen.has(t)) return;"
+                + "   const cells=[...row.querySelectorAll('.ui-grid-cell')].map(c=>norm(c.textContent)).filter(x=>x);"
+                + "   seen.set(t, cells[0]||''); });"
+                + " if(!vp){ grab(); return resolve([...seen].map(([t,e])=>({t:t,e:e}))); }"
+                + " vp.scrollTop=0; await sleep(300); grab();"
+                + " const step=Math.max(40, Math.floor(vp.clientHeight*0.6));"
+                + " for(let i=0;i<300;i++){ const before=vp.scrollTop; vp.scrollTop=before+step; await sleep(200); grab();"
+                + "   if(vp.scrollTop===before || vp.scrollTop+vp.clientHeight>=vp.scrollHeight-1){ await sleep(250); grab(); break; } }"
+                + " vp.scrollTop=0;"
+                + " resolve([...seen].map(([t,e])=>({t:t,e:e}))); })");
+        return r instanceof java.util.List ? (java.util.List<java.util.Map<String, Object>>) r : new java.util.ArrayList<>();
+    }
+
     public String lastBodyText = "", lastControls = "", lastMenu = "", lastLocation = "", lastEvent = "",
             lastSms = "", lastEmail = "", lastSendTo = "", lastToast = "", lastSaveDiagnostics = "",
             lastListCheck = "", lastRoute = "", lastPanels = "";
@@ -80,12 +113,14 @@ public class SmsEmailConfiguration extends BasePage {
         try { page.waitForFunction("() => window.angular", null,
                 new Page.WaitForFunctionOptions().setTimeout(20000)); } catch (Exception ignore) { }
 
-        clickMenu("^\\s*application\\s*configuration\\s*$");
-        clickMenu("^\\s*general\\s*$");
+        // Expand each level only if it is not already open: a click on an open entry CLOSES it, and an unscoped lookup can
+        // hit a same-named entry elsewhere in the sidebar. General is looked up INSIDE Application Configuration only.
+        expandMenuEntry(null, "^\\s*application\\s*config(uration)?\\s*$");
+        expandMenuEntry("^\\s*application\\s*config(uration)?\\s*$", "^\\s*general\\s*$");
         lastMenu = describeMenu();
 
         Object href = page.evaluate("() => {" + JS
-                + " const a=[...document.querySelectorAll('a[href]')]"
+                + " const a=[...document.querySelectorAll('a[href]')].filter(vis)"
                 + "   .find(x=>/^\\s*sms\\s*e-?\\s*mail\\s*configuration\\s*$/i.test(norm(x.textContent)));"
                 + " if(!a) return ''; a.id='__seMenu'; return a.getAttribute('href')||''; }");
         lastRoute = href == null ? "" : href.toString();
@@ -104,6 +139,18 @@ public class SmsEmailConfiguration extends BasePage {
                 try { page.navigate(baseUrl + hash); } catch (Exception ignore) { }
                 waitForAngular(3500);
             }
+        }
+        // The route resolving is not the screen rendering: the view loads after the hash changes, and a run that starts
+        // looking for the Search / Add dropdowns straight away finds none. Wait for the screen's OWN controls.
+        if (onScreen()) {
+            try {
+                page.waitForFunction("() => [...document.querySelectorAll(\"select[ng-model^='SmsEmailConfig.']\")]"
+                        + ".some(e=>e.offsetWidth||e.offsetHeight||e.getClientRects().length)",
+                        null, new Page.WaitForFunctionOptions().setTimeout(20000));
+            } catch (Exception e) {
+                System.out.println("SmsEmailConfiguration.nav: the screen's own dropdowns did not render within 20s");
+            }
+            waitForAngular(600);
         }
         Object body = page.evaluate("() => (document.body? document.body.innerText : '')"
                 + ".replace(/\\s+/g,' ').trim().slice(0,300)");
@@ -254,23 +301,27 @@ public class SmsEmailConfiguration extends BasePage {
      * @param nth 0 for the first unconfigured event, 1 for the next, and so on
      */
     public String selectEvent(int nth) {
+        // The events already configured, read from EVERY grid row (the grid renders only the rows in view).
+        java.util.List<String> configured = new java.util.ArrayList<>();
+        for (java.util.Map<String, Object> row : gridRows()) {
+            Object ev = row.get("e");
+            if (ev != null && !ev.toString().isEmpty()) configured.add(ev.toString().toLowerCase());
+        }
         Object info = page.evaluate("(a) => {" + JS + PANEL
                 + " document.querySelectorAll('#__seEvent').forEach(e=>e.removeAttribute('id'));"
                 + " const p=panelOf(a.p);"
                 + " const pool=p? ctrlsIn(p,'select') : [];"
                 + " const e=pool.find(s=>/^eventid$/i.test(tail(s)));"
                 + " if(!e) return null; e.id='__seEvent';"
-                + " const rows=[...document.querySelectorAll('.ui-grid-row,tr')].filter(vis)"
-                + "   .map(t=>norm(t.textContent)).filter(t=>t);"
                 + " const reals=[...e.options].map((o,i)=>({t:norm(o.text),i}))"
                 + "   .filter(x=>x.t && !/^-*\\s*select/i.test(x.t));"
-                + " const taken=x=>rows.some(r=>r.startsWith(x.t));"
+                + " const taken=x=>a.taken.includes(x.t.toLowerCase());"
                 + " const free=reals.filter(x=>!taken(x));"
                 + " const pool2 = free.length? free : reals;"
                 + " const pick = pool2[Math.min(a.n, pool2.length-1)];"
-                + " return pick? {index:pick.i, text:pick.t, free:free.length, total:reals.length,"
+                + " return pick? {index:pick.i, text:pick.t, free:free.length, total:reals.length, rows:a.taken.length,"
                 + "   skipped:reals.filter(taken).map(x=>x.t).slice(0,6).join(', ')} : null; }",
-                java.util.Map.of("p", ADD_PANEL, "n", Math.max(0, nth)));
+                java.util.Map.of("p", ADD_PANEL, "n", Math.max(0, nth), "taken", configured));
         if (info == null) { lastEvent = "(no Event dropdown in the Add panel)"; return lastEvent; }
         @SuppressWarnings("unchecked")
         java.util.Map<String, Object> m = (java.util.Map<String, Object>) info;
@@ -286,7 +337,7 @@ public class SmsEmailConfiguration extends BasePage {
         Object t = page.evaluate("() => { const e=document.getElementById('__seEvent');"
                 + " return e? ((e.options[e.selectedIndex]||{}).text||'').trim() : ''; }");
         lastEvent = (t == null ? "" : t.toString()) + " [SmsEmailConfig.eventid, "
-                + m.get("free") + " of " + m.get("total") + " events not configured yet"
+                + m.get("free") + " of " + m.get("total") + " events not configured yet (" + m.get("rows") + " grid rows read)"
                 + (String.valueOf(m.get("skipped")).isEmpty() ? "" : "; already configured: " + m.get("skipped"))
                 + "]";
         System.out.println("SmsEmailConfiguration: Event = " + lastEvent);
@@ -402,6 +453,20 @@ public class SmsEmailConfiguration extends BasePage {
             } catch (Exception ignore) { }
         }
 
+        // Screenshot the toast while it is still on screen (and fully faded in) — a shot taken after the step misses it.
+        toastPng = null;
+        if (!toast.isEmpty()) {
+            for (int w = 0; w < 15; w++) {
+                boolean solid = Boolean.TRUE.equals(page.evaluate("() => { const t=[...document.querySelectorAll('.toast,.toast-message,[id^=toast]')]"
+                        + ".filter(el=>el.offsetParent!==null && (el.textContent||'').trim()); if(!t.length) return true;"
+                        + " return t.every(el=>{ let o=1; for(let n=el; n && n!==document.body; n=n.parentElement) o*=parseFloat(getComputedStyle(n).opacity||'1'); return o>=0.98; }); }"));
+                if (solid) break;
+                page.waitForTimeout(100);
+            }
+            try { toastPng = page.screenshot(new Page.ScreenshotOptions().setTimeout(8000)); }
+            catch (Exception e) { System.out.println("SmsEmailConfiguration: toast screenshot failed - " + e.getMessage()); }
+        }
+
         lastSaveDiagnostics = (clicked == null ? "" : clicked.toString())
                 + (toast.isEmpty() ? "; no message within 20s" : "");
         lastToast = toast;
@@ -428,8 +493,12 @@ public class SmsEmailConfiguration extends BasePage {
             if (!n.isEmpty() && !n.startsWith("(")) needles.add(n);
         }
         try {
-            Object hit = page.evaluate("(ns) => {" + JS
-                    + " const rows=[...document.querySelectorAll('tr,.ui-grid-row')].filter(vis)"
+            // Every grid row, not only the ones in view (the grid is virtualised — a freshly saved row is appended at
+            // the bottom of 20+ rows and is not rendered until scrolled to).
+            java.util.List<String> allRows = new java.util.ArrayList<>();
+            for (java.util.Map<String, Object> row : gridRows()) allRows.add(String.valueOf(row.get("t")));
+            Object hit = page.evaluate("(a) => { const ns=a.ns; const allRows=a.rows;" + JS
+                    + " const rows=allRows.length? allRows : [...document.querySelectorAll('tr,.ui-grid-row')].filter(vis)"
                     + "   .map(t=>norm(t.textContent)).filter(t=>t);"
                     + " const heads=[...document.querySelectorAll('.ui-grid-header-cell,th')].filter(vis)"
                     + "   .map(h=>norm(h.textContent)).filter(t=>t).join(' | ');"
@@ -441,7 +510,7 @@ public class SmsEmailConfiguration extends BasePage {
                     + "             ? 'rows exist for \"'+ns[0]+'\" but none carries every value chosen ('"
                     + "               +partial.map(t=>t.slice(0,60)).join(' / ')+')'"
                     + "             : 'not in the list ('+rows.length+' rows shown)'))"
-                    + "        +'  [columns: '+(heads||'none')+']'; }", needles);
+                    + "        +'  [columns: '+(heads||'none')+']'; }", java.util.Map.of("ns", needles, "rows", allRows));
             lastListCheck = "looked for a row carrying " + needles + " -> " + (hit == null ? "" : hit);
         } catch (Exception e) {
             lastListCheck = "could not read the list: " + e.getMessage().split("\n")[0];

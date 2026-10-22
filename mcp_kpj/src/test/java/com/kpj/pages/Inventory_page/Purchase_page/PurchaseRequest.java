@@ -243,9 +243,86 @@ public class PurchaseRequest extends BasePage {
                 + "   || [...d.querySelectorAll('button,a')].filter(vis)"
                 + "     .find(x=>/^\\s*search\\s*$/i.test(norm(x.textContent)));"
                 + " if(b) b.click(); }");
-        waitForAngular(3500);
-        lastPickerSearch = "clicked Search -> " + pickerRowCount() + " row(s) in the item picker";
+        // A validation message (toast) the screen shows instead of searching — read it before it fades.
+        String shown = "";
+        try {
+            page.waitForTimeout(600);
+            Object msg = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                    + " return [...document.querySelectorAll('.toast-message,.toast,.jAlert,.sweet-alert,.alert,[id^=toast]')]"
+                    + "   .filter(e=>e.offsetWidth||e.offsetHeight||e.getClientRects().length)"
+                    + "   .map(e=>norm(e.textContent).replace(/^\\S?\\s*KPJ Portal\\s*/i,'')).filter(t=>t)"
+                    + "   .filter((t,i,a)=>a.indexOf(t)===i).join(' | ').slice(0,200); }");
+            shown = msg == null ? "" : msg.toString();
+        } catch (Exception ignore) { }
+        waitForAngular(3000);
+        lastPickerSearch = "clicked Search -> " + pickerRowCount() + " row(s) in the item picker"
+                + (shown.isEmpty() ? "" : "; the screen said: '" + shown + "'");
         System.out.println("PurchaseRequest: " + lastPickerSearch);
+    }
+
+    /** What {@link #selectStore()} chose, or why it could not. */
+    public String lastStore = "";
+
+    /**
+     * Select the <b>Store</b> on the request form ({@code PurchaseRequest.StoreID}) — the first real option, waiting up to
+     * 20s for the app to fill the list. The item picker's Search ("Please Select Store Name !!!!") depends on it.
+     */
+    public String selectStore() {
+        lastStore = selectStoreIn("select[ng-model='PurchaseRequest.StoreID']", "Pharmacy (Central)", "Store", 20000);
+        System.out.println("PurchaseRequest: Store = " + lastStore);
+        return lastStore;
+    }
+
+    public boolean storeSelected() { return lastStore != null && !lastStore.isEmpty() && !lastStore.startsWith("("); }
+
+    /** What {@link #selectPickerStore()} chose, or why it could not. */
+    public String lastPickerStore = "";
+
+    /** Select the Store INSIDE the Item Search dialog ({@code ItemSearch.SearchStoreID}); its Search needs one. */
+    public String selectPickerStore() {
+        String want = lastStore == null ? "" : lastStore.replaceAll("\\s*\\(of \\d+ store\\(s\\)\\)$", "");
+        lastPickerStore = selectStoreIn(".modal select[ng-model='ItemSearch.SearchStoreID']", want, "dialog Store", 15000);
+        // Choosing the store makes the dialog reload its dependent lists; a Search clicked straight away can return 0 rows.
+        page.waitForTimeout(1500);
+        System.out.println("PurchaseRequest: dialog Store = " + lastPickerStore);
+        return lastPickerStore;
+    }
+
+    public boolean pickerStoreSelected() {
+        return lastPickerStore != null && !lastPickerStore.isEmpty() && !lastPickerStore.startsWith("(");
+    }
+
+    /**
+     * Pick a Store in the dropdown matching {@code css}: the one named {@code want} if listed, else a "pharmacy" store
+     * (stock-bearing), else the first real option. Selected by index with the dropdown's own change handling and read back,
+     * so a selection that does not stick is reported rather than assumed (writing the model by hand put it back on "-Select-").
+     */
+    private String selectStoreIn(String css, String want, String label, int waitMs) {
+        try {
+            page.waitForFunction("(s) => { const e=[...document.querySelectorAll(s)].find(x=>x.offsetWidth||x.offsetHeight||x.getClientRects().length);"
+                    + " return !!e && [...e.options].some(o=>o.value && !/^-*\\s*select/i.test((o.text||'').trim())); }",
+                    css, new Page.WaitForFunctionOptions().setTimeout(waitMs));
+        } catch (Exception ignore) { /* reported below from what is really there */ }
+        Object r = page.evaluate("([s, want, label]) => {" + JS
+                + " const e=[...document.querySelectorAll(s)].find(vis);"
+                + " if(!e) return '(no '+label+' dropdown found)';"
+                + " const reals=[...e.options].map((o,i)=>({o,i})).filter(x=>x.o.value && !/^-*\\s*select/i.test(norm(x.o.text)));"
+                + " if(!reals.length) return '(the '+label+' list is empty: '+e.options.length+' option(s), none selectable)';"
+                + " const pick=(want && reals.find(x=>norm(x.o.text)===norm(want)))"
+                + "   || reals.find(x=>/^pharmacy/i.test(norm(x.o.text))) || reals[0];"
+                + " e.selectedIndex=pick.i;"
+                + " e.dispatchEvent(new Event('change',{bubbles:true}));"
+                + " try{ angular.element(e).triggerHandler('change'); }catch(x){}"
+                + " return 'ok|'+reals.length; }", java.util.Arrays.asList(css, want == null ? "" : want, label));
+        waitForAngular(900);
+        String res = r == null ? "" : r.toString();
+        if (!res.startsWith("ok|")) return res;
+        Object shown = page.evaluate("(s) => { const e=[...document.querySelectorAll(s)].find(x=>x.offsetWidth||x.offsetHeight||x.getClientRects().length);"
+                + " return e ? ((e.options[e.selectedIndex]||{}).text||'').replace(/\\s+/g,' ').trim() : ''; }", css);
+        String text = shown == null ? "" : shown.toString();
+        return (text.isEmpty() || text.matches("^-*\\s*[Ss]elect.*"))
+                ? "(the " + label + " did not stay selected: shows \"" + text + "\")"
+                : text + " (of " + res.substring(3) + " store(s))";
     }
 
     /** How many SELECTABLE items the picker lists — same filter/row-scoping proven on sibling screens. */
@@ -496,6 +573,9 @@ public class PurchaseRequest extends BasePage {
                 || t.contains("inserted") || t.contains("updated");
     }
 
+    /** What the server answered to the last Save (status, path, start of the body) — names the cause behind a bare "Error!". */
+    public String lastSaveHttp = "";
+
     public String saveAndGetToast() {
         try {
             page.evaluate("() => { try{ if(window.toastr) toastr.clear(); }catch(e){}"
@@ -504,6 +584,21 @@ public class PurchaseRequest extends BasePage {
         } catch (Exception ignore) { }
         waitForAngular(300);
 
+        final java.util.List<String> saveHttp = new java.util.concurrent.CopyOnWriteArrayList<>();
+        final java.util.function.Consumer<com.microsoft.playwright.Response> onSaveResp = r -> {
+            try {
+                String m = r.request().method();
+                if (r.url().toLowerCase().contains("/api/") && r.request().resourceType().matches("xhr|fetch")
+                        && ("POST".equals(m) || "PUT".equals(m) || "DELETE".equals(m))
+                        && !r.url().contains("getInternalmsgCountOnly")) {
+                    String body = r.text();
+                    body = body == null ? "" : body.replaceAll("\\s+", " ");
+                    saveHttp.add(r.status() + " " + m + " " + r.url().replaceFirst("^https?://[^/]+", "")
+                            + " -> " + body.substring(0, Math.min(260, body.length())));
+                }
+            } catch (Exception ignore) { }
+        };
+        page.onResponse(onSaveResp);
         Object clicked = page.evaluate("() => {" + JS
                 + " const b=[...document.querySelectorAll('button,a,input[type=submit],input[type=button]')]"
                 + "   .filter(vis).find(x=>/^\\s*save\\s*$/i.test(norm(x.textContent)||x.value||'')"
@@ -531,6 +626,8 @@ public class PurchaseRequest extends BasePage {
             } catch (Exception ignore) { }
             if (toast.isEmpty()) page.waitForTimeout(400);
         }
+        page.offResponse(onSaveResp);
+        lastSaveHttp = String.join(" | ", saveHttp);
         lastSaveDiagnostics = clickedText + (toast.isEmpty() ? "; no message within 15s" : "");
         lastSave = toast;
         System.out.println("PurchaseRequest: save -> " + lastSaveDiagnostics + " toast=\"" + toast + "\"");

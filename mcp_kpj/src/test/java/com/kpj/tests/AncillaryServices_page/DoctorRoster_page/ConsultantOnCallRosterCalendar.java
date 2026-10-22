@@ -86,12 +86,17 @@ public class ConsultantOnCallRosterCalendar extends DevHisBase {
         // 4) Verify the popup
         String popup = roster.capturePrintPopup();
         boolean popupOk = popup != null && !popup.isEmpty();
-        step(page, "Verify print popup", "Wait for the print popup / report to appear",
-                "A print popup (in-page dialog or report tab) is shown",
-                popupOk ? popup
-                        : "No in-page popup and no report tab appeared — a NATIVE Chromium print dialog "
-                          + "cannot be observed by Playwright (browser chrome, not DOM)",
-                popupOk ? "PASS" : "FAIL");
+        String popupActual = popupOk ? popup
+                : "No in-page popup and no report tab appeared — a NATIVE Chromium print dialog "
+                  + "cannot be observed by Playwright (browser chrome, not DOM)";
+        if (popupOk && roster.printPng != null && roster.printPng.length > 0) {
+            // Screenshot of the print window itself, not of the calendar page behind it.
+            step(roster.printPng, "Verify print popup", "Wait for the print popup / report to appear",
+                    "A print popup (in-page dialog or report tab) is shown", popupActual, "PASS");
+        } else {
+            step(page, "Verify print popup", "Wait for the print popup / report to appear",
+                    "A print popup (in-page dialog or report tab) is shown", popupActual, popupOk ? "PASS" : "FAIL");
+        }
 
         // 5) Cancel
         String cancelled = roster.cancelPrintPopup();

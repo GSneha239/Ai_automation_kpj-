@@ -134,14 +134,18 @@ public class MultipleAppointmentBookingPage extends BasePage {
         waitForAngular(150);
     }
 
-    /** Select Title = Mr (index 1 in the first dropdown). */
+    /**
+     * Select Title = Mister. Confirmed live (2026-09-30) Save was rejected with "Please Enter Prefix !"
+     * even though this method reported success — {@code titleSelect()} resolves to the bare CSS selector
+     * "select" (the FIRST {@code <select>} anywhere on the page, whatever it happens to be), and
+     * {@code selectOption(index=1)} picked its 2nd option blindly, never touching the real
+     * {@code PatientData.PrefixID} select at all. Also, this environment's Title list has no "Mr"/"Mr."
+     * — the plain-male entry is spelled "Mister" (same master data as BookAppointmentPage /
+     * DoctorwiseAppointmentSchedulePage, confirmed via their dropdownResults diagnostic). Target the
+     * real field by ng-model instead of DOM position.
+     */
     public void selectTitleMr() {
-        try {
-            page.locator(titleSelect()).first().selectOption(new SelectOption().setIndex(1));
-        } catch (Exception e) {
-            // Fallback: direct DOM manipulation
-            selectOptionByIndex(titleSelect(), 1);
-        }
+        setSelectByNgModel("PrefixID", "Mister", "Title");
         waitForAngular(300);
     }
 
@@ -292,11 +296,18 @@ public class MultipleAppointmentBookingPage extends BasePage {
             Object res = page.evaluate(
                     "(args) => {" +
                     "  const ngPart = args[0], text = args[1];" +
+                    "  const norm = s => (s||'').trim().replace(/\\.+$/,'').toLowerCase();" +
                     "  const el = [...document.querySelectorAll('select')].find(s => (s.getAttribute('ng-model')||'').indexOf(ngPart) >= 0);" +
                     "  if (!el) return { ok:false, status:'select-not-found' };" +
-                    "  let opt = [...el.options].find(o => (o.text||'').trim().toLowerCase() === text.toLowerCase());" +
-                    "  if (!opt) opt = [...el.options].find(o => (o.text||'').toLowerCase().includes(text.toLowerCase()));" +
-                    "  if (!opt) return { ok:false, status:'option-not-found' };" +
+                    "  const want = norm(text);" +
+                    "  let opt = [...el.options].find(o => norm(o.text) === want);" +
+                    // Word-boundary fallback, not a plain substring — confirmed live (2026-09-30) a naive
+                    // includes() picks "Mrs" when searching "Mr" (mr IS a substring of mrs), silently saving the
+                    // WRONG title. See BookAppointmentPage.installHelpers() for the identical fix + rationale.
+                    "  if (!opt) { const esc = want.replace(/[.*+?^${}()|[\\]\\\\]/g,'\\\\$&');" +
+                    "    const re = new RegExp('(^|[^a-z0-9])'+esc+'($|[^a-z0-9])','i');" +
+                    "    opt = [...el.options].find(o => re.test(norm(o.text))); }" +
+                    "  if (!opt) return { ok:false, status:'option-not-found', options:[...el.options].map(o=>o.text.trim()).join('|') };" +
                     "  el.value = opt.value; el.selectedIndex = opt.index;" +
                     "  el.dispatchEvent(new Event('change', { bubbles: true }));" +
                     "  const $ = window.jQuery || window.$;" +
@@ -418,19 +429,45 @@ public class MultipleAppointmentBookingPage extends BasePage {
      * Next) guarantees one real click lands in each of the 3 appointments.</p>
      */
     public void selectAppointmentSlots() {
+        selectAppointmentSlotsReporting();
+    }
+
+    /**
+     * Same as {@link #selectAppointmentSlots()}, but returns which of the 3 appointments actually got a
+     * real slot click — {@code result[i]} true only if appointment {@code i+1} had an available slot AND
+     * the click succeeded. The caller previously had no way to tell a real booking from a no-op: the test
+     * reported "Appt N booked" / PASS unconditionally, so a run where EVERY appointment found "no
+     * available slot" (0 of 3 clicked) still showed three green PASS steps, and the only sign anything was
+     * wrong was the later Save step failing with "Please Enter From Time !" — confirmed live (devhis,
+     * 29/09/2026) that this is exactly what happened. Report the true per-appointment outcome instead.
+     */
+    public boolean[] selectAppointmentSlotsReporting() {
         // Wait for appointment tables to render after date change
         waitForAngular(3000);
 
+        boolean[] result = new boolean[3];
         int clicked = 0;
         for (int apptIndex = 0; apptIndex < 3; apptIndex++) {
             // appointment 1 has no numeric suffix; appointments 2/3 use "1"/"2"
             String suffix = apptIndex == 0 ? "" : String.valueOf(apptIndex);
+            // The CurrentSchedule/NextSchedule tables are DOCTOR-specific — confirmed live (devhis,
+            // 29/09/2026) that with only a Department chosen (no Doctor/Modality) NEITHER table exists in
+            // the DOM at all, so "no available slot found" fired for every appointment every time
+            // regardless of department or date. Pick a Doctor/Modality for this appointment first (walking
+            // a few candidates, since not every doctor has a schedule loaded for the chosen date) — this
+            // was previously never done at all.
+            ensureDoctorModalityForSlot(suffix, apptIndex + 1);
             Object tagged = page.evaluate(
                     "(suffix) => {" +
                     "  const tables = [...document.querySelectorAll('table')];" +
                     "  const findByRepeat = (name) => {" +
+                    // Confirmed live (devhis, 29/09/2026): the real attribute is "val in CurrentSchedule
+                    // track by val.rowno", not the bare "val in CurrentSchedule" this used to require
+                    // BYTE-EXACT — that strict equality never matched, so this returned null and reported
+                    // "no available slot" even when the table had 96 fully enabled slots. Match the start
+                    // of the attribute instead.
                     "    const t = tables.find(tb => { const row = tb.querySelector('tr[ng-repeat]');" +
-                    "      return row && row.getAttribute('ng-repeat') === ('val in ' + name); });" +
+                    "      return row && (row.getAttribute('ng-repeat')||'').indexOf('val in ' + name + ' ') === 0; });" +
                     "    return t ? t.querySelector('input[type=checkbox]:not(:disabled):not(:checked)') : null;" +
                     "  };" +
                     "  const cb = findByRepeat('CurrentSchedule' + suffix) || findByRepeat('NextSchedule' + suffix);" +
@@ -446,6 +483,7 @@ public class MultipleAppointmentBookingPage extends BasePage {
             try {
                 page.locator("#__mabSlotCur").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000));
                 clicked++;
+                result[apptIndex] = true;
             } catch (Exception e) {
                 System.out.println("selectAppointmentSlots: real click failed for appointment " + (apptIndex + 1)
                         + " (" + e.getMessage() + ")");
@@ -455,10 +493,73 @@ public class MultipleAppointmentBookingPage extends BasePage {
         }
         System.out.println("Appointment slots clicked via Playwright: " + clicked + " (1 per appointment, 3 appointments)");
         waitForAngular(1500);
+        return result;
     }
 
     /**
-     * @deprecated Use {@link #selectAppointmentSlots()} — count parameter was ignored.
+     * Pick a Doctor/Modality ({@code PatientData.DoctorModalityID<suffix>}) for one appointment, walking
+     * candidates until the resulting CurrentSchedule/NextSchedule table for that appointment has at least
+     * one enabled (bookable) slot checkbox — not every doctor has a schedule loaded for the chosen date.
+     * Leaves the field alone if it is already set (e.g. a re-run of this method after a Department change
+     * re-populated the list but kept a valid selection). Gives up after 8 candidates.
+     */
+    private void ensureDoctorModalityForSlot(String suffix, int apptNum) {
+        String ng = "PatientData.DoctorModalityID" + suffix;
+        Object already = page.evaluate("(ng) => { const e=[...document.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')===ng); if(!e) return null;"
+                + " const t=((e.options[e.selectedIndex]||{}).text||'').trim(); return (t && !/^-*\\s*select\\s*-*$/i.test(t)) ? t : ''; }", ng);
+        if (already != null && !already.toString().isEmpty()) return;
+
+        // The list loads asynchronously and keeps GROWING for a while after Department is set — confirmed
+        // live (devhis, 29/09/2026) it can be caught at ~13 options (e.g. "A", "ABD AZIZ BIN HUSSEIN", ...,
+        // "Aron F") moments before it settles at 260+. Reading it too early can pick a doctor from that
+        // short-lived snapshot who is not really the environment's first real option and whose schedule
+        // behaves differently once the list (and whatever it's tied to) finishes loading. Wait for the
+        // option count to stop changing first, same pattern as RegistrationPage.awaitStableOptions().
+        try {
+            page.evaluate("(ng) => { window.__mabStab=window.__mabStab||{}; delete window.__mabStab[ng]; }", ng);
+            page.waitForFunction("(ng) => { const e=[...document.querySelectorAll('select')].find(x=>(x.getAttribute('ng-model')||'')===ng);"
+                            + " if(!e) return true; const n=e.options.length;"
+                            + " window.__mabStab=window.__mabStab||{}; const prev=window.__mabStab[ng]; window.__mabStab[ng]=n;"
+                            + " return prev!==undefined && prev===n && n>1; }",
+                    ng, new Page.WaitForFunctionOptions().setTimeout(20000).setPollingInterval(1200));
+        } catch (Exception ignore) {
+            System.out.println("ensureDoctorModalityForSlot: appointment " + apptNum + " — Doctor/Modality list never settled, proceeding anyway");
+        }
+
+        Object optsObj = page.evaluate("(ng) => { const e=[...document.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')===ng); if(!e) return [];"
+                + " return [...e.options].map(o=>o.text.trim()).filter(t=>t && !/^-*\\s*select\\s*-*$/i.test(t)); }", ng);
+        java.util.List<?> opts = optsObj instanceof java.util.List ? (java.util.List<?>) optsObj : java.util.Collections.emptyList();
+        if (opts.isEmpty()) {
+            System.out.println("ensureDoctorModalityForSlot: no Doctor/Modality options for appointment " + apptNum);
+            return;
+        }
+        int max = Math.min(8, opts.size());
+        for (int i = 0; i < max; i++) {
+            String doc = opts.get(i).toString();
+            page.evaluate("(a) => { const [ng,text]=a; const e=[...document.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')===ng); if(!e) return;"
+                    + " const i=[...e.options].findIndex(o=>o.text.trim()===text); if(i<0) return;"
+                    + " e.selectedIndex=i; e.dispatchEvent(new Event('change',{bubbles:true}));"
+                    + " try{angular.element(e).triggerHandler('change');}catch(err){}"
+                    + " const $=window.jQuery||window.$; if($){try{$(e).trigger('change'); $(e).select2('val', e.value);}catch(err){}} }",
+                    java.util.List.of(ng, doc));
+            waitForAngular(1500);
+            Boolean hasSlot = (Boolean) page.evaluate("(suffix) => {"
+                    // Same "starts with" match as selectAppointmentSlotsReporting's findByRepeat — the real
+                    // attribute is "val in CurrentSchedule track by val.rowno", not byte-identical to the
+                    // bare name this used to require.
+                    + "  const findByRepeat = (name) => { const t=[...document.querySelectorAll('table')].find(tb => { const row=tb.querySelector('tr[ng-repeat]');"
+                    + "    return row && (row.getAttribute('ng-repeat')||'').indexOf('val in '+name+' ')===0; }); return t ? !!t.querySelector('input[type=checkbox]:not(:disabled)') : false; };"
+                    + "  return findByRepeat('CurrentSchedule'+suffix) || findByRepeat('NextSchedule'+suffix); }", suffix);
+            if (Boolean.TRUE.equals(hasSlot)) {
+                System.out.println("ensureDoctorModalityForSlot: appointment " + apptNum + " -> Doctor/Modality \"" + doc + "\" has a schedule (tried " + (i + 1) + "/" + max + ")");
+                return;
+            }
+        }
+        System.out.println("ensureDoctorModalityForSlot: appointment " + apptNum + " — none of " + max + " doctors tried had a bookable schedule for this date");
+    }
+
+    /**
+     * @deprecated Use {@link #selectAppointmentSlotsReporting()} — count parameter was ignored.
      */
     @Deprecated
     public void selectAppointmentSlots(int count) {

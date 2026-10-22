@@ -181,7 +181,8 @@ public class PayableType extends BasePage {
      *  after "already exists" submits different details. */
     public String fillAll(int attempt) {
         lastCode = "PY" + String.format("%08d", Math.abs((System.nanoTime() / 977 + attempt * 7919L) % 100000000));
-        lastRemark = CATEGORIES[(int) (Math.abs(System.nanoTime() / 7 + attempt) % CATEGORIES.length)];
+        lastRemark = CATEGORIES[(int) (Math.abs(System.nanoTime() / 7 + attempt) % CATEGORIES.length)]
+                + " " + Long.toString(System.currentTimeMillis(), 36).toUpperCase() + attempt;   // unique: never repeats
         page.evaluate("(a) => { const A=window.angular;"
                 + " const code=[...document.querySelectorAll('input')].find(x=>/paybletype\\.Code/i.test(x.getAttribute('ng-model')||''));"
                 + " const rem=[...document.querySelectorAll('input')].find(x=>/paybletype\\.Description/i.test(x.getAttribute('ng-model')||''));"

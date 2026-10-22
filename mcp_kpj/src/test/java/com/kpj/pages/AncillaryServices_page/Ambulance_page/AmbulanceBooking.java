@@ -91,9 +91,22 @@ public class AmbulanceBooking extends BasePage {
             System.out.println("AmbulanceBooking.nav: nav menu never appeared — is this session on an OPD counter?");
         }
 
-        page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                + " const a=[...document.querySelectorAll('a')].find(x=>/ancillary\\s*services?/i.test(norm(x.textContent)) && x.offsetParent!==null); if(a) a.click(); }");
-        waitForAngular(1000);
+        // The Ancillary Services submenu is filled in AFTER the click, and the click is sometimes swallowed (the
+        // dashboard is still loading) - the entry then stays childless and the walk found no "Ambulance" at all.
+        // So wait for its entries to exist and, if they do not, click it again.
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                    + " const a=[...document.querySelectorAll('a')].find(x=>/ancillary\\s*services?/i.test(norm(x.textContent)) && x.offsetParent!==null); if(a) a.click(); }");
+            waitForAngular(1000);
+            try {
+                page.waitForFunction("() => { const a=[...document.querySelectorAll('a')].find(x=>/^\\s*ancillary\\s*services?\\s*$/i.test((x.textContent||'').replace(/\\s+/g,' ').trim()));"
+                        + " const li=a&&a.closest('li'); return !!li && li.querySelectorAll('a').length>1; }",
+                        null, new Page.WaitForFunctionOptions().setTimeout(7000));
+                break;
+            } catch (Exception ignore) {
+                System.out.println("AmbulanceBooking.nav: Ancillary Services submenu still empty after click " + attempt + (attempt < 3 ? " - clicking again" : ""));
+            }
+        }
         page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
                 + " const a=[...document.querySelectorAll('a')].find(x=>/^\\s*ambulance\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null); if(a) a.click(); }");
         waitForAngular(1000);
@@ -178,8 +191,20 @@ public class AmbulanceBooking extends BasePage {
 
     /** Select <b>Vehicle Type</b> ({@code AmbulanceRequisition.vehicletypeid}) — it cascades into Vehicle. */
     public String selectVehicleType() {
+        // The first real Vehicle Type ("Air Ambulance Transfer") flips the form to the Payable layout, which has no Doctor
+        // field - yet Save on this screen demands a Doctor, so a booking could never be saved. Take the first Vehicle Type
+        // that keeps the Doctor field on screen (the OPD / IPD layout); fall back to the first real one if none does.
         Object r = page.evaluate("() => new Promise(async resolve => {" + JS
-                + " resolve(await pick('" + M + "vehicletypeid')); })");
+                + " const e=byNg('" + M + "vehicletypeid'); if(!e) return resolve('(no-field)');"
+                + " const real=o=>o.value && !/^-*\\s*select|^\\s*$|^--/i.test(norm(o.textContent));"
+                + " const set=i=>{ e.selectedIndex=i; e.dispatchEvent(new Event('change',{bubbles:true}));"
+                + "   try{ A.element(e).triggerHandler('change'); }catch(x){} if($){ try{ $(e).trigger('change'); }catch(x){} } };"
+                + " const idx=[...e.options].map((o,i)=>real(o)?i:-1).filter(i=>i>=0);"
+                + " for(let k=0;k<15 && !idx.length;k++){ await sleep(400); idx.push(...[...e.options].map((o,i)=>real(o)?i:-1).filter(i=>i>=0)); }"
+                + " if(!idx.length) return resolve('(no-option)');"
+                + " for(const i of idx){ set(i); await sleep(900);"
+                + "   if(byNg('" + M + "doctorid')) return resolve(norm(e.options[i].textContent)); }"
+                + " set(idx[0]); resolve(norm(e.options[idx[0]].textContent) + ' (no vehicle type shows a Doctor field)'); })");
         lastVehicleType = r == null ? "" : r.toString();
         waitForAngular(1500);   // Vehicle list loads off the back of this
         System.out.println("AmbulanceBooking: Vehicle Type = " + lastVehicleType);
@@ -233,7 +258,9 @@ public class AmbulanceBooking extends BasePage {
                     + "        .find(x=>new RegExp(mode,'i').test(norm((x.closest('label,div,td')||{}).textContent||'')));"
                     + " if(r && !r.checked) r.click();"
                     + " setInp('" + M + "MRNo', m);"
-                    + " const b=[...document.querySelectorAll('button,a,i,span,img,input[type=button]')]"
+                    // The form carries TWO copies of the MRN block (before / after a patient is loaded, toggled by
+                    // showhideprop1 / showhideprop). Only the VISIBLE copy's Find Patient button can be clicked.
+                    + " const b=[...document.querySelectorAll('button,a,i,span,img,input[type=button]')].filter(vis)"
                     + "   .find(x=>/SearchPatientByMRNo/i.test(x.getAttribute('ng-click')||''));"
                     + " if(b) b.id='__ambMrnSearch'; }", java.util.List.of(mrn, mode));
             try { page.locator("#__ambMrnSearch").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000)); }
@@ -241,9 +268,13 @@ public class AmbulanceBooking extends BasePage {
             page.evaluate("() => { const e=document.getElementById('__ambMrnSearch'); if(e) e.removeAttribute('id'); }");
 
             try {
-                page.waitForFunction("() => { const e=[...document.querySelectorAll(\"[ng-model='" + M + "patientname']\")].find(x=>x.offsetParent!==null);"
-                        + " return e && e.value && e.value.trim().length>0; }",
-                        null, new Page.WaitForFunctionOptions().setTimeout(8000));
+                // Resolved = the patient banner above the form shows this MRN ("Name : ... MRN: 1100339336 ..."), or the
+                // Patient Name field was filled (older screen layout).
+                page.waitForFunction("(m) => { const t=document.body.innerText||'';"
+                        + " if(new RegExp('MRN\\\\s*:\\\\s*'+m).test(t)) return true;"
+                        + " const e=[...document.querySelectorAll(\"[ng-model='" + M + "patientname']\")].find(x=>x.offsetParent!==null);"
+                        + " return !!(e && e.value && e.value.trim().length>0); }",
+                        mrn, new Page.WaitForFunctionOptions().setTimeout(8000));
                 matched = mode;
                 System.out.println("AmbulanceBooking: MRN resolved under " + mode);
                 break;
@@ -254,16 +285,21 @@ public class AmbulanceBooking extends BasePage {
         lastPatientType = matched;
         waitForAngular(600);
 
-        Object r = page.evaluate("() => {" + JS
+        // Patient Name field when it is filled, else the name in the patient banner ("Name : John Peter MRN: ...").
+        Object pn = page.evaluate("(m) => {" + JS
+                + " const e=byNg('" + M + "patientname'); const v=e?norm(e.value):'';"
+                + " if(v) return v;"
+                + " const mm=(document.body.innerText||'').match(new RegExp('Name\\\\s*:\\\\s*(.+?)\\\\s+MRN\\\\s*:\\\\s*'+m));"
+                + " return mm?norm(mm[1]):''; }", mrn);
+        lastPatientName = pn == null ? "" : pn.toString();
+
+        Object r = page.evaluate("(name) => {" + JS
                 + " const val=ng=>{ const e=byNg(ng); return e?norm(e.value):''; };"
                 + " const msg=[...document.querySelectorAll('.toast-message,.toast')].map(x=>norm(x.textContent)).join(' ');"
-                + " return 'patient='+val('" + M + "patientname')+' | calling='+val('" + M + "callingno')"
-                + "   +(msg?' | msg='+msg:''); }");
+                + " return 'patient='+name+' | calling='+val('" + M + "callingno')"
+                + "   +(msg?' | msg='+msg:''); }", lastPatientName);
         if (!lastPatientType.isEmpty()) r = lastPatientType + ": " + r;
         lastSearchResult = r == null ? "" : r.toString();
-        Object pn = page.evaluate("() => {" + JS
-                + " const e=byNg('" + M + "patientname'); return e?norm(e.value):''; }");
-        lastPatientName = pn == null ? "" : pn.toString();
         System.out.println("AmbulanceBooking: search MRN " + mrn + " -> " + lastSearchResult);
         return lastSearchResult;
     }
@@ -325,6 +361,21 @@ public class AmbulanceBooking extends BasePage {
                     + " const b=[...document.querySelectorAll('button')].filter(vis)"
                     + "   .find(x=>/SearchPatient\\(0\\)/.test(x.getAttribute('ng-click')||''));"
                     + " if(b) b.id='__ambPopupSearch'; }");
+            // The popup now offers "Search By: Global / Local / UUID": choose Local (this hospital's own patients).
+            page.evaluate("() => {" + JS
+                    + " const m=[...document.querySelectorAll('.modal,.modal-dialog,[class*=popup]')].filter(e=>e.offsetParent!==null)[0] || document;"
+                    + " const r=[...m.querySelectorAll('input[type=radio]')].find(x=>{ const g=x.closest('label,div,td,span'); return g && /^\\s*local\\s*$/i.test(norm(g.textContent)); });"
+                    + " if(r && !r.checked) r.click();"
+                    // "Staff" is ticked by default: that limits the search to staff patients, so an MRN filter such as
+                    // "11" finds nothing. Untick Staff (and Dependent) so ANY patient can match.
+                    + " [...m.querySelectorAll('input[type=checkbox]')].forEach(c=>{ const g=c.closest('label,div,td,span');"
+                    + "   if(g && /^\\s*(staff|dependent)\\s*$/i.test(norm(g.textContent)) && c.checked) c.click(); }); }");
+            waitForAngular(600);
+            try {   // a picture of the popup, for the log (once)
+                java.nio.file.Path shot = java.nio.file.Paths.get(System.getProperty("devhis.outdir", "test-output"), "popup-" + filter + ".png");
+                java.nio.file.Files.createDirectories(shot.getParent());
+                page.screenshot(new Page.ScreenshotOptions().setPath(shot).setTimeout(8000));
+            } catch (Exception ignore) { }
             try {
                 page.locator("#__ambPopupMrn").fill(filter, new com.microsoft.playwright.Locator.FillOptions().setTimeout(6000));
                 page.locator("#__ambPopupSearch").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000));
@@ -333,7 +384,13 @@ public class AmbulanceBooking extends BasePage {
             }
             page.evaluate("() => { ['__ambPopupMrn','__ambPopupSearch'].forEach(id => {"
                     + " const e=document.getElementById(id); if(e) e.removeAttribute('id'); }); }");
-            waitForAngular(1200);
+            waitForAngular(800);
+            // The results arrive over the network and can be slow: wait (up to 12s) for a selectable row to appear
+            // instead of reading the table once after a fixed pause and calling it "no-table".
+            try {
+                page.waitForFunction("() => [...document.querySelectorAll(\"button[ng-click*='SetSearchPatient']\")]"
+                        + ".some(b=>b.offsetParent!==null)", null, new Page.WaitForFunctionOptions().setTimeout(45000));
+            } catch (Exception e) { System.out.println("AmbulanceBooking.searchByPopup[" + filter + "]: no result rows after 45s"); }
 
             Object picked = page.evaluate("() => {" + JS
                     + " const tbl=[...document.querySelectorAll('table')].filter(vis)"
@@ -345,6 +402,19 @@ public class AmbulanceBooking extends BasePage {
                     + " return 'picked row 0 of ' + rows.length; }");
             String pickedStr = picked == null ? "" : picked.toString();
             System.out.println("AmbulanceBooking.searchByPopup[" + filter + "]: " + pickedStr);
+            if (!pickedStr.startsWith("picked")) {
+                try {   // the popup AFTER the search, and the click handlers of its buttons / rows
+                    java.nio.file.Path shot2 = java.nio.file.Paths.get(System.getProperty("devhis.outdir", "test-output"), "popup-after-" + filter + ".png");
+                    page.screenshot(new Page.ScreenshotOptions().setPath(shot2).setTimeout(8000));
+                    Object hs = page.evaluate("() => [...document.querySelectorAll('.modal button,.modal a,.modal tr')].filter(e=>e.offsetParent!==null)"
+                            + ".map(e=>(e.getAttribute('ng-click')||'')).filter(x=>x).slice(0,25).join(' | ')");
+                    System.out.println("AmbulanceBooking.searchByPopup[" + filter + "]: popup click handlers -> " + hs);
+                } catch (Exception ignore) { }
+                // What does the popup actually show? (helps tell "no match" from "search never ran")
+                Object seen = page.evaluate("() => { const m=[...document.querySelectorAll('.modal,.modal-dialog,[class*=popup]')].filter(e=>e.offsetParent!==null)[0];"
+                        + " const t=((m||document.body).innerText||'').replace(/\\s+/g,' ').trim(); return t.slice(0,400); }");
+                System.out.println("AmbulanceBooking.searchByPopup[" + filter + "]: popup shows -> " + seen);
+            }
 
             if (pickedStr.startsWith("picked")) {
                 waitForAngular(800);
@@ -357,15 +427,29 @@ public class AmbulanceBooking extends BasePage {
             }
 
             // No rows for this filter — close the popup before trying the next one.
-            page.evaluate("() => {" + JS
-                    + " const b=[...document.querySelectorAll('button')].filter(vis)"
-                    + "   .find(x=>/CloseModel/i.test(x.getAttribute('ng-click')||''));"
-                    + " if(b) b.click(); }");
-            waitForAngular(500);
+            closePatientPopup();
         }
+        closePatientPopup();   // never leave the popup open: it blocks every click on the form behind it
         lastSearchResult = "popup: no patient found among filters " + java.util.Arrays.toString(filters);
         System.out.println("AmbulanceBooking: " + lastSearchResult);
         return lastSearchResult;
+    }
+
+    /** Close the Search Patient popup if it is open (its Close/Cancel button, a modal's x, then Escape). */
+    private void closePatientPopup() {
+        for (int i = 0; i < 3; i++) {
+            Object open = page.evaluate("() => [...document.querySelectorAll(\"input[ng-model='PatientData.MRNo']\")].some(e=>e.offsetParent!==null && !e.disabled"
+                    + " && !!e.closest('.modal,.modal-dialog,[class*=popup],[class*=Popup]'))");
+            if (!Boolean.TRUE.equals(open)) return;
+            page.evaluate("() => {" + JS
+                    + " let b=[...document.querySelectorAll('button')].filter(vis).find(x=>/CloseModel|Cancel\\(|CloseP|ClosePopup/i.test(x.getAttribute('ng-click')||''));"
+                    + " if(!b) b=[...document.querySelectorAll('.modal.in button.close,.modal.show button.close,.modal button[data-dismiss=modal]')].filter(vis)[0];"
+                    + " if(!b) b=[...document.querySelectorAll('button')].filter(vis).find(x=>/^\\s*(close|cancel|exit)\\s*$/i.test(norm(x.textContent)) && x.closest('.modal'));"
+                    + " if(b) b.click(); }");
+            waitForAngular(500);
+            try { page.keyboard().press("Escape"); } catch (Exception ignore) { }
+            waitForAngular(400);
+        }
     }
 
     // ---- step 3: booking details -------------------------------------------

@@ -100,9 +100,10 @@ public class VitalsDetails extends BasePage {
             System.out.println("VitalsDetails.nav: nav menu never appeared — is this session on an OPD counter?");
         }
 
-        page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                + " const a=[...document.querySelectorAll('a')].find(x=>/^\\s*nursing\\s*station\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null); if(a) a.click(); }");
-        waitForAngular(1200);
+        // Open Nursing Station only if it is closed and wait for its children: a blind click toggles an already-open entry
+        // shut, or lands before the lazily-rendered submenu exists — either leaves the Vitals Details link hidden.
+        expandMenuEntry(null, "^\\s*nursing\\s*station\\s*$");
+        waitForAngular(800);
 
         // Vitals Details is a LEAF link — clicking it navigates straight away.
         Object tagged = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
@@ -229,6 +230,10 @@ public class VitalsDetails extends BasePage {
                 + "   picked.push(row? norm(row.textContent).slice(0,32) : '(row?)'); }"
                 + " return 'ticked='+picked.length+'/'+boxes.length+' | '+picked.join(' ; '); }", count);
         lastSelectedRows = r == null ? "" : r.toString();
+        Object all = page.evaluate("() => {" + JS
+                + " return [...document.querySelectorAll(\"input[type=checkbox][ng-model='list.IsSelecteddata']\")].filter(vis)"
+                + "   .map(b=>{ const row=b.closest('tr'); return row? norm(row.textContent).slice(0,60) : '(row?)'; }).join(' || '); }");
+        System.out.println("VitalsDetails: all vital rows => " + all);
         java.util.regex.Matcher m = java.util.regex.Pattern.compile("ticked=(\\d+)").matcher(lastSelectedRows);
         selectedRowCount = m.find() ? Integer.parseInt(m.group(1)) : 0;
         waitForAngular(600);
@@ -237,6 +242,65 @@ public class VitalsDetails extends BasePage {
     }
 
     public boolean rowsSelected() { return selectedRowCount > 0; }
+
+    /**
+     * Are the ticked rows and their values STILL on screen right now? Read from the grid itself — not from what this object
+     * remembers entering — because Telemedicine Import can reload the grid (clearing the ticks and values) after a delay, and
+     * a check on remembered state then claimed "nothing to re-apply" and Save was refused for want of vitals.
+     */
+    public boolean entriesStillPresent() {
+        page.waitForTimeout(2000);   // let a late grid reload land before reading
+        Object n = page.evaluate("() => {" + JS
+                + " const rows=tickedRows();"
+                + " return rows.filter(r=>{ const e=[...r.querySelectorAll(\"input[ng-model='list.defaultvalue']\")].find(vis);"
+                + "   return e && (e.value||'').trim(); }).length; }");
+        int have = n instanceof Number ? ((Number) n).intValue() : 0;
+        return selectedRowCount > 0 && have >= selectedRowCount;
+    }
+
+    /**
+     * Tick the vitals the screen REQUIRES on Save: Temperature, Blood Pressure (Systolic and Diastolic), Heart Rate,
+     * Respiratory Rate, Weight and Height. Matched by the start of the row text, so "Other Body Temperature" or "Ideal Body
+     * Weight" are not picked by mistake. (The first rows of the list — Rhythm, Breathing — are not among them, which is
+     * why ticking "the first three" was answered with "Please enter the mandatory vital signs".)
+     */
+    public String selectMandatoryVitals() {
+        Object r = page.evaluate("() => {" + JS
+                + " const want=[/^Systolic BP\\b/i,/^Diastolic BP\\b/i,/^Pulse \\(Heart Rate\\)/i,/^Body Temperature\\b/i,"
+                + "   /^Respiration Rate\\b/i,/^Height\\b/i,/^Weight\\b/i];"
+                + " const boxes=[...document.querySelectorAll(\"input[type=checkbox][ng-model='list.IsSelecteddata']\")].filter(vis);"
+                + " const rows=boxes.map(b=>({b, name:(b.closest('tr')? norm(b.closest('tr').textContent) : '')}));"
+                + " const picked=[];"
+                + " for(const re of want){ const hit=rows.find(x=>re.test(x.name));"
+                + "   if(hit){ if(!hit.b.checked) hit.b.click(); picked.push(hit.name.slice(0,32)); } }"
+                + " return 'ticked='+picked.length+'/'+boxes.length+' | '+picked.join(' ; '); }");
+        lastSelectedRows = r == null ? "" : r.toString();
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("ticked=(\\d+)").matcher(lastSelectedRows);
+        selectedRowCount = m.find() ? Integer.parseInt(m.group(1)) : 0;
+        waitForAngular(600);
+        System.out.println("VitalsDetails: mandatory vitals -> " + lastSelectedRows);
+        return lastSelectedRows;
+    }
+
+    /**
+     * Enter a realistic value on every ticked row, by vital name (BP 120/80, pulse 75, temperature 36.8, respiration 16,
+     * height 170, weight 70 — each inside the range the row shows); a row not in that list gets {@code fallback}.
+     */
+    public String enterVitalValues(String fallback) {
+        Object r = page.evaluate("(fb) => {" + JS
+                + " const byName=[[/^Systolic BP/i,'120'],[/^Diastolic BP/i,'80'],[/^Pulse \\(Heart Rate\\)/i,'75'],"
+                + "   [/^Body Temperature/i,'36.8'],[/^Respiration Rate/i,'16'],[/^Height/i,'170'],[/^Weight/i,'70']];"
+                + " const rows=tickedRows(); const done=[];"
+                + " for(const row of rows){"
+                + "   const name=norm(row.textContent); const m=byName.find(x=>x[0].test(name));"
+                + "   const e=[...row.querySelectorAll(\"input[ng-model='list.defaultvalue']\")].find(vis);"
+                + "   done.push(e? setEl(e, m? m[1] : fb) : '(no-value-field)'); }"
+                + " return 'values='+done.length+' | '+done.join(' ; '); }", fallback);
+        lastValues = r == null ? "" : r.toString();
+        waitForAngular(500);
+        System.out.println("VitalsDetails: " + lastValues);
+        return lastValues;
+    }
 
     // ---- step 3: values ----------------------------------------------------
 
@@ -306,6 +370,28 @@ public class VitalsDetails extends BasePage {
      * a popup, or nothing.
      */
     public String clickTelemedicineImport() {
+        // Record what the server answers to the import (status, path, start of the body), so the report names the cause
+        // behind the bare "Error in getting record!" toast.
+        final java.util.List<String> importHttp = new java.util.concurrent.CopyOnWriteArrayList<>();
+        final java.util.function.Consumer<com.microsoft.playwright.Response> onImportResp = resp -> {
+            try {
+                if (resp.request().resourceType().matches("xhr|fetch") && !resp.url().contains("getInternalmsgCountOnly")) {
+                    String body = resp.text();
+                    body = body == null ? "" : body.replaceAll("\\s+", " ");
+                    importHttp.add(resp.status() + " " + resp.request().method() + " "
+                            + resp.url().replaceFirst("^https?://[^/]+", "") + " -> " + body.substring(0, Math.min(200, body.length())));
+                }
+            } catch (Exception ignore) { }
+        };
+        page.onResponse(onImportResp);
+        // A request that never gets an answer (service unreachable, blocked, timed out) has no response to read — note it too.
+        final java.util.function.Consumer<com.microsoft.playwright.Request> onImportFail = req -> {
+            try {
+                if (req.resourceType().matches("xhr|fetch"))
+                    importHttp.add("FAILED " + req.method() + " " + req.url().replaceFirst("^https?://[^/]+", "") + " -> " + req.failure());
+            } catch (Exception ignore) { }
+        };
+        page.onRequestFailed(onImportFail);
         page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
                 + ARM_TOASTS
                 + " const c=[...document.querySelectorAll('button,a,input[type=button]')].filter(x=>x.offsetParent!==null);"
@@ -323,7 +409,10 @@ public class VitalsDetails extends BasePage {
                 + "   .filter(e=>e.offsetParent!==null).map(e=>norm(e.textContent)).filter(t=>t);"
                 + " const rows=document.querySelectorAll(\"input[type=checkbox][ng-model='list.IsSelecteddata']\").length;"
                 + " return 'rows='+rows+(toast?' | toast='+toast:'')+(modal.length?' | popup='+modal[0].slice(0,120):''); }");
-        lastImportResult = r == null ? "" : r.toString();
+        page.offResponse(onImportResp);
+        page.offRequestFailed(onImportFail);
+        lastImportResult = (r == null ? "" : r.toString())
+                + (importHttp.isEmpty() ? "" : " | server: " + String.join(" || ", importHttp));
         System.out.println("VitalsDetails: Telemedicine Import -> " + lastImportResult);
         return lastImportResult;
     }

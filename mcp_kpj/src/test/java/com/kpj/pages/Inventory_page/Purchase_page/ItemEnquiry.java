@@ -225,8 +225,91 @@ public class ItemEnquiry extends BasePage {
         return lastItemSearch != null && !lastItemSearch.contains("(no-item-name-field)");
     }
 
+    /** What {@link #selectStore()} chose, or why it could not. */
+    public String lastStore = "";
+
+    /**
+     * Select the <b>Store</b> on the entry form ({@code ItemEnquiry.Store}). The item picker's own Store list, and its
+     * Search ("Please Select Store Name !!!!"), depend on it, so it is chosen BEFORE Get Items. The list is filled by the
+     * app after the form shows, so it is waited for (up to 20s); the first real store is taken.
+     */
+    public String selectStore() {
+        lastStore = selectStoreIn("select[ng-model='ItemEnquiry.Store']", "Pharmacy (Central)", "Store", 20000);
+        System.out.println("ItemEnquiry: Store = " + lastStore);
+        return lastStore;
+    }
+
+    public boolean storeSelected() { return lastStore != null && !lastStore.isEmpty() && !lastStore.startsWith("("); }
+
+    /** What {@link #selectPickerStore()} chose, or why it could not. */
+    public String lastPickerStore = "";
+
+    /** Select the Store INSIDE the item-picker dialog ({@code ItemSearch.SearchStoreID}); its Search needs one. */
+    public String selectPickerStore() {
+        String want = lastStore == null ? "" : lastStore.replaceAll("\\s*\\(of \\d+ store\\(s\\)\\)$", "");
+        lastPickerStore = selectStoreIn(".modal select[ng-model='ItemSearch.SearchStoreID']", want, "dialog Store", 15000);
+        // Choosing the store makes the dialog reload its dependent lists; a Search clicked straight away can return 0 rows.
+        page.waitForTimeout(1500);
+        System.out.println("ItemEnquiry: dialog Store = " + lastPickerStore);
+        return lastPickerStore;
+    }
+
+    public boolean pickerStoreSelected() {
+        return lastPickerStore != null && !lastPickerStore.isEmpty() && !lastPickerStore.startsWith("(");
+    }
+
+    /**
+     * Pick a Store in the dropdown matching {@code css}: the one named {@code want} if listed, else a "pharmacy" store
+     * (stock-bearing), else the first real option. Selected by index with the dropdown's own change handling and read back,
+     * so a selection that does not stick is reported rather than assumed (writing the model by hand put it back on "-Select-").
+     */
+    private String selectStoreIn(String css, String want, String label, int waitMs) {
+        try {
+            page.waitForFunction("(s) => { const e=[...document.querySelectorAll(s)].find(x=>x.offsetWidth||x.offsetHeight||x.getClientRects().length);"
+                    + " return !!e && [...e.options].some(o=>o.value && !/^-*\\s*select/i.test((o.text||'').trim())); }",
+                    css, new Page.WaitForFunctionOptions().setTimeout(waitMs));
+        } catch (Exception ignore) { /* reported below from what is really there */ }
+        Object r = page.evaluate("([s, want, label]) => {" + JS
+                + " const e=[...document.querySelectorAll(s)].find(vis);"
+                + " if(!e) return '(no '+label+' dropdown found)';"
+                + " const reals=[...e.options].map((o,i)=>({o,i})).filter(x=>x.o.value && !/^-*\\s*select/i.test(norm(x.o.text)));"
+                + " if(!reals.length) return '(the '+label+' list is empty: '+e.options.length+' option(s), none selectable)';"
+                + " const pick=(want && reals.find(x=>norm(x.o.text)===norm(want)))"
+                + "   || reals.find(x=>/^pharmacy/i.test(norm(x.o.text))) || reals[0];"
+                + " e.selectedIndex=pick.i;"
+                + " e.dispatchEvent(new Event('change',{bubbles:true}));"
+                + " try{ angular.element(e).triggerHandler('change'); }catch(x){}"
+                + " return 'ok|'+reals.length; }", java.util.Arrays.asList(css, want == null ? "" : want, label));
+        waitForAngular(900);
+        String res = r == null ? "" : r.toString();
+        if (!res.startsWith("ok|")) return res;
+        Object shown = page.evaluate("(s) => { const e=[...document.querySelectorAll(s)].find(x=>x.offsetWidth||x.offsetHeight||x.getClientRects().length);"
+                + " return e ? ((e.options[e.selectedIndex]||{}).text||'').replace(/\\s+/g,' ').trim() : ''; }", css);
+        String text = shown == null ? "" : shown.toString();
+        return (text.isEmpty() || text.matches("^-*\\s*[Ss]elect.*"))
+                ? "(the " + label + " did not stay selected: shows \"" + text + "\")"
+                : text + " (of " + res.substring(3) + " store(s))";
+    }
+
+    /** What the server answered to the last Search click; empty when the search made no API request. */
+    public String lastSearchHttp = "";
+
     /** Click <b>Search</b> inside the item-picker dialog. */
     public String clickSearch() {
+        // Record what the server answers to the search itself (status, path, start of the body), so "0 rows" can be told
+        // apart: an empty result, a rejected request, or a missing search condition (e.g. no Store available to search in).
+        final java.util.List<String> seen = new java.util.concurrent.CopyOnWriteArrayList<>();
+        final java.util.function.Consumer<com.microsoft.playwright.Response> onResp = r -> {
+            try {
+                if (r.url().toLowerCase().contains("/api/") && r.request().resourceType().matches("xhr|fetch")) {
+                    String body = r.text();
+                    body = body == null ? "" : body.replaceAll("\\s+", " ");
+                    seen.add(r.status() + " " + r.request().method() + " " + r.url().replaceFirst("^https?://[^/]+", "")
+                            + " -> " + body.substring(0, Math.min(140, body.length())));
+                }
+            } catch (Exception ignore) { }
+        };
+        page.onResponse(onResp);
         page.evaluate("() => {" + JS
                 + " const d=topDialog(); if(!d) return;"
                 + " const b=[...d.querySelectorAll('button,a')].filter(vis)"
@@ -234,8 +317,24 @@ public class ItemEnquiry extends BasePage {
                 + "   || [...d.querySelectorAll('button,a')].filter(vis)"
                 + "     .find(x=>/^\\s*search\\s*$/i.test(norm(x.textContent)));"
                 + " if(b) b.click(); }");
-        waitForAngular(3500);
-        lastSearch = "clicked Search -> " + rowCount() + " row(s) in the item picker";
+        // A validation message (toast / alert) the screen shows instead of searching — read it before it fades.
+        String shown = "";
+        try {
+            page.waitForTimeout(600);
+            Object msg = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                    + " return [...document.querySelectorAll('.toast-message,.toast,.jAlert,.sweet-alert,.alert,[id^=toast]')]"
+                    + "   .filter(e=>e.offsetWidth||e.offsetHeight||e.getClientRects().length)"
+                    // The same toast can be stacked several times and carries a "×KPJ Portal" title: show each message once.
+                    + "   .map(e=>norm(e.textContent).replace(/^\\S?\\s*KPJ Portal\\s*/i,'')).filter(t=>t)"
+                    + "   .filter((t,i,a)=>a.indexOf(t)===i).join(' | ').slice(0,200); }");
+            shown = msg == null ? "" : msg.toString();
+        } catch (Exception ignore) { }
+        waitForAngular(3000);
+        page.offResponse(onResp);
+        lastSearchHttp = String.join(" | ", seen);
+        lastSearch = "clicked Search -> " + rowCount() + " row(s) in the item picker"
+                + (shown.isEmpty() ? "" : "; the screen said: \"" + shown + "\"")
+                + (lastSearchHttp.isEmpty() ? " (no API request was made by the search)" : "; server: " + lastSearchHttp);
         System.out.println("ItemEnquiry: " + lastSearch);
         return lastSearch;
     }

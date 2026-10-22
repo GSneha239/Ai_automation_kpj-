@@ -126,38 +126,145 @@ public class ReportAggregator {
           .append("th,td{border:1px solid #e3e3e8;padding:8px 10px;text-align:left;font-size:13px;vertical-align:top}")
           .append("th{background:#efe9f6;color:#5b2c8f}tr:nth-child(even) td{background:#faf9fc}")
           .append(".fail{color:#c0392b;font-weight:600}.ok{color:#1e8449;font-weight:600}")
+          .append(".tiles{display:flex;gap:12px;flex-wrap:wrap;margin:8px 0 18px}.tile{background:#fff;border:1px solid #e3e3e8;border-radius:8px;padding:10px 18px;min-width:140px}")
+          .append(".tile b{display:block;font-size:26px}.tile span{color:#666;font-size:12px}.td b{color:#c0392b}.tn b{color:#b9770e}.to b{color:#566573}.tp b{color:#1e8449}")
+          .append(".num{color:#888;text-align:right;white-space:nowrap}")
+          .append(".hint{color:#666;font-size:12.5px;margin:-4px 0 8px}.cnt{color:#888;font-weight:400}.muted{color:#888}")
           .append(".pill{display:inline-block;padding:2px 9px;border-radius:10px;font-size:12px}.pfail{background:#fdecea;color:#c0392b}.ppass{background:#e9f7ef;color:#1e8449}")
           .append("</style></head><body>");
+        int pagesTotal = runs.size(), pagesFailed = 0;
+        for (String[] r : runs) if (!"0".equals(r[4])) pagesFailed++;
+        List<String[]> unreached = unreachedPages(fails);
+        int onDashboard = 0;
+        for (String[] u : unreached) if (u[4].contains("/PatientDashboard")) onDashboard++;
+
         sb.append("<header><h1>Failed Steps Report</h1><div class='sub'>")
-          .append(steps).append(" steps &middot; <b>").append(fail).append("</b> failed &middot; ").append(manual).append(" manual</div>")
+          .append("<b>").append(pagesTotal).append("</b> pages &middot; ").append(steps).append(" steps &middot; <b>").append(fail).append("</b> failed &middot; ").append(manual).append(" manual</div>")
           .append("<div class='sub'>Start: <b>").append(esc(startStr)).append("</b> &middot; End: <b>").append(esc(endStr))
           .append("</b> &middot; Duration: <b>").append(esc(durStr)).append("</b></div></header><div class='wrap'>");
 
+        sb.append("<div class='tiles'>")
+          .append("<div class='tile'><b>").append(pagesTotal).append("</b><span>Pages run</span></div>")
+          .append("<div class='tile tp'><b>").append(pagesTotal - pagesFailed).append("</b><span>Pages passed</span></div>")
+          .append("<div class='tile td'><b>").append(pagesFailed).append("</b><span>Pages failed</span></div>")
+          .append("<div class='tile tn'><b>").append(unreached.size()).append("</b><span>Pages that did NOT reach the screen</span></div></div>");
+
         // The Module column (the run folder: Op / Ip / Emergency ...) only appears in a combined multi-module report.
         String modTh = combined ? "<th>Module</th>" : "";
-        sb.append("<h3>Runs</h3><table><tr>").append(modTh).append("<th>Page</th><th>Test</th><th>Passed</th><th>Failed</th><th>Manual</th><th>Result</th></tr>");
+        sb.append("<h3>Runs <span class='cnt'>(").append(pagesTotal).append(" pages)</span></h3><table><tr><th>#</th>").append(modTh)
+          .append("<th>Page</th><th>Test</th><th>Passed</th><th>Failed</th><th>Manual</th><th>Result</th></tr>");
+        int n = 0;
         for (String[] r : runs) {
             boolean ok = "0".equals(r[4]);
-            sb.append("<tr>").append(combined ? "<td>" + esc(r[0]) + "</td>" : "")
+            sb.append("<tr><td class='num'>").append(++n).append("</td>").append(combined ? "<td>" + esc(r[0]) + "</td>" : "")
               .append("<td>").append(esc(r[1])).append("</td><td>").append(esc(r[2])).append("</td><td>").append(r[3])
               .append("</td><td class='").append(ok ? "ok" : "fail").append("'>").append(r[4]).append("</td><td>").append(r[5])
               .append("</td><td><span class='pill ").append(ok ? "ppass" : "pfail").append("'>").append(ok ? "PASS" : "FAIL").append("</span></td></tr>");
         }
         sb.append("</table>");
 
-        sb.append("<h3>Failed steps</h3>");
-        if (fails.isEmpty()) {
-            sb.append("<p class='ok'>No failed steps &#127881;</p>");
+        // ---- Pages whose flow never opened its screen --------------------------------------------------------------
+        sb.append("<h3>Pages that did NOT reach the screen <span class='cnt'>(").append(unreached.size()).append(")</span></h3>")
+          .append("<div class='hint'>The flow could not open the page it was meant to test and stopped at the URL under &quot;Landed on&quot;. ")
+          .append(onDashboard).append(" of them stayed on the Patient Dashboard (/#/PatientDashboard) - the menu click never navigated. ")
+          .append("Fix how these pages are opened (menu path / permission / route) before looking at their other steps.</div>");
+        if (unreached.isEmpty()) {
+            sb.append("<p class='ok'>Every page reached its screen.</p>");
         } else {
-            sb.append("<table><tr>").append(modTh).append("<th>Page</th><th>Test</th><th>Step</th><th>Expected</th><th>Actual / Reason</th></tr>");
-            for (String[] f : fails) {
-                sb.append("<tr>").append(combined ? "<td>" + esc(f[0]) + "</td>" : "")
-                  .append("<td>").append(esc(f[1])).append("</td><td>").append(esc(f[2])).append("</td><td>").append(esc(f[3]))
-                  .append("</td><td>").append(esc(f[4])).append("</td><td class='fail'>").append(esc(f[5])).append("</td></tr>");
+            sb.append("<table><tr><th>#</th>").append(modTh).append("<th>Page</th><th>Test</th><th>Step</th><th>Landed on</th><th>Steps affected</th></tr>");
+            int u = 0;
+            for (String[] p : unreached) {
+                sb.append("<tr><td class='num'>").append(++u).append("</td>").append(combined ? "<td>" + esc(p[0]) + "</td>" : "")
+                  .append("<td>").append(esc(p[1])).append("</td><td>").append(esc(p[2])).append("</td><td>").append(esc(p[3]))
+                  .append("</td><td class='fail'>").append(esc(p[4].isEmpty() ? "-" : p[4])).append("</td><td>").append(p[5]).append("</td></tr>");
             }
             sb.append("</table>");
         }
+
+        // ---- Failed steps, split by WHY they failed -------------------------------------------------------------
+        List<String[]> defects = new ArrayList<>(), data = new ArrayList<>(), other = new ArrayList<>();
+        for (String[] f : fails) {
+            String cat = classify(f[3], f[5]);
+            ("DEFECT".equals(cat) ? defects : "DATA".equals(cat) ? data : other).add(f);
+        }
+        sb.append("<h3>Failed steps by category</h3>")
+          .append("<div class='tiles'>")
+          .append("<div class='tile td'><b>").append(defects.size()).append("</b><span>Real defects</span></div>")
+          .append("<div class='tile tn'><b>").append(data.size()).append("</b><span>Failed due to data</span></div>")
+          .append("<div class='tile to'><b>").append(other.size()).append("</b><span>Other / needs review</span></div>")
+          .append("<div class='tile'><b>").append(fails.size()).append("</b><span>Total failed</span></div></div>");
+        if (fails.isEmpty()) {
+            sb.append("<p class='ok'>No failed steps &#127881;</p>");
+        } else {
+            appendCategory(sb, "1. Real defects", "The application behaves wrongly (logic / validation / wrong or missing behaviour) - raise these with the developers.",
+                    defects, combined, modTh);
+            appendCategory(sb, "2. Failed due to data", "The environment lacks the data the step needs (empty dropdowns, no records in a table, no bed / slot / patient) - fix the test data or configuration, not the code.",
+                    data, combined, modTh);
+            appendCategory(sb, "3. Other / needs review", "Could not be classified automatically (timeouts, closed browser, upload or network errors ...) - look at the step's report.",
+                    other, combined, modTh);
+        }
         sb.append("</div></body></html>");
         return sb.toString();
+    }
+
+    private static final java.util.regex.Pattern NOT_REACHED =
+            java.util.regex.Pattern.compile("Did NOT reach the (?:screen|list)(?:\\s*\\(([^)]*)\\))?");
+
+    /**
+     * One row per page whose flow never opened its screen (a failed step reading "Did NOT reach the screen (url)" /
+     * "... the list"): {module, page, testId, first such step, URL it ended up on ("" if the message has none),
+     * number of such steps}. Pages stuck on the Patient Dashboard are listed first, the rest keep report order.
+     */
+    static List<String[]> unreachedPages(List<String[]> fails) {
+        Map<String, String[]> byPage = new LinkedHashMap<>();
+        for (String[] f : fails) {
+            java.util.regex.Matcher m = NOT_REACHED.matcher(f[5] == null ? "" : f[5]);
+            if (!m.find()) continue;
+            String key = f[0] + "|" + f[1] + "|" + f[2];
+            String[] row = byPage.get(key);
+            if (row == null) byPage.put(key, new String[]{f[0], f[1], f[2], f[3], m.group(1) == null ? "" : m.group(1).trim(), "1"});
+            else row[5] = String.valueOf(Integer.parseInt(row[5]) + 1);
+        }
+        List<String[]> rows = new ArrayList<>(byPage.values());
+        rows.sort(Comparator.comparingInt((String[] r) -> r[4].contains("/PatientDashboard") ? 0 : 1));   // stable: report order within each group
+        return rows;
+    }
+
+    private static void appendCategory(StringBuilder sb, String title, String hint, List<String[]> rows, boolean combined, String modTh) {
+        sb.append("<h3>").append(esc(title)).append(" <span class='cnt'>(").append(rows.size()).append(")</span></h3>")
+          .append("<div class='hint'>").append(esc(hint)).append("</div>");
+        if (rows.isEmpty()) { sb.append("<p class='muted'>None.</p>"); return; }
+        sb.append("<table><tr>").append(modTh).append("<th>Page</th><th>Test</th><th>Step</th><th>Expected</th><th>Actual / Reason</th></tr>");
+        for (String[] f : rows) {
+            sb.append("<tr>").append(combined ? "<td>" + esc(f[0]) + "</td>" : "")
+              .append("<td>").append(esc(f[1])).append("</td><td>").append(esc(f[2])).append("</td><td>").append(esc(f[3]))
+              .append("</td><td>").append(esc(f[4])).append("</td><td class='fail'>").append(esc(f[5])).append("</td></tr>");
+        }
+        sb.append("</table>");
+    }
+
+    /**
+     * Sort one failed step into DEFECT (the app's logic/validation is wrong), DATA (the environment has no data for
+     * the step: empty dropdown, no records, no bed / slot / patient) or OTHER. An explicit defect finding wins over a
+     * data hint, because a step can carry both (e.g. a defect plus an empty dropdown noted as its CAUSE).
+     */
+    static String classify(String step, String actual) {
+        String a = (actual == null ? "" : actual).toLowerCase();
+        String s = (step == null ? "" : step).toLowerCase();
+        String[] defect = {
+                "defect", "is mandatory", "marked * / required", "mandatory while nationality", "wrong message",
+                "cleared by the app", "please enter passport no", "please enter nric", "must not", "expected false",
+                "no confirmation", "wrong page"
+        };
+        for (String k : defect) if (a.contains(k) || s.contains("not mandatory")) return "DEFECT";
+        String[] data = {
+                "no options", "(no options)", "is empty", "dropdown empty", "city dropdown", "did not populate", "did not load",
+                "no patient", "no appointment", "no vacant bed", "no-vacant-bed", "no available bed", "no doctor", "no more registrable",
+                "no cancellable", "no response for any", "no free slot", "no slot", "no record", "no data", "queue grid empty",
+                "not in the dropdown", "no selectable", "no registrable", "none of the", "had no selectable", "no rows",
+                "has no values", "has no options", "no options loaded", "not populated", "master-data not", "no popup content"
+        };
+        for (String k : data) if (a.contains(k)) return "DATA";
+        return "OTHER";
     }
 }

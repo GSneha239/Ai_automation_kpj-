@@ -82,7 +82,12 @@ public class ItemSaleList extends DevHisBase {
                 "The Item Sale List screen is shown",
                 rendered ? "Opened " + page.url()
                            + (isl.lastRoute.isEmpty() ? "" : " (menu route " + isl.lastRoute + ")")
-                         : "Did NOT reach the screen (" + page.url() + ") — see the Inventory menu dump",
+                         : "Did NOT reach the screen (" + page.url() + ") — see the Inventory menu dump"
+                           + (isl.httpErrors.isEmpty() ? ""
+                              : ". Server errors while opening it: " + String.join("; ", isl.httpErrors))
+                           + (!isl.viewSwitched && page.url().toLowerCase().contains("itemsale")
+                              ? ". The URL changed to the screen's route but the page kept showing the PATIENT DASHBOARD "
+                                + "(the screen's own view never loaded in 25s)" : ""),
                 rendered ? "PASS" : "FAIL");
         if (!rendered) { addSummary("Result", "FAILED — screen not reached"); return; }
 
@@ -171,10 +176,19 @@ public class ItemSaleList extends DevHisBase {
         if (!printClickedOk) { addSummary("Result", "FAILED — the Print Drug Label button was not found"); return; }
 
         PdfReport.Result drugLabelPdf = PdfReport.capture(page, tabsBefore, 15000);
-        step(page, "[Print Drug Label] Verify pdf generation with drug label",
-                "Wait for the drug label PDF to open",
-                "A non-blank PDF drug label is generated", drugLabelPdf.diagnostics,
-                drugLabelPdf.blank ? "FAIL" : "PASS");
+        if (drugLabelPdf.png != null && drugLabelPdf.png.length > 0) {
+            // Chrome's PDF viewer screenshots blank, so the screenshot is the PDF's first page rendered from the file.
+            step(drugLabelPdf.png, "[Print Drug Label] Verify pdf generation with drug label",
+                    "Wait for the drug label PDF to open",
+                    "A non-blank PDF drug label is generated",
+                    drugLabelPdf.diagnostics + " The screenshot is the PDF's first page rendered from the file itself.",
+                    drugLabelPdf.blank ? "FAIL" : "PASS");
+        } else {
+            step(page, "[Print Drug Label] Verify pdf generation with drug label",
+                    "Wait for the drug label PDF to open",
+                    "A non-blank PDF drug label is generated", drugLabelPdf.diagnostics,
+                    drugLabelPdf.blank ? "FAIL" : "PASS");
+        }
 
         addSummary("Row selected", isl.lastRowTick);
         addSummary("Print Drug Label PDF result", drugLabelPdf.diagnostics);
@@ -195,8 +209,15 @@ public class ItemSaleList extends DevHisBase {
         if (!printOnlyClickedOk) { addSummary("Result", "FAILED — the Print button was not found"); return; }
 
         PdfReport.Result printPdf = PdfReport.capture(page, tabsBeforePrint, 15000);
-        step(page, "[Print] Verify report generated", "Wait for the report to open",
-                "A non-blank report is generated", printPdf.diagnostics, printPdf.blank ? "FAIL" : "PASS");
+        if (printPdf.png != null && printPdf.png.length > 0) {
+            step(printPdf.png, "[Print] Verify report generated", "Wait for the report to open",
+                    "A non-blank report is generated",
+                    printPdf.diagnostics + " The screenshot is the PDF's first page rendered from the file itself.",
+                    printPdf.blank ? "FAIL" : "PASS");
+        } else {
+            step(page, "[Print] Verify report generated", "Wait for the report to open",
+                    "A non-blank report is generated", printPdf.diagnostics, printPdf.blank ? "FAIL" : "PASS");
+        }
 
         addSummary("Print report result", printPdf.diagnostics);
     }

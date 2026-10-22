@@ -249,7 +249,8 @@ public class LabMachine extends BasePage {
      */
     public String fillMaster(int attempt) {
         lastCode = nextCode("LM", attempt);
-        lastRemark = REMARKS[(int) (Math.abs(System.nanoTime() / 1000 + attempt) % REMARKS.length)];
+        lastRemark = REMARKS[(int) (Math.abs(System.nanoTime() / 1000 + attempt) % REMARKS.length)]
+                + " " + Long.toString(System.currentTimeMillis(), 36).toUpperCase() + attempt;   // unique: never repeats
         Object r = page.evaluate("(a) => { const A=window.angular;" + FIND_FIELDS + SET_EL
                 + " const cd=setEl(codeEl, a.code); const rm=setEl(remEl, a.remark);"
                 + " return 'Code='+cd+' | Remark='+rm"
@@ -269,7 +270,8 @@ public class LabMachine extends BasePage {
      */
     public String fillParameter(int attempt) {
         lastParaCode = nextCode("MP", attempt + 3);
-        lastParaName = PARA_NAMES[(int) (Math.abs(System.nanoTime() / 1000 + attempt) % PARA_NAMES.length)];
+        lastParaName = PARA_NAMES[(int) (Math.abs(System.nanoTime() / 1000 + attempt) % PARA_NAMES.length)]
+                + " " + Long.toString(System.currentTimeMillis(), 36).toUpperCase() + attempt;   // unique: never repeats
         lastParameterName = PARAMETER_NAMES[(int) (Math.abs(System.nanoTime() / 1000 + attempt) % PARAMETER_NAMES.length)];
         Object r = page.evaluate("(a) => { const A=window.angular;" + FIND_FIELDS + SET_EL
                 + " const pc=setEl(mpCodeEl, a.paraCode); const pn=setEl(mpNameEl, a.paraName); const nm=setEl(pNameEl, a.parameterName);"

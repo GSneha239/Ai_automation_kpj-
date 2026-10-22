@@ -73,7 +73,9 @@ public class NurseRoster extends DevHisBase {
                 "Click Nursing Station -> NurseRoster (retrying via the route and a full page load)",
                 "The Nurse Roster screen is shown",
                 rendered ? "Opened " + page.url()
-                         : "Route resolved but rendered NO screen. Body: \"" + nr.lastBodyText + "\"",
+                         : "Route resolved but rendered NO screen. Body: \"" + nr.lastBodyText + "\""
+                           + (nr.httpErrors.isEmpty() ? ""
+                              : ". Requests that failed while opening it: " + String.join("; ", nr.httpErrors)),
                 rendered ? "PASS" : "FAIL");
         if (!rendered) { addSummary("Result", "FAILED — screen not reached"); return; }
 

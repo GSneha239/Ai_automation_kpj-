@@ -348,6 +348,58 @@ public class Transfer extends BasePage {
         return rowText;
     }
 
+    /** Click the checkbox of row {@code idx} (0-based) in the grid under {@code heading}; "" when there is no such row. */
+    private String clickRowCheckbox(String heading, int idx) {
+        Object r = page.evaluate("(a) => {" + JS
+                + " const tbl=tableAfter(headings(a[0])[0]); const rows=tbl?[...tbl.querySelectorAll('tbody tr')]:[];"
+                + " const row=rows[a[1]]; if(!row) return ''; const cb=row.querySelector('input[type=checkbox]'); if(!cb) return '';"
+                + " const t=norm(row.textContent); cb.click(); return t; }", java.util.Arrays.asList(heading, idx));
+        return r == null ? "" : r.toString();
+    }
+
+    /**
+     * The first indent's first item can be one with no batch stock at the Issuing Store (a data gap, not a defect), which
+     * left the batch step permanently red. Walk the indents (top <b>Selected Item</b> grid) and their items (<b>Indent Item
+     * List</b>) until ticking an item queues a batch in the bottom <b>Selected Item</b> grid; un-tick what had no stock.
+     * Call with the first indent already ticked and the first item NOT yet ticked.
+     *
+     * @return the text of the item that has stock, or {@code ""} when no item in any indent has a batch
+     */
+    public String tickIndentItemWithStock() {
+        int indents = selectedIndentRows().size();
+        for (int i = 0; i < Math.min(indents, 10); i++) {
+            if (i > 0) {
+                clickRowCheckbox("Selected Item", i - 1);   // un-tick the previous indent
+                if (clickRowCheckbox("Selected Item", i).isEmpty()) continue;
+                try {
+                    page.waitForFunction("() => {" + JS + " return rowsOf(tableAfter(headings('Indent Item List')[0])).length > 0; }",
+                            null, new Page.WaitForFunctionOptions().setTimeout(6000));
+                } catch (Exception ignore) { }
+                waitForAngular(400);
+            }
+            int items = indentItemListRows().size();
+            for (int j = 0; j < Math.min(items, 10); j++) {
+                String text = clickRowCheckbox("Indent Item List", j);
+                if (text.isEmpty()) continue;
+                try {
+                    page.waitForFunction("() => {" + JS + " const hs=headings('Selected Item');"
+                            + " return hs.length>1 && rowsOf(tableAfter(hs[hs.length-1])).length > 0; }",
+                            null, new Page.WaitForFunctionOptions().setTimeout(5000));
+                } catch (Exception ignore) { }
+                waitForAngular(300);
+                List<String> batchRows = itemBatchListRows();
+                List<String> bottomRows = bottomSelectedItemRows();
+                lastBatchListState = "Item Batch List: " + batchRows.size() + " row(s) " + batchRows
+                        + " | Selected Item (bottom): " + bottomRows.size() + " row(s) " + bottomRows;
+                System.out.println("CSSD.Transfer: indent " + (i + 1) + " item " + (j + 1) + " \"" + text + "\" -> " + lastBatchListState);
+                if (!batchRows.isEmpty() && !bottomRows.isEmpty()) return text;
+                clickRowCheckbox("Indent Item List", j);   // no stock: un-tick and try the next item
+                waitForAngular(300);
+            }
+        }
+        return "";
+    }
+
     // ---- grid 3: Item Batch List --------------------------------------------------
 
     /** The <b>Item Batch List</b> grid's rows (available batches for the ticked item). */

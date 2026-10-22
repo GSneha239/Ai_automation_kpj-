@@ -6,6 +6,7 @@ REM      run-core-flows-devhis.bat
 REM      run-core-flows-klg.bat
 REM      run-core-flows-dsh.bat
 REM      run-core-flows-ks.bat
+REM      run-core-flows-nhistest.bat
 REM
 REM  Runs these 6 screens in ONE pass, into ONE report folder:
 REM      com.kpj.tests.Op_Page.RegistrationTest                      (OP Registration)
@@ -17,7 +18,7 @@ REM      com.kpj.tests.SystemConfiguration_page.User                 (System Con
 REM
 REM  Add or remove a screen ONCE here and all four environments follow.
 REM
-REM  Usage:  core-flows-runner.bat <devhis|klg|dsh|ks> [nationality]
+REM  Usage:  core-flows-runner.bat <devhis|klg|dsh|ks|nhistest> [nationality]
 REM
 REM  The optional 2nd argument registers/admits a FOREIGN patient instead of the default Malaysian one:
 REM  Identification Type becomes Passport (not New IC), the next of kin takes the same nationality, and the
@@ -42,9 +43,9 @@ REM     screen rather than saying why.
 set "ENVLABEL="
 if /i "%ENVKEY%"=="devhis" (
   REM The jar's own built-in default login (farisha) has been failing intermittently, so devhis now
-  REM defaults to the tieba account instead. Password reset 2026-09-10 (was User@123).
-  set "DEVHIS_OPTS=-Ddevhis.user=tieba -Ddevhis.pass=Tieba@123"
-  set "ENVLABEL=devhis - default URL, tieba credentials"
+  REM defaults to the Sarannya account instead (the framework's own default login, User@123).
+  set "DEVHIS_OPTS=-Ddevhis.user=Sarannya -Ddevhis.pass=User@123"
+  set "ENVLABEL=devhis - default URL, Sarannya credentials"
 )
 if /i "%ENVKEY%"=="klg" (
   set "DEVHIS_OPTS=-Ddevhis.url=https://klg-nhisqa.kpjhealth.com.my -Ddevhis.user=Poovin -Ddevhis.pass=Nhis@123"
@@ -58,9 +59,13 @@ if /i "%ENVKEY%"=="ks" (
   set "DEVHIS_OPTS=-Ddevhis.url=https://ks-nhisqa.kpjhealth.com.my -Ddevhis.user=Poovin -Ddevhis.pass=Nhis@123"
   set "ENVLABEL=KS QA - https://ks-nhisqa.kpjhealth.com.my"
 )
+if /i "%ENVKEY%"=="nhistest" (
+  set "DEVHIS_OPTS=-Ddevhis.url=https://nhistest.sancyberhad.com -Ddevhis.user=Tieba -Ddevhis.pass=User@123"
+  set "ENVLABEL=NHIS Test - https://nhistest.sancyberhad.com (admin Tieba)"
+)
 if not defined ENVLABEL (
-  echo [ERROR] Unknown environment "%ENVKEY%" - use devhis, klg, dsh or ks.
-  echo         Double-click run-core-flows-devhis.bat / -klg.bat / -dsh.bat / -ks.bat instead.
+  echo [ERROR] Unknown environment "%ENVKEY%" - use devhis, klg, dsh, ks or nhistest.
+  echo         Double-click run-core-flows-devhis.bat / -klg.bat / -dsh.bat / -ks.bat / -nhistest.bat instead.
   pause
   exit /b 1
 )

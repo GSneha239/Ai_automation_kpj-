@@ -36,7 +36,7 @@ public class GraphicalView extends DevHisBase {
 
         LoginPage loginPage = new LoginPage(page);
         loginPage.login(BASE, USER, PASS);
-        step("Login", "tieba / Tieba@123", "Authenticated; Patient Dashboard", "Logged in", "PASS");
+        step("Login", "tieba / User@123", "Authenticated; Patient Dashboard", "Logged in", "PASS");
 
         com.kpj.pages.Ip.GraphicalView gv = new com.kpj.pages.Ip.GraphicalView(page);
 

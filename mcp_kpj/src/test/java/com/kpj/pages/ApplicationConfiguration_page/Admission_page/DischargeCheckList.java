@@ -147,7 +147,10 @@ public class DischargeCheckList extends BasePage {
         String[] pool = { "Discharge Summary Signed", "Medication Reconciliation Done", "Final Bill Settled",
                           "Follow Up Appointment Given", "Patient Belongings Returned", "Cannula Removed",
                           "Discharge Medication Handed Over", "Home Care Instructions Explained" };
-        String remark = pool[(int) (Math.abs(System.nanoTime()) % pool.length)];
+        // Unique per run (a fixed pool is exhausted for good on the shared QA env), kept within 30 characters.
+        String suffix = " " + code.substring(2);
+        String base = pool[(int) (Math.abs(System.nanoTime()) % pool.length)];
+        String remark = (base.length() + suffix.length() > 30 ? base.substring(0, 30 - suffix.length()).trim() : base) + suffix;
         lastCode = code;
         lastRemark = remark;
         Object r = page.evaluate("([code,remark]) => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const A=window.angular;"
@@ -193,14 +196,89 @@ public class DischargeCheckList extends BasePage {
                     + " const res = await fetch('/api/DischargeCheckListMaster/fetch?_cb=' + Date.now(),"
                     + "   {method:'POST', cache:'no-store', headers:{'Content-Type':'application/json','Accept':'application/json'},"
                     + "    body: JSON.stringify({ExecFlag:'GRID'})});"
-                    + " const d = await res.json(); const row=(d||[]).find(x=>(''+x.code).trim()===code);"
+                    + " const d = await res.json(); if(!Array.isArray(d)) return 'fetch failed: HTTP '+res.status+' non-list answer: '+JSON.stringify(d).slice(0,400); const row=(d||[]).find(x=>(''+x.code).trim()===code);"
+                    + " window.__dclSeen = 'API answered HTTP '+res.status+' with '+((d||[]).length)+' row(s); last codes: '+(d||[]).slice(-5).map(x=>x.code).join(', ');"
                     + " return row ? ('id='+row.id+' code='+row.code+' description='+row.description+' mandatory='+row.ismandantory) : ''; }"
                     + " catch(e) { return 'fetch failed: '+e; } }", code);
             String s = r == null ? "" : r.toString();
+            if (s.startsWith("fetch failed")) { lastFetchNote = s; return ""; }
             if (!s.isEmpty()) return s;
             page.waitForTimeout(800);
         }
+        Object seen = page.evaluate("() => window.__dclSeen || ''");
+        lastFetchNote = seen == null ? "" : seen.toString();
         return "";
+    }
+
+    public String lastFetchNote = "";
+    public boolean listFound = false;
+    public byte[] listPng;
+
+    private static final String GRID_TEXT_JS =
+            "() => { const vis=e=>e.offsetWidth||e.offsetHeight||e.getClientRects().length;"
+            + " const g=[...document.querySelectorAll(\"[id$='-grid-container']\")].find(vis); if(!g) return null;"
+            + " return {rows:[...g.querySelectorAll('.ui-grid-row')].filter(vis).length, text:(g.textContent||'').replace(/\\\\s+/g,' ').trim()}; }";
+
+    /**
+     * Look for the saved row IN THE LIST: wait for the grid data to load, search the Code column filter for the code, and if that
+     * does not show it, page through EVERY page of the list (a new row lands on a later page). Sets {@link #listFound}.
+     */
+    public String verifyInList(String code) {
+        listFound = false;
+        // Back to the list if the add form is still showing.
+        try {
+            if (page.url().toLowerCase().contains("add-")) {
+                page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const b=[...document.querySelectorAll('button,a')]"
+                        + ".filter(x=>x.offsetWidth||x.offsetHeight).find(x=>/closeForm/i.test(x.getAttribute('ng-click')||'')||/^\\s*back\\s*$/i.test(norm(x.textContent))); if(b) b.click(); }");
+                waitForAngular(2000);
+            }
+        } catch (Exception ignore) { }
+        // Wait for the data to load (up to 20 s): a row must carry text.
+        try {
+            page.waitForFunction("() => { const vis=e=>e.offsetWidth||e.offsetHeight||e.getClientRects().length;"
+                    + " const g=[...document.querySelectorAll(\"[id$='-grid-container']\")].find(vis); if(!g) return false;"
+                    + " return [...g.querySelectorAll('.ui-grid-row')].filter(vis).some(r=>(r.textContent||'').replace(/\\s+/g,' ').trim().length>0); }",
+                    null, new Page.WaitForFunctionOptions().setTimeout(20000));
+        } catch (Exception ignore) { }
+        waitForAngular(800);
+
+        // 1) Search: the Code column's own filter box.
+        String viaFilter = "no column filter box";
+        try {
+            com.microsoft.playwright.Locator filter = page.locator("input[ng-model='colFilter.term']:visible").first();
+            if (filter.count() > 0) {
+                filter.click(); filter.pressSequentially(code, new com.microsoft.playwright.Locator.PressSequentiallyOptions().setDelay(60)); filter.press("Enter");
+                waitForAngular(2500);
+                try { listPng = page.screenshot(new Page.ScreenshotOptions().setTimeout(8000)); } catch (Exception ignore) { }
+                Object g = page.evaluate(GRID_TEXT_JS);
+                String txt = g instanceof java.util.Map ? String.valueOf(((java.util.Map<?, ?>) g).get("text")) : "";
+                boolean hit = txt.contains(code);
+                viaFilter = "filter \"" + code + "\" -> " + (hit ? "FOUND" : "not shown") + (g instanceof java.util.Map ? " (" + ((java.util.Map<?, ?>) g).get("rows") + " row(s))" : "");
+                if (hit) { listFound = true; return "searched the Code filter: " + viaFilter; }
+                filter.fill("");
+                waitForAngular(1500);
+            }
+        } catch (Exception e) { viaFilter = "filter failed: " + e.getMessage().split("\n")[0]; }
+
+        // 2) Page through all pages.
+        int pages = 0;
+        String lastText = null;
+        try {
+            page.evaluate("() => { const b=document.querySelector(\"[ng-click^='pageFirstPageClick']\"); if(b&&!b.disabled) b.click(); }");
+            waitForAngular(1000);
+        } catch (Exception ignore) { }
+        for (int p = 0; p < 80; p++) {
+            Object g = page.evaluate(GRID_TEXT_JS);
+            String txt = g instanceof java.util.Map ? String.valueOf(((java.util.Map<?, ?>) g).get("text")) : "";
+            pages++;
+            if (txt.contains(code)) { listFound = true; return viaFilter + "; found on page " + pages + " while paging through the list"; }
+            if (txt.equals(lastText)) break;   // the next click changed nothing: last page reached
+            lastText = txt;
+            Object moved = page.evaluate("() => { const b=document.querySelector(\"[ng-click^='pageNextPageClick']\"); if(!b||b.disabled) return false; b.click(); return true; }");
+            if (!Boolean.TRUE.equals(moved)) break;
+            waitForAngular(900);
+        }
+        return viaFilter + "; paged through " + pages + " page(s) of the list without finding \"" + code + "\"";
     }
 
     /** The save API's status + body, captured while Submit runs (a bare "Message Not Found." toast says nothing). */

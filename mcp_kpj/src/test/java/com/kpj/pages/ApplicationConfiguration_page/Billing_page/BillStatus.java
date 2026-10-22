@@ -62,12 +62,12 @@ public class BillStatus extends BasePage {
                 page.waitForFunction("() => [...document.querySelectorAll('a')].some(a=>/application\\s*config/i.test((a.textContent||'')) && a.offsetParent!==null)",
                         null, new Page.WaitForFunctionOptions().setTimeout(15000));
             } catch (Exception ignore) { }
-            page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const a=[...document.querySelectorAll('a')].find(x=>/application\\s*config/i.test(norm(x.textContent)) && x.offsetParent!==null); if(a) a.click(); }");
-            waitForAngular(1200);
-            // EXACT "Billing" — a prefix match can expand a different (similarly named) menu.
-            page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const a=[...document.querySelectorAll('a')].find(x=>/^\\s*billing\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null); if(a) a.click(); }");
-            waitForAngular(1000);
-            Object href = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const a=[...document.querySelectorAll('a[href]')].find(x=>/^\\s*bill\\s*status\\s*$/i.test(norm(x.textContent)) || /billstatus/i.test(x.getAttribute('href')||'')); if(!a) return ''; a.id='__bsMenu'; return a.getAttribute('href')||'link'; }");
+            // Expand each level only if it is not already open: a click on an open entry CLOSES it, and this loop used to
+            // re-click Application Configuration on every attempt. "Billing" is also a top-level module in the sidebar, listed
+            // before Application Configuration, so it is looked up INSIDE the Application Configuration entry only.
+            expandMenuEntry(null, "^\\s*application\\s*config(uration)?\\s*$");
+            expandMenuEntry("^\\s*application\\s*config(uration)?\\s*$", "^\\s*billing\\s*$");
+            Object href = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const a=[...document.querySelectorAll('a[href]')].filter(x=>x.offsetParent!==null).find(x=>/^\\s*bill\\s*status\\s*$/i.test(norm(x.textContent)) || /billstatus/i.test(x.getAttribute('href')||'')); if(!a) return ''; a.id='__bsMenu'; return a.getAttribute('href')||'link'; }");
             if (href == null || href.toString().isEmpty()) { System.out.println("BillStatus.nav: menu link not found (attempt " + (attempt + 1) + ")"); continue; }
             if (href.toString().startsWith("#")) menuHref = href.toString();
             try { page.locator("#__bsMenu").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000)); }
@@ -128,7 +128,11 @@ public class BillStatus extends BasePage {
     public String fillDetails(int attempt) {
         String code = "BS" + String.format("%05d", Math.abs((System.nanoTime() + attempt * 7919L) % 100000));
         lastCode = code;
-        lastRemark = REMARKS[(int) (Math.abs(System.nanoTime() / 1000 + attempt) % REMARKS.length)];
+        // The Description (Remark) must be UNIQUE: the shared QA environment keeps every saved Bill Status and answers "Description
+        // already exists!" for a repeated one, so a bare pool name collides once the pool is used up. A realistic name + the run time
+        // (+ the retry number) never repeats.
+        String stamp = java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyMMddHHmmss"));
+        lastRemark = REMARKS[(int) (Math.abs(System.nanoTime() / 1000 + attempt) % REMARKS.length)] + " " + stamp + (attempt > 0 ? "-" + attempt : "");
         Object r = page.evaluate("(a) => { const A=window.angular;" + FIND_FIELDS
                 + " const set=(e,v)=>{ if(!e) return '(no field)'; const c=A.element(e).controller('ngModel'); e.value=v; if(c){c.$setViewValue(v);c.$render();} e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true})); return v; };"
                 + " const cd=set(codeEl, a.code); const rm=set(remEl, a.remark);"

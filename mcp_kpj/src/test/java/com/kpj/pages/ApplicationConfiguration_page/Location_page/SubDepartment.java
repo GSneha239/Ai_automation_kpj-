@@ -231,7 +231,11 @@ public class SubDepartment extends BasePage {
      *  along so a retry after "already exists" submits different details. */
     public String fillCodeAndName(int attempt) {
         lastCode = "SD" + String.format("%05d", Math.abs((System.nanoTime() / 977 + attempt * 7919L) % 100000));
-        lastSubDepartment = NAMES[(int) (Math.abs(System.nanoTime() / 7 + attempt) % NAMES.length)];
+        // The Sub Department name must be UNIQUE: the shared QA environment keeps every saved one and answers "SubDepartment already
+        // exists!" for a repeated name, so a bare pool name ("Sub-Nephrology") collides once the pool is used up. A realistic name +
+        // the run time (+ the retry number) never repeats.
+        String stamp = java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyMMddHHmmss"));
+        lastSubDepartment = NAMES[(int) (Math.abs(System.nanoTime() / 7 + attempt) % NAMES.length)] + " " + stamp + (attempt > 0 ? "-" + attempt : "");
         String c = fillField("subdepartment.SubDepartmentcode", lastCode);
         String n = fillField("subdepartment.Subdepartment", lastSubDepartment);
         lastTimeSlot = fillField("subdepartment.timeslot", "15");

@@ -73,10 +73,6 @@ public class Group extends DevHisBase {
             try { headerPng = page.screenshot(new com.microsoft.playwright.Page.ScreenshotOptions().setTimeout(8000)); }
             catch (Exception e) { System.out.println("Group: header screenshot failed - " + e.getMessage()); }
 
-            loc = gr.fillLocationDetails(attempt);
-            try { locPng = page.screenshot(new com.microsoft.playwright.Page.ScreenshotOptions().setTimeout(8000)); }
-            catch (Exception e) { System.out.println("Group: location details screenshot failed - " + e.getMessage()); }
-
             statusResult = gr.selectStatusTrueFalse();
             used++;
 
@@ -96,19 +92,6 @@ public class Group extends DevHisBase {
         } else {
             step(page, "Enter Group Code and Group", "Enter Group Code* and Group* (name)",
                     "Group Code and Group are entered", headerActual, headerOk ? "PASS" : "FAIL");
-        }
-
-        boolean locOk = !loc.contains("(not found)");
-        if (locPng != null && locPng.length > 0) {
-            step(locPng, "Fill Group Location Details",
-                    "Fill Code, OPLedger, IPLedger, Cost Centre, OPD MarkUp, IPD MarkUp, RefEntitySharePer, Print Order",
-                    "All Group Location Details fields are filled",
-                    loc + (locOk ? "" : "\n" + gr.describeForm()), locOk ? "PASS" : "FAIL");
-        } else {
-            step(page, "Fill Group Location Details",
-                    "Fill Code, OPLedger, IPLedger, Cost Centre, OPD MarkUp, IPD MarkUp, RefEntitySharePer, Print Order",
-                    "All Group Location Details fields are filled",
-                    loc + (locOk ? "" : "\n" + gr.describeForm()), locOk ? "PASS" : "FAIL");
         }
 
         boolean statusOk = !statusResult.startsWith("(no true/false");

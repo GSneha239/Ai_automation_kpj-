@@ -55,8 +55,10 @@ public class PrApprovalLevelMaster extends BasePage {
         try { page.waitForFunction("() => window.angular", null,
                 new Page.WaitForFunctionOptions().setTimeout(20000)); } catch (Exception ignore) { }
 
-        clickMenu("^\\s*application\\s*configuration\\s*$");
-        clickMenu("^\\s*inventory\\s*$");
+        // Expand each level only if it is not already open: a click on an open entry CLOSES it, so a blind click can leave
+        // Application Configuration shut and the run on the dashboard. Inventory is looked up INSIDE Application Configuration.
+        expandMenuEntry(null, "^\\s*application\\s*config(uration)?\\s*$");
+        expandMenuEntry("^\\s*application\\s*config(uration)?\\s*$", "^\\s*inventory\\s*$");
         lastMenu = describeMenu();
 
         // Anchored to the WHOLE label, and hidden anchors are included on purpose: these menu links sit in
@@ -64,9 +66,11 @@ public class PrApprovalLevelMaster extends BasePage {
         // contains the words — the scaffolding trap that once ran an entire Compliance flow against
         // Complaint Type and reported PASS against the wrong screen's fields.
         Object href = page.evaluate("() => {" + JS
-                + " const a=[...document.querySelectorAll('a[href]')]"
-                + "   .find(x=>/^\\s*pr\\s*approval\\s*level\\s*master\\s*$/i.test(norm(x.textContent))"
-                + "        || /^\\s*pr\\s*approval\\s*level\\s*$/i.test(norm(x.textContent)));"
+                + " const links=[...document.querySelectorAll('a[href]')];"
+                + " const hit=x=>/^\\s*pr\\s*approval\\s*level\\s*master\\s*$/i.test(norm(x.textContent))"
+                + "        || /^\\s*pr\\s*approval\\s*level\\s*$/i.test(norm(x.textContent));"
+                // A visible link first; a hidden one only as the fallback (the route can still be read off it).
+                + " const a=links.filter(vis).find(hit) || links.find(hit);"
                 + " if(!a) return ''; a.id='__prMenu'; return a.getAttribute('href')||''; }");
         lastRoute = href == null ? "" : href.toString();
         if (!lastRoute.isEmpty()) {
@@ -121,8 +125,11 @@ public class PrApprovalLevelMaster extends BasePage {
     private void clickMenu(String textRegex) {
         page.evaluate("(re) => {" + JS
                 + " const rx=new RegExp(re,'i');"
-                + " const a=[...document.querySelectorAll('a,li>a,span')].filter(vis)"
-                + "   .find(x=>rx.test(norm(x.textContent)));"
+                + " const all=[...document.querySelectorAll('a,li>a,span')].filter(vis)"
+                + "   .filter(x=>rx.test(norm(x.textContent)));"
+                + " const ac=[...document.querySelectorAll('a')].find(x=>/^\s*application\s*configuration\s*$/i.test(norm(x.textContent)));"
+                + " const root=ac&&ac.closest('li'); const a=(root&&all.find(x=>x!==ac&&root.contains(x)))||all[0];"
+
                 + " if(a) a.click(); }", textRegex);
         waitForAngular(1200);
     }
@@ -227,7 +234,13 @@ public class PrApprovalLevelMaster extends BasePage {
      * <p>The list is waited for rather than sampled once — these dropdowns fill asynchronously, and one
      * early read reports "(no-option)" for a screen that is merely still loading.</p>
      */
-    public String selectLevel() {
+    public String selectLevel() { return selectLevel(0); }
+
+    /** Number of real options in the level dropdown (read by the last {@link #selectLevel(int)}). */
+    public int levelCount = 0;
+
+    /** Select the {@code which}-th real level (0 = first); clamps to the last one. */
+    public String selectLevel(int which) {
         long end = System.currentTimeMillis() + 12000;
         int n = 0;
         while (n == 0 && System.currentTimeMillis() < end) {
@@ -240,7 +253,7 @@ public class PrApprovalLevelMaster extends BasePage {
             if (n == 0) page.waitForTimeout(400);
         }
 
-        Object info = page.evaluate("() => {" + JS
+        Object info = page.evaluate("(w) => {" + JS
                 + " document.querySelectorAll('#__prSel').forEach(e=>e.removeAttribute('id'));"
                 + " const sels=[...document.querySelectorAll('select')].filter(vis)"
                 + "   .filter(s=>!/pagination|colFilter/i.test(ngOf(s)));"
@@ -250,11 +263,12 @@ public class PrApprovalLevelMaster extends BasePage {
                 + " if(!e) return null; e.id='__prSel';"
                 + " const reals=[...e.options].map((o,i)=>({o,i}))"
                 + "   .filter(x=>x.o.value && !/^-*\\s*select/i.test(norm(x.o.text)));"
-                + " return {index: reals.length? reals[0].i : -1, ng:(ngOf(e)||'?'), count:reals.length}; }");
+                + " return {index: reals.length? reals[Math.min(w, reals.length-1)].i : -1, ng:(ngOf(e)||'?'), count:reals.length}; }", which);
         if (info == null) { lastLevel = "(no dropdown on this screen)"; return lastLevel; }
         @SuppressWarnings("unchecked")
         java.util.Map<String, Object> m = (java.util.Map<String, Object>) info;
         int index = ((Number) m.get("index")).intValue();
+        levelCount = ((Number) m.get("count")).intValue();
         if (index < 0) { lastLevel = "(no-option) [" + m.get("ng") + "]"; return lastLevel; }
         try {
             page.locator("#__prSel").selectOption(
@@ -281,19 +295,29 @@ public class PrApprovalLevelMaster extends BasePage {
      * when Submit refuses, so the report can say whether the refusal was caused by the missing location
      * or is a fault of the save itself.</p>
      */
-    public String selectLocation() {
-        Object r = page.evaluate("() => {" + JS
+    public String selectLocation() { return selectLocation(0); }
+
+    /** Number of real (non --All--) locations in the Location dropdown. */
+    public int locationCount = 0;
+
+    /** Select the {@code which}-th real location (0 = first); clamps to the last one. */
+    public String selectLocation(int which) {
+        Object cnt = page.evaluate("() => {" + JS
+                + " const e=[...document.querySelectorAll('select')].filter(vis).find(s=>/locationid$/i.test(tail(s)));"
+                + " return e? [...e.options].filter(o=>o.value && !/^-*\\s*(all|select)/i.test(norm(o.text))).length : 0; }");
+        locationCount = cnt instanceof Number ? ((Number) cnt).intValue() : 0;
+        Object r = page.evaluate("(w) => {" + JS
                 + " const e=[...document.querySelectorAll('select')].filter(vis)"
                 + "   .find(s=>/locationid$/i.test(tail(s)));"
                 + " if(!e) return '(no location dropdown)';"
                 + " const reals=[...e.options].map((o,i)=>({o,i}))"
                 + "   .filter(x=>x.o.value && !/^-*\s*(all|select)/i.test(norm(x.o.text)));"
                 + " if(!reals.length) return '(no real location option)';"
-                + " e.selectedIndex=reals[0].i;"
+                + " e.selectedIndex=reals[Math.min(w, reals.length-1)].i;"
                 + " try{ const c=angular.element(e).controller('ngModel');"
                 + "      if(c){ c.$setViewValue(e.value); c.$render(); } }catch(err){}"
                 + " e.dispatchEvent(new Event('change',{bubbles:true}));"
-                + " return norm((e.options[e.selectedIndex]||{}).text||'')+' ['+(ngOf(e)||'?')+']'; }");
+                + " return norm((e.options[e.selectedIndex]||{}).text||'')+' ['+(ngOf(e)||'?')+']'; }", which);
         lastLocation = r == null ? "" : r.toString();
         waitForAngular(1200);
         System.out.println("PrApprovalLevelMaster: location = " + lastLocation);

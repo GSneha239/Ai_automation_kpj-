@@ -19,6 +19,7 @@ public class RecallReason extends BasePage {
 
     public static String LIST_ROUTE = "#/RecallReasonList";
     public String lastCode = "", lastReasonName = "";
+    public String lastDiagnostic = "";
 
     /** Realistic CSSD recall-reason names, not "Auto recall reason &lt;code&gt;" filler — cycled per retry attempt. */
     private static final String[] REASONS = {
@@ -75,21 +76,25 @@ public class RecallReason extends BasePage {
     public String fillDetails(int attempt) {
         String code = "RR" + String.format("%06d", Math.abs((System.nanoTime() + attempt * 7919L) % 1000000));
         lastCode = code;
-        lastReasonName = REASONS[attempt % REASONS.length] + (attempt >= REASONS.length ? " " + (attempt / REASONS.length + 1) : "");
+        // Unique per run: a fixed name pool is exhausted for good on the shared QA environment.
+        // Kept within 30 characters: a longer name was saved with no toast at all.
+        String suffix = " " + code.substring(4);
+        String base = REASONS[attempt % REASONS.length];
+        lastReasonName = (base.length() + suffix.length() > 30 ? base.substring(0, 30 - suffix.length()).trim() : base) + suffix;
         setNg("RecallReason.reasoncode", code);
         setNg("RecallReason.reasonname", lastReasonName);
         waitForAngular(300);
         return "Code=" + code + " | RecallReason=" + lastReasonName;
     }
 
-    /** Click <b>Save</b> ({@code fnAddRecallReason}) and return the toast (toastr cleared first). */
+    /** Click <b>Submit</b>/<b>Save</b> ({@code fnAddRecallReason}) and return the toast (toastr cleared first). */
     public String saveAndGetToast() {
         Object tagged = page.evaluate("() => { window.__rrToasts=[]; if(window.__rrObs) window.__rrObs.disconnect();"
                 + " try{ if(window.toastr) toastr.clear(); }catch(e){} document.querySelectorAll('#toast-container .toast, .toast-message').forEach(t=>t.remove());"
                 + " const grab=()=>{ document.querySelectorAll('.toast-message,.toast,[id^=toast]').forEach(el=>{ const t=(el.textContent||'').replace(/\\s+/g,' ').trim(); if(t && !window.__rrToasts.includes(t)) window.__rrToasts.push(t); }); };"
                 + " window.__rrObs=new MutationObserver(grab); window.__rrObs.observe(document.body,{childList:true,subtree:true}); grab();"
                 + " const b=[...document.querySelectorAll('button,a,input[type=submit],input[type=button]')].find(x=>/fnAddRecallReason/.test(x.getAttribute('ng-click')||'') && x.offsetParent!==null)"
-                + " || [...document.querySelectorAll('button,input[type=submit]')].find(x=>/^\\s*save\\s*$/i.test((x.textContent||x.value||'').trim()) && x.offsetParent!==null); if(!b) return false; b.id='__rrSave'; return true; }");
+                + " || [...document.querySelectorAll('button,input[type=submit]')].find(x=>/^\\s*(save|submit)\\s*$/i.test((x.textContent||x.value||'').trim()) && x.offsetParent!==null); if(!b) return false; b.id='__rrSave'; return true; }");
         if (!Boolean.TRUE.equals(tagged)) { System.out.println("saveAndGetToast: Save button not found"); return ""; }
         try { page.locator("#__rrSave").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000)); }
         catch (Exception e) { System.out.println("saveAndGetToast: Save click failed - " + e.getMessage()); }
@@ -102,6 +107,20 @@ public class RecallReason extends BasePage {
         }
         Object r = page.evaluate("() => { const a=window.__rrToasts||[]; return a.find(x=>/saved|added|success/i.test(x)) || a.find(x=>x) || ''; }");
         waitForAngular(400);
-        return r == null ? "" : r.toString().trim();
+        String toast = r == null ? "" : r.toString().trim();
+        if (toast.isEmpty()) {
+            // Say what the screen looks like when Submit does nothing: the button, form validity, the API calls made.
+            Object d = page.evaluate("() => { const n=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                    + " const bs=[...document.querySelectorAll('button,input[type=submit],input[type=button]')].filter(x=>x.offsetParent!==null)"
+                    + "   .map(x=>x.outerHTML.slice(0,160)).join(' || ');"
+                    + " const inv=[...document.querySelectorAll('.ng-invalid,.has-error')].filter(x=>x.offsetParent!==null)"
+                    + "   .map(x=>(x.getAttribute('ng-model')||x.id||x.className)).join(', ');"
+                    + " const msgs=[...document.querySelectorAll('.text-danger,.error,.help-block,.validation-summary-errors')].filter(x=>x.offsetParent!==null)"
+                    + "   .map(x=>n(x.textContent)).filter(t=>t).join(' | ');"
+                    + " return 'buttons: '+bs+' ; invalid fields: '+(inv||'none')+' ; messages: '+(msgs||'none'); }");
+            lastDiagnostic = d == null ? "" : d.toString();
+            System.out.println("saveAndGetToast: no toast - " + lastDiagnostic);
+        }
+        return toast;
     }
 }

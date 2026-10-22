@@ -92,8 +92,11 @@ public class FranchiseMaster extends BasePage {
     private void clickMenu(String textRegex) {
         page.evaluate("(re) => {" + JS
                 + " const rx=new RegExp(re,'i');"
-                + " const a=[...document.querySelectorAll('a,li>a,span')].filter(vis)"
-                + "   .find(x=>rx.test(norm(x.textContent)));"
+                + " const all=[...document.querySelectorAll('a,li>a,span')].filter(vis)"
+                + "   .filter(x=>rx.test(norm(x.textContent)));"
+                + " const ac=[...document.querySelectorAll('a')].find(x=>/^\s*application\s*configuration\s*$/i.test(norm(x.textContent)));"
+                + " const root=ac&&ac.closest('li'); const a=(root&&all.find(x=>x!==ac&&root.contains(x)))||all[0];"
+
                 + " if(a) a.click(); }", textRegex);
         waitForAngular(1200);
     }
@@ -153,21 +156,44 @@ public class FranchiseMaster extends BasePage {
         try {
             page.locator("#__fmAdd").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000));
         } catch (Exception e) {
-            System.out.println("FranchiseMaster.clickAdd: " + e.getMessage().split("\n")[0]);
+            // The whole message, not just its first line - that line is only "Error {" and hid why the click failed.
+            String m = String.valueOf(e.getMessage()).replaceAll("\\s*\\n\\s*", " | ");
+            System.out.println("FranchiseMaster.clickAdd: click failed - " + (m.length() > 900 ? m.substring(0, 900) : m));
         }
+        boolean opened = waitForCodeField(12000);
+        if (!opened) {
+            // Fallbacks, each logged: a script-level click(), then the ng-click handler called on its own scope.
+            System.out.println("FranchiseMaster.clickAdd: click did not open the form (url " + page.url()
+                    + ") - trying a script click");
+            page.evaluate("() => { const b=document.getElementById('__fmAdd'); if(b) b.click(); }");
+            opened = waitForCodeField(6000);
+        }
+        if (!opened) {
+            Object called = page.evaluate("() => { const b=document.getElementById('__fmAdd'); if(!b) return 'no-button';"
+                    + " const s=window.angular && angular.element(b).scope(); if(!s || !s.AddFranchiseDetails) return 'no-handler';"
+                    + " s.$apply(()=>s.AddFranchiseDetails()); return 'called'; }");
+            System.out.println("FranchiseMaster.clickAdd: direct AddFranchiseDetails() -> " + called + " (url " + page.url() + ")");
+            opened = waitForCodeField(8000);
+        }
+        if (!opened) System.out.println("FranchiseMaster.clickAdd: Code field never appeared (url " + page.url() + ")");
         page.evaluate("() => { const e=document.getElementById('__fmAdd'); if(e) e.removeAttribute('id'); }");
+        waitForAngular(900);
+        return formOpen();
+    }
+
+    /** Wait up to {@code ms} for a visible Code box (the list screen has none). */
+    private boolean waitForCodeField(int ms) {
         try {
             page.waitForFunction("() => [...document.querySelectorAll('input,textarea')].some(e=>"
                     + " (e.offsetWidth||e.offsetHeight||e.getClientRects().length)"
                     + " && !/colFilter|row\\.entity/i.test(e.getAttribute('ng-model')||'')"
                     + " && /code/i.test(((e.getAttribute('ng-model')||'').split('.').pop()||'')"
                     + "                  +' '+(e.placeholder||'')))",
-                    null, new Page.WaitForFunctionOptions().setTimeout(12000));
+                    null, new Page.WaitForFunctionOptions().setTimeout(ms));
+            return true;
         } catch (Exception ignore) {
-            System.out.println("FranchiseMaster.clickAdd: Code field never appeared");
+            return false;
         }
-        waitForAngular(900);
-        return formOpen();
     }
 
     /** The entry form is showing — judged on a Code box, which the list screen does not have. */

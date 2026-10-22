@@ -33,8 +33,11 @@ public class SubGroupMaster extends BasePage {
         page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
                 + " const a=[...document.querySelectorAll('a')].find(x=>/application\\s*config/i.test(norm(x.textContent)) && x.offsetParent!==null); if(a) a.click(); }");
         waitForAngular(900);
+        // "Billing" is ALSO a top-level module in the sidebar, listed before Application Configuration: an unscoped lookup clicks
+        // that one, which collapses the Application Configuration menu again. Look only inside the Application Configuration entry.
         page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                + " const a=[...document.querySelectorAll('a')].find(x=>/^\\s*billing\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null); if(a) a.click(); }");
+                + " const top=[...document.querySelectorAll('a')].find(x=>/application\\s*config/i.test(norm(x.textContent)) && x.offsetParent!==null); const scope=(top&&top.closest('li'))||document;"
+                + " const a=[...scope.querySelectorAll('a')].find(x=>/^\\s*billing\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null); if(a) a.click(); }");
         waitForAngular(800);
         Object href = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
                 + " const a=[...document.querySelectorAll('a[href]')].find(x=>/^\\s*sub\\s*group\\s*$/i.test(norm(x.textContent)) || /#\\/subgroup\\b/i.test(x.getAttribute('href')||'')); if(!a) return ''; a.id='__sgMenu'; return a.getAttribute('href')||'link'; }");
@@ -69,13 +72,29 @@ public class SubGroupMaster extends BasePage {
         try { page.locator("#__sgAdd").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000)); }
         catch (Exception e) { System.out.println("SubGroupMaster.clickAdd: click failed - " + e.getMessage()); }
         try {
-            // wait for the SubGroupCode input AND the Group select's real options (loads async)
-            page.waitForFunction("() => { const c=[...document.querySelectorAll('input')].some(e=>e.offsetParent!==null && (e.getAttribute('ng-model')||'')==='subgroup.SubGroupCode');"
+            // wait for the form (Location select) AND the Group select's real options (loads async). Sub Group Code is no longer a
+            // text box - it is a select2 dropdown that only fills in once Group is chosen.
+            page.waitForFunction("() => { const c=!!document.querySelector(\"select[ng-model='subgroup.LocationID']\");"
                     + " const g=document.querySelector(\"select[ng-model='subgroup.GroupID']\"); const gok=g && [...g.options].some(o=>o.value && (o.textContent||'').trim() && !/^-*\\s*select/i.test((o.textContent||'').trim())); return c && gok; }",
                     null, new Page.WaitForFunctionOptions().setTimeout(15000));
         } catch (Exception ignore) { System.out.println("SubGroupMaster.clickAdd: add form/Group options not ready"); }
         waitForAngular(1000);
         return true;
+    }
+
+    /** Diagnostics: every visible select / input on the form with its ng-model (and a select's first options). Never fails the flow. */
+    public String describeControls() {
+        Object r = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const vis=e=>e && e.offsetParent!==null;"
+                + " const sel=[...document.querySelectorAll('select')].map(e=>'SELECT'+(vis(e)?'':'(hidden)')+' [ng='+(e.getAttribute('ng-model')||'?')+'] opts='+e.options.length"
+                + "   +' first=['+[...e.options].slice(0,4).map(o=>norm(o.textContent).slice(0,24)).join(' | ')+']');"
+                + " const inp=[...document.querySelectorAll('input')].filter(vis).filter(e=>!/colFilter|pagination/.test(e.getAttribute('ng-model')||''))"
+                + "   .map(e=>'INPUT [ng='+(e.getAttribute('ng-model')||'?')+']'+(e.value?'='+e.value:''));"
+                + " const any=[...document.querySelectorAll('[ng-model*=\"subgroup\" i],ui-select,.ui-select-container,.select2-container,.chosen-container')]"
+                + "   .map(e=>'ANY <'+e.tagName.toLowerCase()+'> ng-model='+(e.getAttribute('ng-model')||'-')+' class='+norm(e.className).slice(0,50)+(vis(e)?'':' (hidden)')+' text=\"'+norm(e.textContent).slice(0,40)+'\"');"
+                + " return sel.concat(inp).concat(any).join('\\n'); }");
+        String out = r == null ? "" : r.toString();
+        System.out.println("SubGroupMaster controls:\n" + out);
+        return out;
     }
 
     private void setNg(String ng, String v) {
@@ -101,29 +120,90 @@ public class SubGroupMaster extends BasePage {
     }
 
     /**
-     * Realistic Sub Group names — not generic filler text; only the Code stays a generated unique value.
+     * Choose the {@code ordinal}-th real row (1-based, wrapping round the list) of a select2 dropdown whose hidden input has the
+     * given ng-model. The Sub Group Code and Sub Group boxes are select2 widgets - there is no text box to type in and no native
+     * select to set, so typing a value into them (as this page used to) silently did nothing and Submit then answered
+     * "Please Enter Sub Group Code!".
+     *
+     * <p>If {@code typed} is given it is entered in the dropdown's search box first: that box offers whatever is typed as a
+     * choice of its own, which is how a NEW value (e.g. a new Sub Group Code) is created from the dropdown. The row whose
+     * text equals {@code typed} is then chosen.</p>
+     *
+     * @return the chosen row's text, or {@code (no-select2)} / {@code (no-choices)}
      */
-    private static final String[] SUBGROUP_NAMES = {
-            "Consumables", "Pharmacy Items", "Surgical Supplies", "Laboratory Reagents",
-            "Radiology Consumables", "Medical Devices", "Dietary Supplies", "Housekeeping Items",
-            "Maintenance Parts", "Office Supplies", "IT Equipment", "Linen and Bedding"
-    };
+    private String selectSelect2(String hiddenNg, int ordinal, String typed) {
+        Object tagged = page.evaluate("(ng) => { const inp=document.querySelector(\"input[ng-model='\"+ng+\"']\"); if(!inp) return false;"
+                + " let c=inp.previousElementSibling; while(c && !/select2-container/.test(c.className||'')) c=c.previousElementSibling;"
+                + " if(!c && inp.parentElement) c=inp.parentElement.querySelector('.select2-container'); if(!c) return false;"
+                + " c.setAttribute('data-s2','pick'); return true; }", hiddenNg);
+        if (!Boolean.TRUE.equals(tagged)) return "(no-select2)";
+        try {
+            // A select2 left open by the previous pick puts its "select2-drop-mask" over the page, and every click then fails with
+            // "select2-drop-mask intercepts pointer events". Close any open one first.
+            if (Boolean.TRUE.equals(page.evaluate("() => !!document.querySelector('.select2-drop-mask, .select2-drop-active')"))) {
+                page.keyboard().press("Escape");
+                page.waitForTimeout(300);
+            }
+            page.locator("[data-s2='pick'] .select2-choice").first().click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000));
+            // When a value is to be TYPED the list may hold no existing rows at all (the Sub Group list is empty for a new code),
+            // so wait for the search box rather than for a row.
+            page.waitForFunction(typed != null
+                            ? "() => !!document.querySelector('.select2-drop-active .select2-input')"
+                            : "() => document.querySelectorAll('.select2-drop-active .select2-results li.select2-result-selectable').length > 0",
+                    null, new Page.WaitForFunctionOptions().setTimeout(8000));
+            if (typed != null) {
+                page.locator(".select2-drop-active .select2-input").first().fill(typed);
+                page.waitForTimeout(1500);
+            }
+            Object chosen = page.evaluate("([n, t]) => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                    + " const rows=[...document.querySelectorAll('.select2-drop-active .select2-results li.select2-result-selectable')]"
+                    + ".filter(r=>!/^\\s*-*\\s*select/i.test(r.textContent||''));"
+                    + " if(!rows.length) return '';"
+                    + " const r=(t && rows.find(x=>norm(x.textContent).toLowerCase()===t.toLowerCase())) || rows[(n-1)%rows.length];"
+                    + " r.setAttribute('data-s2row','1'); return norm(r.textContent); }", java.util.Arrays.asList(ordinal, typed));
+            String text = chosen == null ? "" : chosen.toString();
+            if (text.isEmpty() && typed != null) {
+                // The list offers no row for the typed text: accept it as a new value with Enter, then read back what the box holds.
+                page.locator(".select2-drop-active .select2-input").first().press("Enter");
+                page.waitForTimeout(700);
+                Object shown = page.evaluate("(ng) => { const inp=document.querySelector(\"input[ng-model='\"+ng+\"']\"); if(!inp) return '';"
+                        + " let c=inp.previousElementSibling; while(c && !/select2-container/.test(c.className||'')) c=c.previousElementSibling;"
+                        + " const t=c? (c.querySelector('.select2-chosen')||{}).textContent : ''; return (t||'').replace(/\\s+/g,' ').trim(); }", hiddenNg);
+                String s = shown == null ? "" : shown.toString();
+                if (!s.isEmpty() && !s.toLowerCase().startsWith("select")) return s + " (typed, entered with Enter)";
+            }
+            if (text.isEmpty()) return "(no-choices)";
+            page.locator("[data-s2row='1']").first().click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000));
+            return text;
+        } catch (Exception e) {
+            System.out.println("SubGroupMaster.selectSelect2 " + hiddenNg + " failed: " + e.getMessage());
+            return "(no-choices)";
+        } finally {
+            page.evaluate("() => { document.querySelectorAll('[data-s2]').forEach(e=>e.removeAttribute('data-s2'));"
+                    + " document.querySelectorAll('[data-s2row]').forEach(e=>e.removeAttribute('data-s2row')); }");
+            waitForAngular(400);
+        }
+    }
 
     /**
-     * Enter Location, Group, Sub Group Code, Sub Group name. {@code attempt} shifts BOTH the code and the name
-     * so a retry after an "already exists" toast submits genuinely different details.
+     * Select Location, Group, Sub Group Code and Sub Group - the last two through their dropdowns. {@code attempt} gives a
+     * different (new) Sub Group Code each time, so a retry after an "already exists" toast submits another code.
      */
     public String fillHeader(int attempt) {
-        String code = "SG" + String.format("%06d", Math.abs((System.nanoTime() + attempt * 7919L) % 1000000));
-        lastCode = code;
-        String name = SUBGROUP_NAMES[attempt % SUBGROUP_NAMES.length] + (attempt >= SUBGROUP_NAMES.length ? " " + (attempt / SUBGROUP_NAMES.length + 1) : "");
         String loc = realSelectFirst("subgroup.LocationID");
         String grp = realSelectFirst("subgroup.GroupID");
         for (int a = 0; a < 3 && grp.startsWith("("); a++) { waitForAngular(700); grp = realSelectFirst("subgroup.GroupID"); }
         lastGroup = grp;
-        setNg("subgroup.SubGroupCode", code);
-        setNg("subgroup.SubGroupName", name);
-        waitForAngular(300);
+        waitForAngular(1500);                   // the Sub Group Code / Sub Group dropdowns fill in once Group is chosen
+        // Sub Group Code and Sub Group are both chosen from their dropdowns (click the box, a list opens, pick a row). The attempt
+        // number picks the row, so an "already exists" answer is followed by a DIFFERENT value from the same dropdown. The two lists
+        // run in step (row n of Sub Group Code is row n of Sub Group), so the pair stays consistent.
+        // Every row in these lists already exists (86 in a row were refused with "Subgroupcode already exist!"), so type a NEW
+        // unique code and name: the dropdown's search box offers whatever is typed as a choice of its own.
+        String stamp = String.format("%05d", Math.abs((System.nanoTime() + attempt * 7919L) % 100000));
+        String code = selectSelect2("subGroupCodeSelection", attempt + 1, "SG" + stamp);
+        lastCode = code;
+        String name = selectSelect2("subGroupNameSelection", attempt + 1, "Auto Sub Group " + stamp);
         return "Location=" + loc + " | Group=" + grp + " | SubGroupCode=" + code + " | SubGroup=" + name;
     }
 

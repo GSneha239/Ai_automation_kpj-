@@ -94,7 +94,9 @@ public class DoseFrequencyMaster extends DevHisBase {
             toast = df.saveAndGetToast();
             String tl = toast == null ? "" : toast.toLowerCase();
             ok = tl.contains("saved") || tl.contains("success") || tl.contains("added") || tl.contains("updated");
-            exists = tl.contains("exist") || tl.contains("already");
+            // The screen shows a clash as a vague "Message Not Found!"; the server's own answer ("Description Already Exist",
+            // ResultStatus 3) is what says it is a duplicate, so that counts too.
+            exists = tl.contains("exist") || tl.contains("already") || df.lastSaveHttp.toLowerCase().contains("already exist");
             if (ok || !exists) break;   // saved, or a different (non-retryable) message
             System.out.println("DoseFrequencyMaster: attempt " + used + " (" + details + ") already exists — changing the details");
         }

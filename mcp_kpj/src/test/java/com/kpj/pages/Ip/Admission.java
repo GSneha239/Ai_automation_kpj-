@@ -386,6 +386,8 @@ public class Admission extends BasePage {
             setSelLike("Registration.KinRelationID", kinRel);
             setInput("Registration.KinMobileNo", kinMobile);
             setInput("Registration.KinEmail", kinEmail);
+            // NOK TIN is mandatory: without it AddKinDetails answers "Tax Identification Number (TIN) for Next of Kin is mandatory!"
+            setInput("Registration.KinTinNo", "IG" + (rnd.nextInt(90000000) + 10000000));
             setSelLike("Registration.KinOccupationID", "Education");
             setSelTxt("Registration.KinMobileCountryCode", "60");
             // KinCountryID is where the kin LIVES, not what it IS — the nationality is NOKnationalid below, and
@@ -581,11 +583,22 @@ public class Admission extends BasePage {
                 + " [...document.querySelectorAll('select')].filter(e=>e.offsetParent!==null)"
                 + "  .filter(e=>(e.getAttribute('ng-model')||'').indexOf('colFilter')<0 && (e.getAttribute('ng-model')||'').indexOf('grid.')<0)"
                 + "  .forEach(e=>{ const lab=labelOf(e);"
+                // Pricing Policy is CONDITIONALLY required — the app only populates and needs it when Payor Mode
+                // is Insurance (per request, and matching this class's own fillPayorSection() javadoc: with the
+                // ASSOCIATE COMPANY / Self payor this test uses, Pricing Policy stays on "--Select--" with no
+                // options by design). Flagging it as a generic "mandatory dropdown with no options" made the real
+                // NRIC failure harder to see under an irrelevant line every single run — skip it here.
+                + "    if(/pricing\\s*policy/i.test(lab)) return;"
                 + "    const mandatory=/\\*/.test(lab) || e.hasAttribute('required') || e.hasAttribute('ng-required');"
                 + "    if(!mandatory || chosen(e)) return;"
                 + "    const real=[...e.options].filter(o=>o.value && !/^-*\\s*select\\s*-*$/i.test(norm(o.textContent)));"
                 + "    if(!real.length){ out.push(lab.replace(/\\*/g,'').trim()+'=(no options)'); return; }"
-                + "    e.value=real[0].value; e.dispatchEvent(new Event('change',{bubbles:true}));"
+                // An admission is inpatient: for Encounter Type prefer the inpatient / IPD option over the first one
+                // (DayCare on devhis), which makes Save demand GL Reference No. / GL Approved Amt. / Estimated Amount.
+                // Billing Class (Admission.BillingClassID, reported under the label "Bed Class") must stay on its first option
+                // ("Day Patient"): picking "In Patient" made Save answer "Please fill in all the mandatory fields!" (verified 2026-10-22).
+                + "    const pick=((/encounter\\s*type/i.test(lab)) && real.find(o=>/in.?patient|ipd/i.test(norm(o.textContent)))) || real[0];"
+                + "    e.value=pick.value; e.dispatchEvent(new Event('change',{bubbles:true}));"
                 + "    try{A.element(e).triggerHandler('change');}catch(x){} if($){try{$(e).trigger('change');}catch(x){}}"
                 + "    out.push(lab.replace(/\\*/g,'').trim()+'='+(chosen(e)||'(did not bind)')); });"
                 + " return out.join(', '); }");
@@ -764,6 +777,90 @@ public class Admission extends BasePage {
     /** What {@link #tickVacantBedRow()} ended up doing. */
     public String lastVacantBedRow = "";
 
+    /** Bed codes the app refused with "Bed is Already Occupied!" — skipped when picking the next bed. */
+    private final java.util.LinkedHashSet<String> refusedBeds = new java.util.LinkedHashSet<>();
+
+    /** Has "save without a bed" (Non-Presence on) been tried yet in this save? */
+    private boolean triedWithoutBed = false;
+    private final java.util.LinkedHashSet<String> triedWardsForBed = new java.util.LinkedHashSet<>();
+    private final java.util.LinkedHashSet<String> triedRoomTypesForBed = new java.util.LinkedHashSet<>();
+    private final java.util.LinkedHashSet<String> triedBedClassesForBed = new java.util.LinkedHashSet<>();
+
+    /** Turn Non-Presence back OFF (a bed is needed after all). */
+    private String switchOffNonPresenceAdmission() {
+        Object r = page.evaluate("() => { const sel=\"input[type=checkbox][ng-model='Admission.NonPresenceAdmission']\";"
+                + " const cb=[...document.querySelectorAll(sel)].find(e=>e.offsetParent!==null) || document.querySelector(sel);"
+                + " if(cb){ if(cb.checked) cb.click(); return 'Non-Presence checkbox checked='+cb.checked; }"
+                + " return 'Non-Presence checkbox not found'; }");
+        waitForAngular(1200);
+        return r == null ? "" : r.toString();
+    }
+
+    /** Change Billing Class (the screen's "Bed Class", {@code Admission.BillingClassID}) to an option not yet tried. */
+    private String switchToUntriedBedClass(java.util.Set<String> exclude) {
+        String excludeJson = "[" + exclude.stream().map(s -> "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"") + "\"")
+                .reduce((a, b) -> a + "," + b).orElse("") + "]";
+        Object opt = page.evaluate("(exJson) => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const ex=new Set(JSON.parse(exJson));"
+                + " document.querySelectorAll('#__bedClassSel').forEach(e=>e.removeAttribute('id'));"
+                + " const e=document.querySelector(\"select[ng-model='Admission.BillingClassID']\"); if(!e) return '';"
+                + " const cand=[...e.options].find(o=>o.value && !/^-*\\s*select/i.test(norm(o.textContent)) && !ex.has(norm(o.textContent)));"
+                + " if(!cand) return ''; e.id='__bedClassSel'; return cand.value; }", excludeJson);
+        String value = opt == null ? "" : opt.toString();
+        if (value.isEmpty()) return "";
+        try {
+            page.locator("#__bedClassSel").selectOption(new com.microsoft.playwright.options.SelectOption().setValue(value),
+                    new com.microsoft.playwright.Locator.SelectOptionOptions().setTimeout(8000));
+        } catch (Exception e) { System.out.println("switchToUntriedBedClass: selectOption failed - " + e.getMessage()); }
+        page.evaluate("() => { const e=document.getElementById('__bedClassSel'); if(e) e.removeAttribute('id'); }");
+        waitForAngular(1000);
+        Object t = page.evaluate("() => { const e=document.querySelector(\"select[ng-model='Admission.BillingClassID']\"); const o=e&&e.options[e.selectedIndex]; return o?(o.textContent||'').replace(/\\s+/g,' ').trim():''; }");
+        return t == null ? "" : t.toString();
+    }
+
+    /**
+     * The app refused the ticked bed (or demanded one). Take a DIFFERENT bed: first the next free-looking row in the lists as
+     * they are, then — every third refusal — change the Ward, then the Room Type, then the Bed Class and look in the new
+     * combination, then walk the Room Type x Ward combinations. Sets {@link #lastVacantBedRow} to what it ended on.
+     */
+    private String pickDifferentBed() {
+        clearBedTicks();
+        publishRefusedBeds();
+        int n = refusedBeds.size();
+        if (n > 0 && n % 3 == 0) {
+            int dim = (n / 3 - 1) % 3;   // 0 = Ward, 1 = Room Type, 2 = Bed Class
+            String changed;
+            if (dim == 0) { String w = selectedWard(); if (!w.isEmpty()) triedWardsForBed.add(w); changed = "Ward -> " + switchToUntriedWard(triedWardsForBed); }
+            else if (dim == 1) { String rt = selectedRoomType(); if (!rt.isEmpty()) triedRoomTypesForBed.add(rt); changed = "Room Type -> " + switchToUntriedRoomType(triedRoomTypesForBed); }
+            else {
+                Object cur = page.evaluate("() => { const e=document.querySelector(\"select[ng-model='Admission.BillingClassID']\"); const o=e&&e.options[e.selectedIndex]; return o?(o.textContent||'').replace(/\\s+/g,' ').trim():''; }");
+                if (cur != null && !cur.toString().isEmpty()) triedBedClassesForBed.add(cur.toString());
+                changed = "Bed Class -> " + switchToUntriedBedClass(triedBedClassesForBed);
+            }
+            System.out.println("pickDifferentBed: after " + n + " refused bed(s) changed " + changed);
+            waitForAngular(1500);   // the bed lists reload off the change
+        }
+        String next = tickFirstAvailableBedRow();
+        if (!next.startsWith("Bed=")) next = tickFirstNonCensusBedRow();
+        if (!next.startsWith("Bed=")) next = walkForVacantBed();
+        lastVacantBedRow = next.startsWith("Bed=") ? next : "no other bed found: " + next;
+        return lastVacantBedRow;
+    }
+
+    /** Hand the refused bed codes to the page so the bed pickers can skip them. */
+    private void publishRefusedBeds() {
+        String json = "[" + refusedBeds.stream().map(s -> "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"") + "\"")
+                .reduce((a, b) -> a + "," + b).orElse("") + "]";
+        page.evaluate("(j) => { window.__refusedBeds = JSON.parse(j); }", json);
+    }
+
+    /** Untick every ticked bed checkbox (Census or Non-Census) so the next pick starts clean. */
+    private void clearBedTicks() {
+        page.evaluate("() => { [...document.querySelectorAll('table tbody input[type=checkbox]')]"
+                + ".filter(c=>c.checked && c.offsetParent!==null && /census|bed/i.test((c.closest('table')||{}).innerText||''))"
+                + ".forEach(c=>c.click()); }");
+        waitForAngular(500);
+    }
+
     /**
      * Tick ONE available checkbox in the <b>Census Bed List</b> grid ({@code ng-repeat="BedList in
      * CensusBedList"}) — per request, this is the row-selection {@link #selectRoomTypeAndWard()} deliberately
@@ -788,9 +885,114 @@ public class Admission extends BasePage {
      *         naming how many Room Type / Ward combinations were tried
      */
     public String tickVacantBedRow() {
+        String picked = walkForVacantBed();
+        if (picked.startsWith("Bed=")) return picked;
+        // Neither the Census Bed List nor the Non-Census (Lodger) Bed List has a bed that can be ticked. A bed is not needed
+        // for a Non-Presence admission, so switch that on and let Save decide — rather than failing the whole admission here.
+        String np = switchToNonPresenceAdmission();
+        lastVacantBedRow = "NonPresence=on — no selectable bed in the Census or the Non-Census (Lodger) list (" + picked
+                + "), so the admission is saved without a bed; " + np;
+        return lastVacantBedRow;
+    }
+
+    /**
+     * Tick the first free bed in the <b>Non-Census (Lodger) Bed List</b> (the right-hand grid of Vacant Bed Selection:
+     * Select / Code / Bed / Room Type / Ward). That list is independent of the Census grid — a bed is often available
+     * there when every Census bed is occupied or under maintenance.
+     *
+     * @return "Bed=&lt;code&gt; &lt;bed&gt; (&lt;ward&gt;) [RoomType=&lt;n&gt;] [Non-Census]", or "" when the list has no free row
+     */
+    private String tickFirstNonCensusBedRow() {
+        Object tagged = page.evaluate("async () => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                + " document.querySelectorAll('#__bedRowCb').forEach(e=>e.removeAttribute('id'));"
+                // the panel whose text STARTS with "Non-Census(Lodger) Bed List" and holds a table — the innermost one
+                + " const panels=[...document.querySelectorAll('div,section,fieldset')]"
+                + "   .filter(d=>/^\\s*non[-\\s]?census/i.test(norm(d.innerText||'').slice(0,30)) && d.querySelector('table'))"
+                + "   .sort((a,b)=>(a.innerText||'').length-(b.innerText||'').length);"
+                + " const holder=panels[0]; if(!holder) return {found:false, reason:'no-non-census-panel'};"
+                + " let rows=[];"
+                + " for(let w=0;w<8;w++){ rows=[...holder.querySelectorAll('tbody tr')].filter(r=>r.querySelector('input[type=checkbox]')); if(rows.length) break; await new Promise(r=>setTimeout(r,500)); }"
+                + " const skip=new Set(window.__refusedBeds||[]);"
+                + " const row=rows.find(r=>{ const cb=r.querySelector('input[type=checkbox]'); const code=norm((r.querySelectorAll('td')[1]||{}).textContent||''); return cb && !cb.disabled && !skip.has(code); });"
+                + " if(!row) return {found:false, reason: rows.length?'all-disabled':'no-rows', rows:rows.length};"
+                + " const cb=row.querySelector('input[type=checkbox]'); cb.id='__bedRowCb';"
+                + " const cells=[...row.querySelectorAll('td')].map(td=>norm(td.textContent));"
+                + " return {found:true, code:cells[1]||'', bed:cells[2]||'', roomType:cells[3]||'', ward:cells[4]||''}; }");
+        java.util.Map<?, ?> m = (tagged instanceof java.util.Map) ? (java.util.Map<?, ?>) tagged : java.util.Collections.emptyMap();
+        if (!Boolean.TRUE.equals(m.get("found"))) return "";
+        try { page.locator("#__bedRowCb").check(new com.microsoft.playwright.Locator.CheckOptions().setTimeout(5000)); }
+        catch (Exception e) {
+            System.out.println("tickFirstNonCensusBedRow: real check failed, falling back to a script click - " + e.getMessage());
+            try { page.evaluate("() => { const c=document.getElementById('__bedRowCb'); if(c) c.click(); }"); }
+            catch (Exception ignore) { }
+        }
+        Object ok = page.evaluate("() => { const c=document.getElementById('__bedRowCb'); const v=c?c.checked:false; if(c) c.removeAttribute('id'); return v; }");
+        waitForAngular(400);
+        if (!Boolean.TRUE.equals(ok)) return "";
+        return "Bed=" + m.get("code") + " " + m.get("bed") + " (" + m.get("ward") + ") [RoomType=" + m.get("roomType") + "] [Non-Census]";
+    }
+
+    /**
+     * Turn <b>Non-Presence Admission</b> on ({@code Admission.NonPresenceAdmission}) — the patient is admitted without
+     * occupying a bed, so Save does not ask for one. Uses the real checkbox when the screen has it, else the scope value.
+     */
+    public String switchToNonPresenceAdmission() {
+        Object r = page.evaluate("() => { const sel=\"input[type=checkbox][ng-model='Admission.NonPresenceAdmission']\";"
+                + " const cb=[...document.querySelectorAll(sel)].find(e=>e.offsetParent!==null) || document.querySelector(sel);"
+                // The app keeps validating the bed id it was last given, even with Non-Presence on — so clear it as well.
+                + " const dropBed=()=>{ document.querySelectorAll('*').forEach(el=>{ try{ const s=angular.element(el).scope(); let x=s; for(let i=0;i<15&&x;i++){"
+                + "   if(x.Admission && typeof x.Admission==='object'){ const m=x.Admission; if('BedID' in m){ s.$evalAsync(function(){ m.BedID=0; }); } break; } x=x.$parent; } }catch(e){} }); };"
+                + " if(cb){ if(!cb.checked) cb.click(); dropBed(); return 'Non-Presence checkbox checked='+cb.checked+' (bed id cleared)'; }"
+                + " const e=document.querySelector(\"select[ng-model='Admission.AdmissionLocationID']\") || document.querySelector(\"input[ng-model='Registration.FirstName']\");"
+                + " if(!e) return 'Non-Presence: no control found';"
+                + " const sc=angular.element(e).scope(); let s=sc, adm=null; for(let i=0;i<15&&s;i++){ if(!adm&&s.Admission)adm=s.Admission; s=s.$parent; }"
+                + " if(!adm) return 'Non-Presence: no Admission model found';"
+                + " sc.$apply(function(){ adm.NonPresenceAdmission=1; });"
+                + " return 'Non-Presence set on the scope ('+adm.NonPresenceAdmission+')'; }");
+        waitForAngular(1200);   // turning it on re-renders the Admission section
+        String s = r == null ? "" : r.toString();
+        System.out.println("switchToNonPresenceAdmission: " + s);
+        return s;
+    }
+
+    /**
+     * Diagnostic: every bed / ward / non-presence property the Admission model holds right now, and which bed checkboxes
+     * are ticked — so a "Bed is Already Occupied!" that survives untick and Non-Presence can be traced to its field.
+     */
+    private String dumpAdmissionBedModel() {
+        Object r = page.evaluate("() => { let out='';"
+                + " const seen=new Set(); document.querySelectorAll('*').forEach(el=>{ try{ const s=angular.element(el).scope(); let x=s;"
+                + "   for(let i=0;i<15&&x;i++){ const m=x.Admission; if(m && typeof m==='object' && !seen.has(m)){ seen.add(m);"
+                + "     out+=Object.keys(m).filter(k=>/bed|ward|nonpres|room/i.test(k)).map(k=>k+'='+JSON.stringify(m[k])).join(', ')+' ; '; } x=x.$parent; } }catch(e){} });"
+                + " const ticked=[...document.querySelectorAll('table tbody input[type=checkbox]')].filter(c=>c.checked)"
+                + "   .map(c=>(c.getAttribute('ng-model')||'?')+'@'+((c.closest('tr')||{}).innerText||'').replace(/\\s+/g,' ').slice(0,40));"
+                // the dropdowns of the Vacant Bed Selection panel: label -> model, selected text, option count
+                + " const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                + " const sels=[...document.querySelectorAll('select')].filter(s=>s.offsetParent!==null && /admission\\.|visit\\.(encounter|cash)|bed|ward|class|room/i.test(s.getAttribute('ng-model')||''))"
+                + "   .map(s=>{ let n=s.closest('div'); let l=null; for(let i=0;i<4&&n&&!l;i++){ l=n.querySelector('label'); n=n.parentElement; } const o=s.options[s.selectedIndex];"
+                + "   return norm(l?l.textContent:'?')+'['+(s.getAttribute('ng-model')||'?')+']='+norm(o?o.textContent:'')+' ('+s.options.length+' opts)'; });"
+                + " return out+' | ticked: '+JSON.stringify(ticked)+' | bed-panel selects: '+JSON.stringify(sels); }");
+        return r == null ? "" : r.toString();
+    }
+
+    /** Is a bed ticked (Census or Non-Census), or is Non-Presence on — i.e. will Save's "Please Select Bed!" check be satisfied? */
+    private boolean bedRequirementSatisfied() {
+        Object r = page.evaluate("() => { let np=false;"
+                + " const cb=document.querySelector(\"input[type=checkbox][ng-model='Admission.NonPresenceAdmission']\"); if(cb && cb.checked) np=true;"
+                + " document.querySelectorAll('*').forEach(el=>{ if(np) return; try{ const s=angular.element(el).scope(); let x=s; for(let i=0;i<15&&x;i++){ if(x.Admission){ if(x.Admission.NonPresenceAdmission==1||x.Admission.NonPresenceAdmission===true) np=true; break; } x=x.$parent; } }catch(e){} });"
+                + " const ticked=[...document.querySelectorAll('table tbody input[type=checkbox]')].some(c=>c.checked && c.offsetParent!==null"
+                + "   && /census|bed/i.test((c.closest('table')||{}).innerText||'') );"
+                + " return np||ticked; }");
+        return Boolean.TRUE.equals(r);
+    }
+
+    /** The Census Bed List walk: Room Type x Ward combinations, each also trying the Non-Census (Lodger) list. */
+    private String walkForVacantBed() {
+        publishRefusedBeds();
         final int maxRoomTypes = Integer.getInteger("bed.roomtype.walk.max", 8);
         final int maxWardsPerRoomType = Integer.getInteger("bed.ward.walk.max", 15);
-        final int maxCombosTotal = Integer.getInteger("bed.combo.walk.max", 60);
+        // 12, not 60: the Non-Census list and Non-Presence are now fallbacks, so a fully-occupied Census list need not be ground through.
+        final int maxCombosTotal = Integer.getInteger("bed.combo.walk.max", 12);
         java.util.LinkedHashSet<String> triedRoomTypes = new java.util.LinkedHashSet<>();
         int combosTried = 0;
         for (int rtAttempt = 1; rtAttempt <= maxRoomTypes; rtAttempt++) {
@@ -804,6 +1006,9 @@ public class Admission extends BasePage {
                 }
                 String picked = tickFirstAvailableBedRow();
                 if (picked != null && picked.startsWith("Bed=")) { lastVacantBedRow = picked; return picked; }
+                // No free Census bed for this Room Type / Ward — the Non-Census (Lodger) list may still have one.
+                String nonCensus = tickFirstNonCensusBedRow();
+                if (nonCensus.startsWith("Bed=")) { lastVacantBedRow = nonCensus; return nonCensus; }
                 String curRoomType = selectedRoomType();
                 String curWard = selectedWard();
                 if (!curWard.isEmpty()) triedWards.add(curWard);
@@ -863,7 +1068,8 @@ public class Admission extends BasePage {
                 + "   if(tbl && tbl.querySelectorAll('tbody tr').length) break; await new Promise(r=>setTimeout(r,500)); }"
                 + " if(!tbl) return {found:false, reason:'no-grid'};"
                 + " const rows=[...tbl.querySelectorAll('tbody tr')];"
-                + " const row=rows.find(r=>{ const cb=r.querySelector('input[type=checkbox]'); return cb && !cb.disabled; });"
+                + " const skip=new Set(window.__refusedBeds||[]);"
+                + " const row=rows.find(r=>{ const cb=r.querySelector('input[type=checkbox]'); const code=norm((r.querySelectorAll('td')[1]||{}).textContent||''); return cb && !cb.disabled && !skip.has(code); });"
                 + " if(!row) return {found:false, reason:'all-occupied', rows:rows.length};"
                 + " const cb=row.querySelector('input[type=checkbox]'); cb.id='__bedRowCb';"
                 + " const cells=[...row.querySelectorAll('td')].map(td=>norm(td.textContent));"
@@ -934,6 +1140,91 @@ public class Admission extends BasePage {
         return selectedWard();
     }
 
+    /** What empty required fields were still left by {@link #recheckAndRefillAll()} ("" = none). */
+    public String recheckEmptyAfter = "";
+
+    /**
+     * After EVERY section has been filled, scan the whole form for fields that are empty and refill them.
+     *
+     * <p>The app's own async patient lookup, and the re-render that selecting a bed or switching Non-Presence causes, can
+     * wipe fields that were filled earlier (Department / Doctor / Encounter Type, the NRIC, the Payor, the Bed) — and Save
+     * then answers with a rejection that names only one of them at a time. So this runs once, just before Save, and
+     * refills ONLY what is empty (re-typing a field that is already set would fire a needless patient lookup).</p>
+     *
+     * <p>Order matters: the bed goes first, because ticking one (or turning Non-Presence on) re-renders the Admission
+     * section and drops Department, Doctor and Encounter Type — those are re-asserted after it.</p>
+     *
+     * @return what was empty before, what was refilled, and what is still empty after
+     */
+    public String recheckAndRefillAll() {
+        final String before = describeEmptyMandatory();
+        StringBuilder out = new StringBuilder("empty before: ").append(before.isEmpty() ? "(none)" : before);
+
+        // 1) Bed — Census or Non-Census bed, or Non-Presence (no bed needed).
+        if (bedRequirementSatisfied()) out.append(" | bed: already satisfied");
+        else out.append(" | bed refilled: ").append(tickVacantBedRow());
+
+        // 2) Patient fields — only the empty ones, from the values entered earlier.
+        Object pr = page.evaluate("(a) => { const A=window.angular; const filled=[];"
+                + " const put=(e,v,name)=>{ const c=A.element(e).controller('ngModel'); e.value=v; if(c){c.$setViewValue(v);c.$render();}"
+                + "   e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true})); filled.push(name); };"
+                + " const set=(ng,v)=>{ if(!v) return; const e=[...document.querySelectorAll('input,textarea')].find(x=>x.getAttribute('ng-model')===ng && (x.offsetParent!==null || !x.getAttribute('maxlength')));"
+                + "   if(!e || (e.value||'').trim()) return; put(e,v,ng.split('.').pop()); };"
+                + " set('Registration.FirstName',a.first); set('Registration.FamilyName',a.family); set('Registration.DateOfBirth',a.dob);"
+                + " set('Registration.MobileNo',a.mobile); set('Registration.Email',a.email); set('Registration.ResPinCode',a.postcode);"
+                + " if(!a.foreign){ const nr=[...document.querySelectorAll(\"input[ng-model='Registration.NationalId']\")].find(x=>x.getAttribute('maxlength')==='12');"
+                + "   if(nr && !(nr.value||'').trim() && a.nric) put(nr,a.nric,'NationalId'); }"
+                + " return filled.join(', '); }",
+                java.util.Map.of("first", pFullName, "family", pFamilyName, "dob", pDob, "mobile", pMobile,
+                        "email", pEmail, "postcode", pPostCode, "nric", pNric, "foreign", isForeign()));
+        String patientFilled = pr == null ? "" : pr.toString();
+        if (!patientFilled.isEmpty()) { out.append(" | patient refilled: ").append(patientFilled); waitForAngular(900); }
+
+        // 3) Payor Mode / Status / Payor name.
+        String payor = refillPayorIfEmpty();
+        if (!payor.isEmpty()) out.append(" | payor refilled: ").append(payor);
+
+        // 4) Admission section: Department, then Doctor (the doctor list cascades off it), then any other empty required dropdown.
+        String dept = ensureDepartmentSelected();
+        String doc = ensureDoctorSelected();
+        if (dept.contains("re-bound") || doc.contains("(no") ) out.append(" | ").append(dept).append(" | ").append(doc);
+        String bound = bindEmptyMandatorySelects();
+        if (!bound.isEmpty()) {
+            out.append(" | dropdowns bound: ").append(bound);
+            waitForAngular(1200);
+            ensureDoctorSelected();   // binding Department re-filters the doctors and drops the one chosen
+        }
+
+        // 5) Admission time.
+        fillAdmissionTimeIfEmpty();
+
+        recheckEmptyAfter = describeEmptyMandatory();
+        out.append(" | empty after: ").append(recheckEmptyAfter.isEmpty() ? "(none)" : recheckEmptyAfter);
+        String s = out.toString();
+        System.out.println("recheckAndRefillAll: " + s);
+        return s;
+    }
+
+    /** Re-enter Payor Mode / Payor Status / Payor name only where they are empty; returns what was refilled ("" = nothing). */
+    private String refillPayorIfEmpty() {
+        Object state = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                + " const val=ng=>{ const e=[...document.querySelectorAll('select,input')].find(x=>(x.getAttribute('ng-model')||'')===ng);"
+                + "   if(!e) return null; if(e.tagName!=='SELECT') return norm(e.value);"
+                + "   const o=e.options[e.selectedIndex]; const t=o?norm(o.textContent):'';"
+                + "   return (o && o.value && !/^-*\\s*select\\s*-*$/i.test(t)) ? t : ''; };"
+                + " return JSON.stringify({mode:val('Registration.receivabletypeid'), status:val('Registration.PayerTypeId'), name:val('Registration.receivablename')}); }");
+        String st = state == null ? "" : state.toString();
+        StringBuilder done = new StringBuilder();
+        if (st.contains("\"mode\":\"\"")) { setSelTxt("Registration.receivabletypeid", "ASSOCIATE COMPANY"); waitForAngular(600); done.append("Payor Mode "); }
+        if (st.contains("\"status\":\"\"")) { setSelTxt("Registration.PayerTypeId", "Self"); waitForAngular(600); done.append("Payor Status "); }
+        if (st.contains("\"name\":\"\"")) {
+            try { page.locator("#txtSponsorName").fill("self"); done.append("Payor "); }
+            catch (Exception e) { System.out.println("refillPayorIfEmpty: Payor text fill failed - " + e.getMessage()); }
+            waitForAngular(400);
+        }
+        return done.toString().trim();
+    }
+
     /**
      * Section — <b>Additional Doctors</b> (collapsible {@code #collapseOne}). Expand it (its header ng-click
      * {@code FillAdditionDropDown()} loads the Classification + Additional Doctor dropdowns), pick the first real
@@ -961,19 +1252,38 @@ public class Admission extends BasePage {
      * Save, and if the server says the NRIC belongs to an existing patient, mint a NEW identity (NRIC + matching
      * DOB) into the form and save again. The collision is a data fact, not a defect — retrying with fresh details
      * is what a tester would do, and it keeps the run reporting on the admission rather than on the clash.
+     *
+     * <p><b>KNOWN LIMITATION (30/09/2026), left as-is per request:</b> on this environment this step's own toast
+     * check can still report "Please Enter NRIC!" after all 5 retries, even though {@link #satisfyIdentityToast}
+     * re-writes the NRIC each time and {@link #waitForIdentityFieldToSettle} confirmed it was written. That poll
+     * consistently reads the field as not-found ("null") during the real automated run, which a manual live
+     * reproduction (same fields, same order, driven by hand in a browser) could NOT reproduce — the field stayed
+     * visible there regardless of ICCardType. The mechanism behind that gap is not understood. What IS confirmed,
+     * every run today regardless of this step's reported result: the admission itself always succeeds server-side
+     * (a real, incrementing AdmissionID; all 5 reports and the consent form generate correctly) — so this is a
+     * false-negative in THIS step's own success detection, not a broken admission. Revisit with a full trace
+     * (video/network correlated to the exact click) rather than more point checks if picked back up.</p>
      */
     public String saveAdmissionAndGetToast() {
         fillAdmissionTimeIfEmpty();   // fill the details FIRST — Save is rejected silently while Time is empty
+        triedWithoutBed = false;
         String toast = "";
         // 3 attempts was not always enough on a foreign/passport patient: the same async patient-lookup that
         // satisfyIdentityToast() fixes up (see its comment) can re-wipe a DIFFERENT field each round — confirmed
         // live the rejection shrank Passport+NRIC -> Passport -> First Name across attempts, converging but not
         // within 3. 5 gives that convergence room to finish.
-        for (int attempt = 0; attempt < 5; attempt++) {
+        // 8, not 5: refused beds ("Bed is Already Occupied!") each cost an attempt on top of the wipe-and-restore rounds.
+        for (int attempt = 0; attempt < 8; attempt++) {
             toast = saveAdmissionOnce();
             // KS asks for the identity outright: "Please Enter NRIC!" and/or "Please Enter Passport No.!". Fill
             // exactly what it names and save again, rather than reporting a rejection we were told how to fix.
             String low = toast.toLowerCase();
+            // "This NRIC is already registered. Please enter a different NRIC !!!!" — must be checked BEFORE the "please enter
+            // … NRIC" branch below, which it also matches and which would re-enter the SAME NRIC. Use a different one.
+            if (low.matches(".*(already registered|different nric).*")) {
+                enterDifferentNric();
+                continue;
+            }
             if (low.matches(".*please\\s+enter.*(nric|passport).*")) {
                 satisfyIdentityToast(toast);
                 continue;
@@ -986,25 +1296,74 @@ public class Admission extends BasePage {
                 restoreWipedContactFields(toast);
                 continue;
             }
-            if (!low.matches(".*(already registered|different nric).*")) return toast;
-            String[] id = newIdentity();
-            pDob = id[0];
-            pNric = id[1];
-            System.out.println("saveAdmission: NRIC already registered — retrying with NRIC " + pNric + " (DOB " + pDob + ")");
-            page.evaluate("(a) => { const A=window.angular;"
-                    + " const set=(ng,v)=>{ const e=[...document.querySelectorAll('input')].find(x=>x.getAttribute('ng-model')===ng && x.offsetParent!==null);"
-                    + "   if(!e) return; const c=A.element(e).controller('ngModel'); e.value=v; if(c){ c.$setViewValue(v); c.$render(); }"
-                    + "   e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true})); };"
-                    // the NRIC box is the 12-char New IC one, not the passport/old-IC field
-                    + " const nr=[...document.querySelectorAll(\"input[ng-model='Registration.NationalId']\")].find(x=>x.getAttribute('maxlength')==='12')"
-                    + "   || document.querySelector(\"input[ng-model='Registration.NationalId']\");"
-                    + " if(nr){ const c=A.element(nr).controller('ngModel'); nr.value=a.nric; if(c){ c.$setViewValue(a.nric); c.$render(); }"
-                    + "   nr.dispatchEvent(new Event('input',{bubbles:true})); nr.dispatchEvent(new Event('change',{bubbles:true})); }"
-                    + " set('Registration.DateOfBirth', a.dob); }",
-                    java.util.Map.of("nric", pNric, "dob", pDob));
-            waitForAngular(1500);
+            // "Please fill in all the mandatory fields!" (unlike "Please Select X!" or "Please Enter NRIC!") names
+            // NOTHING — confirmed live, 30/09/2026: this is what the app answers with right after the NRIC-settle
+            // fix above resolves the FIRST rejection, and this branch used to fall straight through to the
+            // unconditional "return toast" below (it only matched "already registered"/"different nric"), so the
+            // 3 retries this method still had left were never spent and the failure was reported with no field
+            // named at all. appFlaggedMandatory()/describeEmptyMandatory() were already written for exactly this
+            // (mirroring RegistrationPage's equivalent) but were never called from anywhere — wire them in so the
+            // eventual failure at least NAMES the real field, and retry: saveAdmissionOnce() re-runs the
+            // Department/Doctor re-assert and bindEmptyMandatorySelects() on every attempt, so a field that only
+            // settles late still gets a chance to bind.
+            if (low.contains("fill in all the mandatory")) {
+                String flagged = appFlaggedMandatory();
+                String empty = describeEmptyMandatory();
+                String named = !flagged.isEmpty() ? flagged : empty;
+                System.out.println("saveAdmission: unnamed mandatory-field rejection — app-flagged: "
+                        + (flagged.isEmpty() ? "(none)" : flagged) + " | empty-scan: " + (empty.isEmpty() ? "(none)" : empty));
+                if (!named.isEmpty()) com.kpj.core.Reasons.add("Save rejected with 'Please fill in all the mandatory fields!' - the actual empty field(s): " + named);
+                continue;
+            }
+            // "Bed is Already Occupied!" — the Non-Census list offers beds that are not actually free. Remember the refused
+            // bed and untick it. FIRST try saving WITHOUT a bed (Non-Presence on, bed id cleared); if the app then asks for a
+            // bed after all, take a different one and, every third refusal, change Ward / Room Type / Bed Class.
+            if (low.contains("already occupied")) {
+                String refused = group(lastVacantBedRow, "Bed=(\\S+)");
+                if (!refused.isEmpty()) refusedBeds.add(refused);
+                System.out.println("saveAdmission: '" + toast + "' — bed " + refused + " refused (" + refusedBeds.size() + " so far)");
+                clearBedTicks();
+                if (!triedWithoutBed) {
+                    triedWithoutBed = true;
+                    lastVacantBedRow = "NonPresence=on — bed " + refused + " was refused as already occupied, so the admission is saved "
+                            + "without selecting a bed; " + switchToNonPresenceAdmission();
+                } else {
+                    switchOffNonPresenceAdmission();
+                    pickDifferentBed();
+                }
+                continue;
+            }
+            // The app wants a bed after all (the no-bed save was answered with "Please Select Bed!"): turn Non-Presence off
+            // and take a different bed — changing Ward / Room Type / Bed Class as the refusals pile up.
+            if (low.contains("select bed") && triedWithoutBed) {
+                System.out.println("saveAdmission: '" + toast + "' — a bed IS required; Non-Presence off, choosing a different bed");
+                switchOffNonPresenceAdmission();
+                pickDifferentBed();
+                continue;
+            }
+            return toast;
         }
         return toast;
+    }
+
+    /** "This NRIC is already registered. Please enter a different NRIC !!!!" — enter a DIFFERENT NRIC (and its DOB). */
+    private void enterDifferentNric() {
+        String[] id = newIdentity();
+        pDob = id[0];
+        pNric = id[1];
+        System.out.println("saveAdmission: NRIC already registered — retrying with NRIC " + pNric + " (DOB " + pDob + ")");
+        page.evaluate("(a) => { const A=window.angular;"
+                + " const set=(ng,v)=>{ const e=[...document.querySelectorAll('input')].find(x=>x.getAttribute('ng-model')===ng && x.offsetParent!==null);"
+                + "   if(!e) return; const c=A.element(e).controller('ngModel'); e.value=v; if(c){ c.$setViewValue(v); c.$render(); }"
+                + "   e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true})); };"
+                // the NRIC box is the 12-char New IC one, not the passport/old-IC field
+                + " const nr=[...document.querySelectorAll(\"input[ng-model='Registration.NationalId']\")].find(x=>x.getAttribute('maxlength')==='12')"
+                + "   || document.querySelector(\"input[ng-model='Registration.NationalId']\");"
+                + " if(nr){ const c=A.element(nr).controller('ngModel'); nr.value=a.nric; if(c){ c.$setViewValue(a.nric); c.$render(); }"
+                + "   nr.dispatchEvent(new Event('input',{bubbles:true})); nr.dispatchEvent(new Event('change',{bubbles:true})); }"
+                + " set('Registration.DateOfBirth', a.dob); }",
+                java.util.Map.of("nric", pNric, "dob", pDob));
+        waitForAngular(1500);
     }
 
     private String saveAdmissionOnce() {
@@ -1540,7 +1899,38 @@ public class Admission extends BasePage {
         // First Name!" loop (confirmed live across 3 straight attempts). The outer retry loop's
         // restoreWipedContactFields() picks up Mobile/Email/DOB reactively, one at a time, only when the toast
         // actually names them empty — safer than rewriting fields nobody complained about.
-        waitForAngular(1800);
+        //
+        // WAS a flat waitForAngular(1800) here regardless of how long the lookup actually takes — a fixed sleep
+        // for a network round-trip is a coin flip: too short on a slow response (the wipe lands AFTER this method
+        // returns, so Save races it and loses) and pure waste on a fast one. Poll for the field to actually settle
+        // instead: keep re-reading it until two consecutive reads agree, capped at 6s so a lookup that never
+        // resolves cannot hang the run.
+        // Give the FIRST wave of the async lookup time to land before touching anything else — it is what
+        // decides whether Nationality/ICCardType need restoring below, and restoring them too early just gets
+        // overwritten when the response finally arrives.
+        waitForAngular(1200);
+        // NRIC-only (Malaysian/New-IC) case: confirmed live today (devhis, 30/09/2026, admission run) that the
+        // SAME lookup this restores for the passport case ALSO fires here and wipes Nationality — this branch
+        // used to do nothing about it (only the passport branch restored), so a Malaysian patient's NRIC kept
+        // getting handed back empty attempt after attempt (5 straight "NRIC cleared / not accepted" retries,
+        // never converging) with nothing ever putting Nationality/ICCardType back. Restore the same two fields
+        // the passport branch does, just with "New IC" instead of "Passport".
+        if (fillNric && !wantPassport) {
+            page.evaluate("(a) => {" + setJs
+                    + " const setSelLike=(ng,txt)=>{ const e=[...document.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')===ng); if(!e) return;"
+                    + "   let i=[...e.options].findIndex(o=>(o.textContent||'').trim().toLowerCase()===txt.toLowerCase());"
+                    + "   if(i<0) i=[...e.options].findIndex(o=>(o.textContent||'').toLowerCase().includes(txt.toLowerCase().slice(0,5)));"
+                    + "   if(i<0 || e.selectedIndex===i) return; e.selectedIndex=i; e.dispatchEvent(new Event('change',{bubbles:true})); const $=window.jQuery; if($){try{$(e).trigger('change');}catch(err){}} };"
+                    + " if(a.first) set(byNg('Registration.FirstName'),a.first); if(a.dob) set(byNg('Registration.DateOfBirth'),a.dob);"
+                    + " if(a.nationality) setSelLike('Registration.NationalityID',a.nationality);"
+                    + " setSelLike('Registration.ICCardTypeID','New IC');"
+                    + " const seen=new Set(); document.querySelectorAll('*').forEach(el=>{ try{ let x=A.element(el).scope();"
+                    + "   for(let i=0;i<15&&x;i++){ const reg=x.Registration; if(reg && typeof reg==='object' && !seen.has(reg)){ seen.add(reg);"
+                    + "     if(a.first) reg.FirstName=a.first; if(a.dob) reg.DateOfBirth=a.dob; } x=x.$parent; } }catch(e){} }); }",
+                    java.util.Map.of("first", pFullName == null ? "" : pFullName, "dob", pDob == null ? "" : pDob,
+                            "nationality", nationality()));
+            waitForAngular(600);
+        }
         if (wantPassport) {
             page.evaluate("(a) => {" + setJs
                     // Plain text inputs, so a raw model assignment is safe — unlike NationalityID/ICCardType,
@@ -1563,9 +1953,58 @@ public class Admission extends BasePage {
                             "first", pFullName == null ? "" : pFullName, "dob", pDob == null ? "" : pDob,
                             "nationality", nationality()));
         }
+        // NOW check the actual identity value — not before restoring ICCardType above. Confirmed live, 30/09/2026:
+        // checking earlier (a flat waitForAngular(1800) before any restore, in what this replaced) reads the
+        // WRONG thing when the lookup has knocked ICCardType off "New IC" — the 12-char NRIC box this looks for
+        // is only rendered while ICCardType IS "New IC", so every read before restoring it comes back "not
+        // found" regardless of whether the value itself is actually fine, and the run reported the field as
+        // wiped 5 times running when the real, one-time cause was ICCardType. Re-writing after two AGREEING
+        // reads means the box is confirmed visible and genuinely done moving before deciding.
+        waitForIdentityFieldToSettle(fillNric ? "Registration.NationalId" : "Registration.FamilyName",
+                fillNric ? pNric : passport);
         waitForAngular(900);
         lastIdentityFix = String.valueOf(r);
         System.out.println("satisfyIdentityToast: '" + toast + "' -> " + lastIdentityFix);
+    }
+
+    /**
+     * Wait for an identity field (NRIC / passport-as-FamilyName) to stop changing after writing it, then
+     * re-write it if the async patient-lookup wiped it out from under us — and log which happened.
+     *
+     * <p>This replaces a flat {@code waitForAngular(1800)} that ran here regardless of how long the lookup
+     * actually took: too short on a slow response (the wipe then lands AFTER this method returns, so Save
+     * races it and loses — confirmed live, 30/09/2026: 5 straight "NRIC cleared / not accepted" retries that
+     * never converged) and pure waste on a fast one. Polling for two AGREEING reads means the field is
+     * genuinely done moving — whatever it landed on — before deciding whether to act, and is capped at 6s so
+     * a lookup that never resolves cannot hang the run.</p>
+     */
+    private void waitForIdentityFieldToSettle(String ngModel, String expected) {
+        if (expected == null || expected.isEmpty()) { waitForAngular(1200); return; }
+        // Registration.NationalId has THREE elements sharing the ng-model on this screen (confirmed live,
+        // 30/09/2026) — an Old-IC box and a New-IC box both hidden, and the 12-char New-IC box actually shown.
+        // Prefer maxlength=12, same as the write path below and in satisfyIdentityToast's own fill — a
+        // visibility-only match can land on a hidden duplicate the instant ICCardType is mid-transition.
+        final String findJs = "const cands=[...document.querySelectorAll('input')].filter(x=>x.getAttribute('ng-model')===ng);"
+                + " const e=cands.find(x=>x.getAttribute('maxlength')==='12' && x.offsetParent!==null) || cands.find(x=>x.offsetParent!==null);";
+        String prev = null, cur = null;
+        for (int i = 0; i < 10; i++) {
+            waitForAngular(600);
+            Object r = page.evaluate("(ng) => { " + findJs + " return e ? e.value : null; }", ngModel);
+            cur = r == null ? null : r.toString();
+            if (cur != null && cur.equals(prev)) break; // stopped changing, whatever it landed on
+            prev = cur;
+        }
+        if (expected.equals(cur)) {
+            System.out.println("waitForIdentityFieldToSettle: " + ngModel + " settled on the value we wrote — no wipe this time");
+            return;
+        }
+        System.out.println("waitForIdentityFieldToSettle: " + ngModel + " settled on \"" + cur + "\", not \"" + expected
+                + "\" — the async patient-lookup wiped it, or the field wasn't visible to read; re-writing");
+        page.evaluate("(a) => { const ng=a.ng; " + findJs + " if(!e) return;"
+                + " const c=angular.element(e).controller('ngModel'); e.value=a.v; if(c){ c.$setViewValue(a.v); c.$render(); }"
+                + " e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true})); }",
+                java.util.Map.of("ng", ngModel, "v", expected));
+        waitForAngular(500);
     }
 
     /** The label currently selected on a visible {@code <select>} by ng-model — "" for a "--Select--" placeholder. */

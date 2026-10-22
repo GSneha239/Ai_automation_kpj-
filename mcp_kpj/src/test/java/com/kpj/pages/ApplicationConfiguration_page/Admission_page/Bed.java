@@ -89,7 +89,11 @@ public class Bed extends BasePage {
     public String fillBedDetails(int attempt) {
         String code = "AB" + String.format("%06d", Math.abs((System.nanoTime() + attempt * 7919L) % 1000000));
         lastCode = code;
-        lastBedNumber = BED_NUMBERS[attempt % BED_NUMBERS.length] + (attempt >= BED_NUMBERS.length ? " " + (attempt / BED_NUMBERS.length + 1) : "");
+        // Unique per run (a fixed pool is exhausted for good on the shared QA env) and within the app's 20-character limit
+        // ("Bed Number cannot exceed 20 characters!").
+        String suffix = " " + code.substring(3);
+        String base = BED_NUMBERS[attempt % BED_NUMBERS.length];
+        lastBedNumber = (base.length() + suffix.length() > 20 ? base.substring(0, 20 - suffix.length()).trim() : base) + suffix;
         // These selects are select2-offscreen / cascade-dependent (per M6 Bed Planning FSD: Bed Class drives the Room
         // Type list; Location reloads Ward). selectedIndex+change alone doesn't commit them and setting a dependent
         // before its parent leaves it empty ("Please Select Ward!"). So: set in cascade order, POLL for each
@@ -202,23 +206,18 @@ public class Bed extends BasePage {
      * fire.
      */
     public boolean navigateViaMenu() {
-        // 1) find + real-click the top-level "Application Configuration" menu.
-        Object appCfg = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                + " const a=[...document.querySelectorAll('a')].find(x=>/application\\s*config/i.test(norm(x.textContent)) && x.offsetParent!==null); if(!a) return false; a.id='__appCfgMenu'; return true; }");
-        if (Boolean.TRUE.equals(appCfg)) {
-            try { page.locator("#__appCfgMenu").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000)); }
-            catch (Exception e) { System.out.println("Bed.navigateViaMenu: Application Configuration click failed - " + e.getMessage()); }
-            waitForAngular(900);
-        } else {
-            System.out.println("Bed.navigateViaMenu: 'Application Configuration' menu not found");
-        }
-        // 2) if there's an "Admission" submenu group, expand it.
-        page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                + " const a=[...document.querySelectorAll('a')].find(x=>/^\\s*admission\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null && !(x.getAttribute('href')||'').includes('#/')); if(a) a.click(); }");
-        waitForAngular(700);
-        // 3) click the "Bed" link.
+        // "Admission" is ALSO a top-level sidebar module, and the menu entries TOGGLE, so every level is expanded idempotently and
+        // the Bed link is looked up INSIDE the Application Configuration entry (an unscoped walk ended on the Patient Dashboard).
+        final String appCfg = "application\\s*config";
+        boolean appOpen = expandMenuEntry(null, appCfg);
+        boolean admOpen = appOpen && expandMenuEntry(appCfg, "^\\s*admission\\s*$");
+        if (!admOpen) System.out.println("Bed.navigateViaMenu: Application Configuration open=" + appOpen + ", Admission open=" + admOpen);
+        waitForAngular(500);
+        // click the "Bed" link.
         Object bed = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                + " const a=[...document.querySelectorAll('a')].find(x=>/^\\s*bed\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null); if(!a) return false; a.id='__bedMenu'; return true; }");
+                + " const top=[...document.querySelectorAll('a')].find(x=>/application\\s*config/i.test(norm(x.textContent)) && x.offsetParent!==null);"
+                + " const scope=(top&&top.closest('li'))||document;"
+                + " const a=[...scope.querySelectorAll('a')].find(x=>/^\\s*bed\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null); if(!a) return false; a.id='__bedMenu'; return true; }");
         if (Boolean.TRUE.equals(bed)) {
             try { page.locator("#__bedMenu").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000)); }
             catch (Exception e) { System.out.println("Bed.navigateViaMenu: Bed click failed - " + e.getMessage()); }

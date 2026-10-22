@@ -55,15 +55,17 @@ public class BioBagWaste extends BasePage {
         try { page.waitForFunction("() => window.angular", null,
                 new Page.WaitForFunctionOptions().setTimeout(20000)); } catch (Exception ignore) { }
 
-        clickMenu("^\\s*application\\s*configuration\\s*$");
-        clickMenu("^\\s*bio\\s*waste\\s*$");
+        // Expand each level only if it is not already open: a click on an open entry CLOSES it, and an unscoped lookup can hit a
+        // same-named entry elsewhere in the sidebar. The Biowaste group is looked up INSIDE Application Configuration only.
+        expandMenuEntry(null, "^\\s*application\\s*config(uration)?\\s*$");
+        expandMenuEntry("^\\s*application\\s*config(uration)?\\s*$", "^\\s*bio\\s*waste\\s*$");
         lastMenu = describeMenu();
 
         // Anchored to the whole label. A loose match on "generic" would take the first menu entry that
         // merely contains the word — the scaffolding trap that once ran an entire Compliance flow
         // against Complaint Type and reported PASS against the wrong screen's fields.
         Object href = page.evaluate("() => {" + JS
-                + " const a=[...document.querySelectorAll('a[href]')]"
+                + " const a=[...document.querySelectorAll('a[href]')].filter(vis)"
                 + "   .find(x=>/^\\s*bio\\s*bag\\s*waste\\s*$/i.test(norm(x.textContent)));"
                 + " if(!a) return ''; a.id='__bbwMenu'; return a.getAttribute('href')||''; }");
         lastRoute = href == null ? "" : href.toString();

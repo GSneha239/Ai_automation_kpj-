@@ -21,6 +21,11 @@ public class BloodBagComponent extends BasePage {
     public static String LIST_ROUTE = "#/BloodBagComponent";
     public static String ADD_ROUTE = "#/add-BloodBagComponent";
     public String lastCode = "";
+    public String lastRemark = "";
+    /** What the save call actually returned over HTTP (status + URL + body) — shows why a toast such as "Message Not Found!" appeared. */
+    public String lastSaveHttp = "";
+    /** Screenshot taken while the toast was on screen (the report's toast evidence). */
+    public byte[] toastPng;
 
     // ---- navigation ------------------------------------------------------
 
@@ -29,12 +34,10 @@ public class BloodBagComponent extends BasePage {
             page.waitForFunction("() => [...document.querySelectorAll('a')].some(a=>/application\\s*config/i.test((a.textContent||'')) && a.offsetParent!==null)",
                     null, new Page.WaitForFunctionOptions().setTimeout(15000));
         } catch (Exception ignore) { }
-        page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                + " const a=[...document.querySelectorAll('a')].find(x=>/application\\s*config/i.test(norm(x.textContent)) && x.offsetParent!==null); if(a) a.click(); }");
-        waitForAngular(900);
-        // Blood Bank submenu parent → expand
-        page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                + " const a=[...document.querySelectorAll('a')].find(x=>/^\\s*blood\\s*bank\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null); if(a) a.click(); }");
+        // Expand each level only if it is not already open, and look "Blood Bank" up INSIDE Application Configuration:
+        // "Blood Bank" is also a top-level module, so an unscoped lookup can expand that one instead.
+        expandMenuEntry(null, "^\\s*application\\s*config(uration)?\\s*$");
+        expandMenuEntry("^\\s*application\\s*config(uration)?\\s*$", "^\\s*blood\\s*bank\\s*$");
         waitForAngular(800);
         Object href = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
                 + " const a=[...document.querySelectorAll('a[href]')].find(x=>/blood\\s*bag\\s*component/i.test(norm(x.textContent)) || /bloodbagcomponent/i.test(x.getAttribute('href')||'')); if(!a) return ''; a.id='__bbcMenu'; return a.getAttribute('href')||'link'; }");
@@ -114,10 +117,14 @@ public class BloodBagComponent extends BasePage {
      * different details.
      */
     public String fillDetails(int attempt) {
-        String code = "BC" + String.format("%06d", Math.abs((System.nanoTime() + attempt * 7919L) % 1000000));
+        // Code, Remark and short description are stamped from the clock (never picked from a fixed pool): the shared QA
+        // environment keeps every saved row, so a fixed name would eventually be "already exists" for good.
+        String stamp = String.format("%06d", (System.currentTimeMillis() + attempt) % 1000000);
+        String code = "BC" + stamp;
         lastCode = code;
-        String desc = COMPONENT_NAMES[attempt % COMPONENT_NAMES.length] + (attempt >= COMPONENT_NAMES.length ? " " + (attempt / COMPONENT_NAMES.length + 1) : "");
-        String shortDesc = COMPONENT_SHORT[attempt % COMPONENT_SHORT.length] + (attempt >= COMPONENT_SHORT.length ? " " + (attempt / COMPONENT_SHORT.length + 1) : "");
+        String desc = COMPONENT_NAMES[attempt % COMPONENT_NAMES.length] + " " + stamp;
+        String shortDesc = COMPONENT_SHORT[attempt % COMPONENT_SHORT.length] + " " + stamp.substring(2);
+        lastRemark = desc;
         setNg("bloodbagcomponent.Code", code);
         setNg("bloodbagcomponent.Description", desc);
         setNg("bloodbagcomponent.ShortDescription", shortDesc);
@@ -143,6 +150,22 @@ public class BloodBagComponent extends BasePage {
                 + " || [...document.querySelectorAll('button,input[type=submit]')].find(x=>/^\\s*submit\\s*$/i.test((x.textContent||x.value||'').trim()) && x.offsetParent!==null)"
                 + " || [...document.querySelectorAll('button,input[type=submit]')].find(x=>/^\\s*save\\s*$/i.test((x.textContent||x.value||'').trim()) && x.offsetParent!==null); if(!b) return false; b.id='__bbSubmit'; return true; }");
         if (!Boolean.TRUE.equals(tagged)) { System.out.println("submitAndGetToast: Submit button not found"); return ""; }
+        // Record what the save call returns (every POST/PUT and any failing call) — a bare toast hides the server's answer.
+        final java.util.List<String> http = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+        java.util.function.Consumer<com.microsoft.playwright.Response> onResp = resp -> {
+            try {
+                String m = resp.request().method();
+                // Only the save call (…/IUD) and anything failing — the page also fires many unrelated menu / list calls.
+                if (!(resp.url().toLowerCase().contains("/iud") || resp.status() >= 400)) return;
+                String body = "";
+                try { body = resp.text(); } catch (Exception ignore) { body = "(body unavailable)"; }
+                java.util.regex.Matcher mm = java.util.regex.Pattern.compile("\"ResultStatus\":(-?\\d+).*?\"Message\":\"([^\"]*)\"").matcher(body);
+                if (mm.find()) body = "ResultStatus=" + mm.group(1) + ", Message=\"" + mm.group(2) + "\"";
+                else if (body.length() > 200) body = body.substring(0, 200) + "…";
+                http.add(m + " " + resp.status() + " " + resp.url() + " => " + body.replaceAll("\\s+", " ").trim());
+            } catch (Exception ignore) { }
+        };
+        page.onResponse(onResp);
         try { page.locator("#__bbSubmit").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000)); }
         catch (Exception e) { System.out.println("submitAndGetToast: Submit click failed - " + e.getMessage()); }
         try {
@@ -152,6 +175,12 @@ public class BloodBagComponent extends BasePage {
             page.waitForTimeout(2500);
             page.evaluate("() => { document.querySelectorAll('.toast-message,.toast,[id^=toast]').forEach(el=>{ const t=(el.textContent||'').replace(/\\s+/g,' ').trim(); if(t && !(window.__bbToasts||[]).includes(t)) (window.__bbToasts=window.__bbToasts||[]).push(t); }); }");
         }
+        // The toast is short-lived: take the screenshot now, while it is still on screen, so the report shows the message.
+        try { toastPng = page.screenshot(new Page.ScreenshotOptions().setTimeout(6000)); }
+        catch (Exception e) { System.out.println("submitAndGetToast: toast screenshot failed - " + e.getMessage()); }
+        try { page.offResponse(onResp); } catch (Exception ignore) { }
+        lastSaveHttp =http.isEmpty() ? "(no POST / failing HTTP call seen)" : String.join(" ;; ", http);
+        System.out.println("BloodBagComponent save HTTP => " + lastSaveHttp);
         Object r = page.evaluate("() => { const a=window.__bbToasts||[]; return a.find(x=>/saved|added|success/i.test(x)) || a.find(x=>x) || ''; }");
         waitForAngular(400);
         return r == null ? "" : r.toString().trim();

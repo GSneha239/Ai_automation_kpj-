@@ -57,15 +57,21 @@ public class Group extends BasePage {
                 page.waitForFunction("() => [...document.querySelectorAll('a')].some(a=>/application\\s*config/i.test((a.textContent||'')) && a.offsetParent!==null)",
                         null, new Page.WaitForFunctionOptions().setTimeout(15000));
             } catch (Exception ignore) { }
-            page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const a=[...document.querySelectorAll('a')].find(x=>/application\\s*config/i.test(norm(x.textContent)) && x.offsetParent!==null); if(a) a.click(); }");
-            waitForAngular(1200);
-            // EXACT "Billing" — a prefix match can expand a different (similarly named) menu.
-            page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const a=[...document.querySelectorAll('a')].find(x=>/^\\s*billing\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null); if(a) a.click(); }");
-            waitForAngular(1000);
+            // Expand each level only if it is not already open: a click on an open entry CLOSES it, and this loop used to re-click
+            // Application Configuration on every attempt. "Billing" is also a top-level module in the sidebar, listed before
+            // Application Configuration, so it is looked up INSIDE the Application Configuration entry only.
+            expandMenuEntry(null, "^\\s*application\\s*config(uration)?\\s*$");
+            expandMenuEntry("^\\s*application\\s*config(uration)?\\s*$", "^\\s*billing\\s*$");
             // EXACT text match ONLY — a bare href-contains fallback previously picked a DIFFERENT, similarly
             // spelled menu item on this same submenu (see CancellationReason.nav's "Receipt Cancellation" trap).
+            // "Group" is a very common name (other modules have one too), so it is looked up only INSIDE the Billing entry
+            // of Application Configuration, and only among visible links.
             Object href = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                    + " const links=[...document.querySelectorAll('a[href]')];"
+                    + " const top=[...document.querySelectorAll('a')].find(x=>/^\\s*application\\s*config(uration)?\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null);"
+                    + " const acLi=top&&top.closest('li');"
+                    + " const bill=acLi&&[...acLi.querySelectorAll('a')].find(x=>/^\\s*billing\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null);"
+                    + " const scope=(bill&&bill.closest('li'))||acLi||document;"
+                    + " const links=[...scope.querySelectorAll('a[href]')].filter(x=>x.offsetParent!==null);"
                     + " const a = links.find(x=>/^\\s*group\\s*$/i.test(norm(x.textContent)));"
                     + " if(!a) return ''; a.id='__grMenu'; return a.getAttribute('href')||'link'; }");
             if (href == null || href.toString().isEmpty()) { System.out.println("Group.nav: menu link not found (attempt " + (attempt + 1) + ")"); continue; }
@@ -143,7 +149,11 @@ public class Group extends BasePage {
     public String fillGroupHeader(int attempt) {
         String code = "GR" + String.format("%05d", Math.abs((System.nanoTime() + attempt * 7919L) % 100000));
         lastGroupCode = code;
-        lastGroup = GROUP_NAMES[attempt % GROUP_NAMES.length] + (attempt >= GROUP_NAMES.length ? " " + (attempt / GROUP_NAMES.length + 1) : "");
+        // The Group name must be UNIQUE: the shared QA environment keeps every saved Group and answers "already exists" for a repeated
+        // name, so a bare pool name collides once the pool is used up (it took 8 tries to find a free one). A realistic name + the run
+        // time (+ the retry number) never repeats.
+        String stamp = java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyMMddHHmmss"));
+        lastGroup = GROUP_NAMES[attempt % GROUP_NAMES.length] + " " + stamp + (attempt > 0 ? "-" + attempt : "");
         Object r = page.evaluate("(a) => { const A=window.angular;"
                 + " const el=ng=>[...document.querySelectorAll(\"[ng-model='\"+ng+\"']\")].find(x=>x.offsetParent!==null);"
                 + " const set=(ng,v)=>{ const e=el(ng); if(!e) return '(not found)';"

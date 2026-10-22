@@ -146,7 +146,22 @@ public class SampleAcceptReject extends BasePage {
         waitForAngular(500);
         Object back = page.evaluate("(m) => { const e=document.querySelector(\"input[ng-model='\"+m+\"']\");"
                 + " return e? (e.value||'') : '(gone)'; }", model);
-        return back == null ? "" : back.toString();
+        String got = back == null ? "" : back.toString();
+        if (!value.equals(got)) {
+            // A pre-filled picker box (class txtDate, inputmode=none, maxlength 10): typed keystrokes are discarded and the
+            // box ends up empty. Set the value through the box's own model instead, as the other screens here do.
+            Object set = page.evaluate("(a) => { const e=document.querySelector(\"input[ng-model='\"+a.m+\"']\"); if(!e) return '(gone)';"
+                    + " e.value=a.v;"
+                    + " try{ const c=angular.element(e).controller('ngModel'); if(c){ c.$setViewValue(a.v); c.$render(); } }catch(x){}"
+                    + " e.dispatchEvent(new Event('input',{bubbles:true}));"
+                    + " e.dispatchEvent(new Event('change',{bubbles:true}));"
+                    + " e.dispatchEvent(new Event('blur',{bubbles:true}));"
+                    + " return e.value||''; }", java.util.Map.of("m", model, "v", value));
+            waitForAngular(500);
+            got = set == null ? "" : set.toString();
+        }
+        dismissDatePicker();   // close the calendar the date entry left open
+        return got;
     }
 
     public boolean datesEntered(String from, String to) {
@@ -658,8 +673,9 @@ public class SampleAcceptReject extends BasePage {
                         + " const text = new TextDecoder('latin1').decode(u8);"
                         + " const pages = (text.match(/\\/Type\\s*\\/Page[^s]/g)||[]).length;"
                         + " const streams = (text.match(/stream/g)||[]).length;"
+                        + " let bin=''; const chunk=0x8000; for(let i=0;i<u8.length;i+=chunk) bin += String.fromCharCode.apply(null, u8.subarray(i,i+chunk));"
                         + " return {len:u8.length, head:head, pages:pages, streams:streams,"
-                        + "         status:res.status}; }");
+                        + "         status:res.status, b64:btoa(bin)}; }");
                 @SuppressWarnings("unchecked")
                 java.util.Map<String, Object> m = (java.util.Map<String, Object>) r;
                 int len = ((Number) m.get("len")).intValue();
@@ -667,6 +683,15 @@ public class SampleAcceptReject extends BasePage {
                 int streams = ((Number) m.get("streams")).intValue();
                 String head = String.valueOf(m.get("head"));
                 boolean isPdf = head.startsWith("%PDF");
+                if (isPdf) {
+                    // The report step shows the first page of the PDF itself — a screenshot of Chrome's viewer is blank.
+                    try {
+                        lastReportPng = com.kpj.core.PdfUtil.firstPageToPng(
+                                java.util.Base64.getDecoder().decode(String.valueOf(m.get("b64"))));
+                    } catch (Exception e) {
+                        System.out.println("SampleAcceptReject: could not render the PDF to an image — " + e.getMessage());
+                    }
+                }
                 // A report with nothing on it is a few hundred bytes of scaffolding with no content
                 // stream; a real one carries fonts and streams.
                 boolean hasContent = isPdf && len > 3000 && streams > 0;

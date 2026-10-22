@@ -81,9 +81,24 @@ public class BookAppointmentPage extends BasePage {
                 + "window.__alerts = window.__alerts || [];"
                 + "['JAlert','jAlert','alert'].forEach(n => { if (window[n] && !window['__o_'+n]) { window['__o_'+n]=window[n];"
                 + "  window[n]=function(m){ try{window.__alerts.push(String(m));}catch(e){} return window['__o_'+n].apply(this,arguments); }; } });"
+                // Punctuation/whitespace-tolerant matching — confirmed live (2026-09-30) the Prefix dropdown's
+                // real option text doesn't exactly equal the hardcoded "Mr." (same class of "Mrs." vs "Mrs"
+                // mismatch already handled in RegistrationPage.setPrefixRobust), so both the exact match AND
+                // the OLD substring fallback missed it (a needle with trailing punctuation is not a substring of
+                // a haystack without it), silently leaving the field unset until Save rejected with "Please
+                // Enter Prefix". Strip trailing '.'/whitespace before every comparison, and for the fallback use
+                // a WORD-BOUNDARY match rather than plain substring — confirmed live a naive includes() picked
+                // "Mrs" for a search of "Mr" (mr IS a substring of mrs), which passed Save but saved the WRONG
+                // title for a Male patient; a boundary check (nothing-or-non-alnum on both sides) rejects that
+                // while still matching e.g. "Malaysia" inside "Malaysia (MY)".
+                + "window.__norm = function(s){ return (s||'').trim().replace(/\\.+$/,'').toLowerCase(); };"
                 + "window.__setSel = function(ng, text){ const e=[...document.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')===ng);"
-                + "  if(!e) return ng+':no-select'; let i=[...e.options].findIndex(o=>(o.text||'').trim().toLowerCase()===text.toLowerCase());"
-                + "  if(i<0) i=[...e.options].findIndex(o=>(o.text||'').toLowerCase().includes(text.toLowerCase())); if(i<0) return ng+':no-opt';"
+                + "  if(!e) return ng+':no-select'; const want=window.__norm(text);"
+                + "  let i=[...e.options].findIndex(o=>window.__norm(o.text)===want);"
+                + "  if(i<0){ const esc=want.replace(/[.*+?^${}()|[\\]\\\\]/g,'\\\\$&');"
+                + "    const re=new RegExp('(^|[^a-z0-9])'+esc+'($|[^a-z0-9])','i');"
+                + "    i=[...e.options].findIndex(o=>re.test(window.__norm(o.text))); }"
+                + "  if(i<0) return ng+':no-opt (options: '+[...e.options].map(o=>o.text.trim()).join('|')+')';"
                 + "  e.selectedIndex=i; e.dispatchEvent(new Event('change',{bubbles:true})); const $=window.jQuery||window.$; if($){try{$(e).trigger('change');}catch(err){}}"
                 + "  return ng+':'+e.options[e.selectedIndex].text.trim(); };"
                 + "window.__setInp = function(ng, val){ const e=[...document.querySelectorAll('input,textarea')].filter(x=>x.getAttribute('ng-model')===ng && x.offsetParent!==null)[0];"
@@ -97,16 +112,33 @@ public class BookAppointmentPage extends BasePage {
     /** Fill all mandatory patient + appointment configuration fields. */
     public void fillMandatoryDetails() {
         String suffix = uniqueId();
-        // Dropdowns
-        page.evaluate("() => {"
-                + "window.__setSel('PatientData.PrefixID','Mr.');"
-                + "window.__setSel('PatientData.GenderID','Male');"
-                + "window.__setSel('PatientData.NationalityID','Malaysia');"
-                + "window.__setSel('PatientData.receivabletypeid','Patient');"
-                + "window.__setSel('PatientData.BookingTypeID','KPJ');"
-                + "window.__setSel('PatientData.AppointmentTypeID','Department');"
-                + "window.__setSel('PatientData.DepartmentID','Cardiac Surgery');"
-                + "}");
+        // Nationality's options load asynchronously and were still just "-Select-" when this method fired
+        // right after the page-load waits in navigateTo() — confirmed live (2026-09-30) via the dropdownResults
+        // diagnostic below (options: -Select-). Wait for it the same way navigateTo() already waits for Payor
+        // Type before touching it.
+        try {
+            page.waitForFunction(
+                    "() => { const e = [...document.querySelectorAll('select')].find(x => x.getAttribute('ng-model') === 'PatientData.NationalityID'); return e && e.options.length > 1; }",
+                    null, new Page.WaitForFunctionOptions().setTimeout(20000));
+        } catch (Exception e) { System.out.println("fillMandatoryDetails: Nationality options did not load in time"); }
+        // Dropdowns — surface each bind result so a field the app later rejects at Save (e.g. "Please Enter
+        // Prefix") is traceable back to here instead of only showing up several steps later.
+        //
+        // PrefixID: this environment's Title list (confirmed live 2026-09-30, ~90 entries — Malaysian
+        // honorifics: Dato', Datuk, Tan Sri, …) has NO "Mr"/"Mr." at all — the plain-male entry is spelled out
+        // as "Mister" (paired with "Mrs", both punctuation-free). "Mr." silently returned no-opt (Save then
+        // rejected with "Please Enter Prefix"), and a naive substring match on "Mr" wrongly picked "Mrs" (Mr IS
+        // a substring of Mrs) — fixed at the __setSel level too, but the real fix is asking for what's on screen.
+        Object dropdownResults = page.evaluate("() => [ "
+                + "window.__setSel('PatientData.PrefixID','Mister'),"
+                + "window.__setSel('PatientData.GenderID','Male'),"
+                + "window.__setSel('PatientData.NationalityID','Malaysia'),"
+                + "window.__setSel('PatientData.receivabletypeid','Patient'),"
+                + "window.__setSel('PatientData.BookingTypeID','KPJ'),"
+                + "window.__setSel('PatientData.AppointmentTypeID','Department'),"
+                + "window.__setSel('PatientData.DepartmentID','Cardiac Surgery')"
+                + "].join(' | ')");
+        System.out.println("fillMandatoryDetails: " + dropdownResults);
         waitForAngular(500);
         // Name — .fill() alone is unreliable here (AngularJS re-render), so fill, then force the
         // ng-model value + input event, then verify; retry with per-key typing if still empty.

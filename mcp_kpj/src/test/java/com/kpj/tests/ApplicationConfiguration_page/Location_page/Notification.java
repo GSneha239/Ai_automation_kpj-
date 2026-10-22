@@ -79,6 +79,8 @@ public class Notification extends DevHisBase {
             try { filledPng = page.screenshot(new com.microsoft.playwright.Page.ScreenshotOptions().setTimeout(8000)); }
             catch (Exception e) { System.out.println("Notification: filled-form screenshot failed - " + e.getMessage()); }
             toast = nt.submitAndGetToast();
+            // Drop the toast frame's close "×" and "KPJ Portal" title so the report shows just the message.
+            if (toast != null) toast = toast.replaceFirst("^[\\u00d7x\\s]*KPJ\\s*Portal\\s*", "").trim();
             String tl = toast == null ? "" : toast.toLowerCase();
             String httpL = nt.lastSaveHttp == null ? "" : nt.lastSaveHttp.toLowerCase();
             ok = tl.contains("saved") || tl.contains("success") || tl.contains("added") || tl.contains("updated");

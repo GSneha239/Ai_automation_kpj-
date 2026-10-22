@@ -265,9 +265,15 @@ public class Designation extends BasePage {
      * along so a retry after "already exists" submits different details).
      */
     public String fillCodeAndRemark(int attempt) {
-        // Continue the master's own code format (DS00000531 -> DS00000532) rather than inventing a shape.
-        lastCode = nextCodeFromTable(attempt);
-        lastRemark = DESIGNATIONS[(int) (Math.abs(System.nanoTime() / 7 + attempt) % DESIGNATIONS.length)];
+        // Keep the master's code SHAPE ("DS" + 8 digits) but make the digits unique from the clock. Continuing from the last
+        // grid page (nextCodeFromTable) kept proposing codes that already exist — the grid is not sorted by code, so its last
+        // page does not hold the highest one — and every retry was refused with "Code already exist!".
+        lastCode = "DS" + String.format("%08d", Math.abs((System.currentTimeMillis() + attempt * 7919L) % 100000000L));
+        // The screen answers "Code already exist!" for a Remark that is already taken too, and a plain pool of 14 names was
+        // used up in the shared environment (every attempt was refused). So the real designation name carries a unique
+        // stamp taken from the Code: "Pharmacist 27431".
+        String stamp = lastCode.length() > 5 ? lastCode.substring(lastCode.length() - 5) : lastCode;
+        lastRemark = DESIGNATIONS[(int) (Math.abs(System.nanoTime() / 7 + attempt) % DESIGNATIONS.length)] + " " + stamp;
         Object r = page.evaluate("(a) => { const A=window.angular;" + FIND_FIELDS
                 + " const set=(e,v)=>{ if(!e) return '(no field)'; const c=A.element(e).controller('ngModel'); e.value=v;"
                 + "   if(c){ c.$setViewValue(v); if(c.$commitViewValue) c.$commitViewValue(); c.$render(); }"
@@ -304,6 +310,14 @@ public class Designation extends BasePage {
             boolean showing = Boolean.TRUE.equals(page.evaluate("() => [...document.querySelectorAll('.toast-message,.toast,[id^=toast],.jAlert,.modal')]"
                     + " .some(el=>el.offsetParent!==null && (el.textContent||'').trim())"));
             if (showing) {
+                // The toast fades in — shooting the instant it appears captures it half-transparent. Wait (≤1.5 s) until fully opaque.
+                for (int w = 0; w < 15; w++) {
+                    boolean solid = Boolean.TRUE.equals(page.evaluate("() => { const t=[...document.querySelectorAll('.toast,.toast-message,[id^=toast]')]"
+                            + ".filter(el=>el.offsetParent!==null && (el.textContent||'').trim()); if(!t.length) return true;"
+                            + " return t.every(el=>{ let o=1; for(let n=el; n && n!==document.body; n=n.parentElement) o*=parseFloat(getComputedStyle(n).opacity||'1'); return o>=0.98; }); }"));
+                    if (solid) break;
+                    page.waitForTimeout(100);
+                }
                 try { toastPng = page.screenshot(new Page.ScreenshotOptions().setTimeout(8000)); }
                 catch (Exception e) { System.out.println("submit: toast screenshot failed - " + e.getMessage()); break; }
             } else page.waitForTimeout(200);

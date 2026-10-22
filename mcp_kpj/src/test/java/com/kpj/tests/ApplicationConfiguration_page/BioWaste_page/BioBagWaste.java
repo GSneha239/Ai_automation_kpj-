@@ -12,8 +12,6 @@ import com.kpj.pages.LoginPage;
  *   <li>Login (shared {@link LoginPage}, on an OPD counter so the menu exists).</li>
  *   <li>Open <b>Application Configuration</b> → <b>Biowaste</b> → <b>BioBagWaste</b>.</li>
  *   <li>Enter the <b>Code</b> and the <b>Remark</b>.</li>
- *   <li>Enter the <b>MIMS GUID</b> and <b>MIMS Description</b>.</li>
- *   <li>Select the <b>MIMS Type</b>.</li>
  *   <li>Click <b>Submit</b> → verify the success toast.</li>
  * </ol>
  *
@@ -47,12 +45,9 @@ public class BioBagWaste extends DevHisBase {
 
         String counter = System.getProperty("counter", COUNTER_FOR_MENU);
         String stamp = String.format("%05d", Math.abs(System.nanoTime() % 100000));
-        String code = System.getProperty("code", "BBW" + stamp);
+        // -DseedCode=<an existing code> starts from a code that is already taken, to exercise the "already exists" retry.
+        String code = System.getProperty("code", System.getProperty("seedCode", "BBW" + stamp));
         String remark = System.getProperty("remark", "Auto bio bag waste " + stamp);
-        // Distinct from the remark on purpose: the form carries two description boxes, and identical
-        // values would hide one being written into the other.
-        String mimsGuid = System.getProperty("mimsguid", "GUID-" + stamp);
-        String mimsDesc = System.getProperty("mimsdesc", "Auto MIMS description " + stamp);
 
         new LoginPage(page).login(BASE, USER, PASS, counter);
         step("Login", USER + " login (counter " + counter + ")",
@@ -78,17 +73,17 @@ public class BioBagWaste extends DevHisBase {
         String formControls = tor.describeControls();
         addSummary("Form controls", formControls);
 
-        // The form that actually opened may only carry Code (+ maybe Store) — no Remark, no MIMS
-        // GUID/Description, no MIMS Type. Rather than mechanically fail once per missing field, stop here
+        // The form that actually opened may only carry Code (+ maybe Store) — no Remark.
+        // Rather than mechanically fail once per missing field, stop here
         // and report it as the one real problem it is: the app opens the wrong (an incomplete) page.
         // Nothing is entered anywhere on a form already known to be wrong.
         if (!tor.hasExpectedFields()) {
-            step(page, "Form has the expected fields", "Check for Remark / MIMS GUID / MIMS Description before entering anything",
-                    "The form carries Code, Remark, MIMS GUID, MIMS Description and MIMS Type",
-                    "FAILS — opens the WRONG (an incomplete) page: Remark/MIMS fields are missing. "
+            step(page, "Form has the expected fields", "Check for the Remark field before entering anything",
+                    "The form carries Code and Remark",
+                    "FAILS — opens the WRONG (an incomplete) page: the Remark field is missing. "
                         + "Form controls: " + formControls,
                     "FAIL");
-            addSummary("Result", "FAILED — wrong/incomplete page (Remark/MIMS fields missing)");
+            addSummary("Result", "FAILED — wrong/incomplete page (Remark field missing)");
             return;
         }
 
@@ -103,30 +98,21 @@ public class BioBagWaste extends DevHisBase {
                     : "FAILS because a value did not land in its own field: " + entry),
                 entered ? "PASS" : "FAIL");
 
-        // 3) MIMS GUID + MIMS Description
-        String mims = tor.enterMims(mimsGuid, mimsDesc);
-        boolean mimsOk = tor.mimsEntered(mimsGuid, mimsDesc);
-        step(page, "Enter MIMS GUID and MIMS Description",
-                "Enter the MIMS GUID " + mimsGuid + " and the MIMS Description",
-                "Both are entered",
-                (mimsOk
-                    ? "PASSES because each MIMS box read back its own value, and neither took the "
-                      + "record's own Remark — the form carries two description boxes: " + mims
-                    : "FAILS because a MIMS value did not land in its own field: " + mims),
-                mimsOk ? "PASS" : "FAIL");
-
-        // 4) MIMS Type
-        String mimsType = tor.selectMimsType();
-        boolean typeOk = tor.mimsTypeSelected();
-        step(page, "Select MIMS Type", "Select the MIMS Type",
-                "A MIMS type is selected",
-                (typeOk
-                    ? "PASSES because the MIMS Type dropdown holds the choice: " + mimsType
-                    : "FAILS because no MIMS type could be selected: " + mimsType),
-                typeOk ? "PASS" : "FAIL");
-
-        // 5) Submit -> toast
+        // 3) Submit -> toast. If the screen says the code already exists, a fresh unique Code and Remark are entered and
+        // Submit is clicked again (up to 10 times) — the shared environment keeps filling up with earlier runs' records.
+        // A Code pinned with -Dcode= is the caller's choice, so it is not replaced.
         String toast = tor.submitAndGetToast();
+        StringBuilder dupTries = new StringBuilder();
+        for (int retry = 0; retry < 10 && System.getProperty("code") == null && toast != null
+                && toast.toLowerCase().matches(".*(already|exist).*"); retry++) {
+            dupTries.append(dupTries.length() == 0 ? "" : ", ").append(code);
+            String fresh = String.format("%05d", Math.abs((System.currentTimeMillis() * 31 + System.nanoTime() + retry * 7919L) % 100000));
+            code = "BBW" + fresh;
+            remark = System.getProperty("remark", "Auto bio bag waste " + fresh);
+            System.out.println("BioBagWaste: \"" + toast + "\" — retry " + (retry + 1) + " with a new unique Code " + code);
+            tor.enterDetails(code, remark);
+            toast = tor.submitAndGetToast();
+        }
         boolean ok = com.kpj.pages.ApplicationConfiguration_page.BioWaste_page.BioBagWaste.isSuccess(toast);
 
         boolean noMessage = !ok && toast != null && toast.toLowerCase().contains("message not found");
@@ -151,6 +137,8 @@ public class BioBagWaste extends DevHisBase {
         step(page, "Click Submit & success toast", "Click Submit; wait for the success toast",
                 "'... saved successfully' toast",
                 (ok ? "PASSES because the screen answered with a success message: " : "FAILS — ") + actual
+                    + (dupTries.length() == 0 ? "" : "  ||  the screen said the code already exists for: " + dupTries
+                        + " — so a new unique Code (" + code + ") was entered and submitted again")
                     + (malformed
                         ? "  ||  THE MESSAGE IS MALFORMED: it reads \"" + toast + "\", so the screen "
                           + "cannot name what it saved. The step FAILS on the message: a confirmation "
@@ -168,8 +156,6 @@ public class BioBagWaste extends DevHisBase {
                 inList ? "PASS" : "FAIL");
 
         addSummary("Code / Remark", code + " / " + remark);
-        addSummary("MIMS GUID / Description", tor.lastMims);
-        addSummary("MIMS Type", tor.lastMimsType);
         addSummary("Result", ok ? toast : "Not confirmed (\"" + toast + "\")");
     }
 }

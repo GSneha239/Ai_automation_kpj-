@@ -41,8 +41,11 @@ public class CurrencyMaster extends BasePage {
         page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
                 + " const a=[...document.querySelectorAll('a')].find(x=>/application\\s*config/i.test(norm(x.textContent)) && x.offsetParent!==null); if(a) a.click(); }");
         waitForAngular(900);
+        // "Billing" is ALSO a top-level module in the sidebar, listed before Application Configuration: an unscoped lookup clicks
+        // that one, which collapses the Application Configuration menu again. Look only inside the Application Configuration entry.
         page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                + " const a=[...document.querySelectorAll('a')].find(x=>/^\\s*billing\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null); if(a) a.click(); }");
+                + " const top=[...document.querySelectorAll('a')].find(x=>/application\\s*config/i.test(norm(x.textContent)) && x.offsetParent!==null); const scope=(top&&top.closest('li'))||document;"
+                + " const a=[...scope.querySelectorAll('a')].find(x=>/^\\s*billing\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null); if(a) a.click(); }");
         waitForAngular(800);
         Object href = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
                 + " const a=[...document.querySelectorAll('a[href]')].find(x=>/currency\\s*master/i.test(norm(x.textContent)) || /currencymaster/i.test(x.getAttribute('href')||'')); if(!a) return ''; a.id='__curMenu'; return a.getAttribute('href')||'link'; }");
@@ -92,7 +95,10 @@ public class CurrencyMaster extends BasePage {
     public String fillDetails(int attempt) {
         String code = "CUR" + String.format("%05d", Math.abs((System.nanoTime() + attempt * 7919L) % 100000));
         lastCode = code;
-        lastRemark = REMARKS[attempt % REMARKS.length] + (attempt >= REMARKS.length ? " " + (attempt / REMARKS.length + 1) : "");
+        // The Description (Remark) is UNIQUE per run: the shared QA environment keeps every currency ever saved, so a bare pool
+        // name such as "US Dollar" collides with earlier runs. A realistic name + the run time (+ the retry number) never repeats.
+        String stamp = java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyMMddHHmmss"));
+        lastRemark = REMARKS[attempt % REMARKS.length] + " " + stamp + (attempt > 0 ? "-" + attempt : "");
         Object r = page.evaluate("(a) => { const A=window.angular; const set=(ng,v)=>{ const e=[...document.querySelectorAll(\"[ng-model='\"+ng+\"']\")].find(x=>x.offsetParent!==null); if(!e) return '(no)'; const c=A.element(e).controller('ngModel'); e.value=v; if(c){c.$setViewValue(v);c.$render();} e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true})); return v; };"
                 + " const cd=set('CurrencyMaster.code',a.code); const rm=set('CurrencyMaster.description',a.remark); const pc=set('CurrencyMaster.percentage','10'); const hd=set('CurrencyMaster.higherdenomination','100'); const ld=set('CurrencyMaster.lowerdenomination','1');"
                 + " return 'Code='+cd+' | Remark='+rm+' | Percentage='+pc+' | HigherDenomination='+hd+' | LowerDenomination='+ld; }",
@@ -127,7 +133,20 @@ public class CurrencyMaster extends BasePage {
     /** After Submit, open the list ({@code #/CurrencyMaster}) and confirm a grid row matches the saved Code.
      *  Returns the matched row text, or "". */
     public String findAddedInList() {
-        if (!onScreen() || page.url().toLowerCase().contains("add-")) {
+        if (page.url().toLowerCase().contains("add-")) {
+            // The screen stays on the (now cleared) Add form after a save. Setting location.hash from here raises the app's
+            // "Reload page" popup, which the framework answers No - so the page never left the form and no row was ever seen.
+            // Go back with the form's own Back button instead.
+            Object tagged = page.evaluate("() => { const b=[...document.querySelectorAll('button,a,input[type=button]')]"
+                    + ".find(x=>/^\\s*back\\s*$/i.test((x.textContent||x.value||'').replace(/\\s+/g,' ').trim()) && x.offsetParent!==null);"
+                    + " if(!b) return false; b.id='__curBack'; return true; }");
+            if (Boolean.TRUE.equals(tagged)) {
+                try { page.locator("#__curBack").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000)); }
+                catch (Exception e) { System.out.println("CurrencyMaster.findAddedInList: Back click failed - " + e.getMessage()); }
+                page.evaluate("() => { const e=document.getElementById('__curBack'); if(e) e.removeAttribute('id'); }");
+                waitForAngular(1500);
+            }
+        } else if (!onScreen()) {
             try { page.evaluate("(h) => { window.location.hash = h; }", LIST_ROUTE); } catch (Exception ignore) { }
         }
         try {

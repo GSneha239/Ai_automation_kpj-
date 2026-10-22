@@ -18,15 +18,15 @@ import com.kpj.pages.LoginPage;
  *   <li>Click <b>Save</b> → verify the success toast.</li>
  * </ol>
  *
- * <p><b>MRN.</b> Pass one with {@code -Dmrn=100000956}; without it the flow uses {@link #DEFAULT_MRN}.
+ * <p><b>MRN.</b> Pass one with {@code -Dmrn=1100339336}; without it the flow uses {@link #DEFAULT_MRN}.
  * It is looked up under OPD, then IPD, then External — whichever resolves a patient wins.</p>
  *
  * <p>&#9888; A successful run CREATES a real ambulance usage record in the target environment.</p>
  */
 public class AmbulanceUsage extends DevHisBase {
 
-    /** Used when {@code -Dmrn=} is not supplied. Override per environment. */
-    public static final String DEFAULT_MRN = "100000956";
+    /** Used when {@code -Dmrn=} is not supplied (a patient that exists in the QA env). Override per environment. */
+    public static final String DEFAULT_MRN = "1100339336";
 
     /** DevHIS only builds the nav menu for an outpatient counter. Override with {@code -Dcounter=}. */
     public static final String COUNTER_FOR_MENU = "OPD-B-01";

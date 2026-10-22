@@ -226,17 +226,66 @@ public class RadiologyReportDelivery extends BasePage {
 
     /** Click the main <b>Search</b> button and report how many rows came back. */
     public String clickSearch() {
-        page.evaluate("() => {" + JS
+        // Record what the server answers to the search (status, path, start of the body), so "0 rows" can be told apart:
+        // an empty result, a rejected request, or no request at all.
+        final java.util.List<String> seen = new java.util.concurrent.CopyOnWriteArrayList<>();
+        final java.util.function.Consumer<com.microsoft.playwright.Response> onResp = r -> {
+            try {
+                if (r.request().resourceType().matches("xhr|fetch")
+                        && !r.url().contains("getInternalmsgCountOnly")) {
+                    String body = r.text();
+                    body = body == null ? "" : body.replaceAll("\\s+", " ");
+                    seen.add(r.status() + " " + r.request().method() + " " + r.url().replaceFirst("^https?://[^/]+", "")
+                            + " -> " + body.substring(0, Math.min(120, body.length())));
+                }
+            } catch (Exception ignore) { }
+        };
+        page.onResponse(onResp);
+        // A script error inside the Search handler would also leave the grid empty with no request: record any.
+        final java.util.List<String> pageErrors = new java.util.concurrent.CopyOnWriteArrayList<>();
+        final java.util.function.Consumer<String> onErr = e -> pageErrors.add(e.split("\n")[0]);
+        page.onPageError(onErr);
+        Object clicked = page.evaluate("() => {" + JS
                 + " const b=[...document.querySelectorAll('button,a')].filter(vis)"
                 + "   .find(x=>/fnGetAllReportDeliveryTestDetails/i.test(x.getAttribute('ng-click')||''))"
                 + "   || [...document.querySelectorAll('button,a')].filter(vis)"
                 + "     .find(x=>/^\\s*search\\s*$/i.test(norm(x.textContent)||x.value||''));"
-                + " if(b) b.click(); }");
-        waitForAngular(4000);
-        lastSearch = "clicked Search -> " + rowCount() + " row(s) in the test grid";
+                + " if(!b) return '(no Search button found)';"
+                + " b.click(); return '[ng-click='+(b.getAttribute('ng-click')||'-')+']'; }");
+        // A validation message (toast / alert) the screen shows instead of searching — read it before it fades.
+        String shown = "";
+        try {
+            page.waitForTimeout(600);
+            Object msg = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                    + " return [...document.querySelectorAll('.toast-message,.toast,.jAlert,.sweet-alert,.alert,[id^=toast]')]"
+                    + "   .filter(e=>e.offsetWidth||e.offsetHeight||e.getClientRects().length)"
+                    + "   .map(e=>norm(e.textContent).replace(/^\\S?\\s*KPJ Portal\\s*/i,'')).filter(t=>t)"
+                    + "   .filter((t,i,a)=>a.indexOf(t)===i).join(' | ').slice(0,200); }");
+            shown = msg == null ? "" : msg.toString();
+        } catch (Exception ignore) { }
+        waitForAngular(3400);
+        page.offResponse(onResp);
+        page.offPageError(onErr);
+        if (!pageErrors.isEmpty()) shown = (shown.isEmpty() ? "" : shown + " | ") + "script error: " + String.join(" ; ", pageErrors);
+        lastSearchHttp = String.join(" | ", seen);
+        lastSearch = "clicked Search " + (clicked == null ? "" : clicked) + " -> " + rowCount() + " row(s) in the test grid"
+                + (shown.isEmpty() ? "" : "; the screen said: \"" + shown + "\"")
+                + (lastSearchHttp.isEmpty() ? " (no API request was made)" : "; server: " + lastSearchHttp);
         System.out.println("RadiologyReportDelivery: " + lastSearch);
+        if (lastSearchHttp.isEmpty() && System.getProperty("debug.search") != null) {
+            Object src = page.evaluate("() => { try{ const b=[...document.querySelectorAll('button,a')]"
+                    + ".find(x=>/fnGetAllReportDeliveryTestDetails/i.test(x.getAttribute('ng-click')||''));"
+                    + " const sc=angular.element(b).scope();"
+                    + " return String(sc.fnGetAllReportDeliveryTestDetails).slice(0,1800)"
+                    + "   +'\\n--- model: '+JSON.stringify(sc.ReportDelivery,(k,v)=>typeof v==='string'&&v.length>40?v.slice(0,40):v).slice(0,900); }"
+                    + " catch(e){ return '(unreadable: '+e+')'; } }");
+            System.out.println("RadiologyReportDelivery: DEBUG search handler ->\n" + src);
+        }
         return lastSearch;
     }
+
+    /** What the server answered to the last Search click; empty when the search made no API request. */
+    public String lastSearchHttp = "";
 
     /** How many real (non-placeholder) Sub Group options are currently loaded. */
     public int subGroupCount() {
@@ -356,7 +405,22 @@ public class RadiologyReportDelivery extends BasePage {
         waitForAngular(500);
         Object back = page.evaluate("(i) => { const e=document.getElementById(i);"
                 + " return e? (e.value||'') : '(gone)'; }", id);
-        return back == null ? "" : back.toString();
+        String got = back == null ? "" : back.toString();
+        if (!value.equals(got)) {
+            // A pre-filled picker box (class txtDate, inputmode=none, maxlength 10): typed keystrokes are discarded and the
+            // box ends up empty. Set the value through the box's own model instead, as the other screens here do.
+            Object set = page.evaluate("(a) => { const e=document.getElementById(a.id); if(!e) return '(gone)';"
+                    + " e.value=a.v;"
+                    + " try{ const c=angular.element(e).controller('ngModel'); if(c){ c.$setViewValue(a.v); c.$render(); } }catch(x){}"
+                    + " e.dispatchEvent(new Event('input',{bubbles:true}));"
+                    + " e.dispatchEvent(new Event('change',{bubbles:true}));"
+                    + " e.dispatchEvent(new Event('blur',{bubbles:true}));"
+                    + " return e.value||''; }", java.util.Map.of("id", id, "v", value));
+            waitForAngular(500);
+            got = set == null ? "" : set.toString();
+        }
+        dismissDatePicker();   // close the calendar the date entry left open
+        return got;
     }
 
     public boolean datesEntered(String from, String to) {

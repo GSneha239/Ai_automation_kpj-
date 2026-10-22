@@ -200,16 +200,21 @@ public class PurchaseOrder extends BasePage {
      * "Select | Supplier Name"). Either path's tick is done as ONE atomic JS call — see the class doc.
      */
     public String selectSupplier() {
-        Object plain = page.evaluate("() => {" + JS
-                + " document.querySelectorAll('#__poSupplier').forEach(e=>e.removeAttribute('id'));"
-                + " const e=[...document.querySelectorAll('select')].filter(vis)"
-                + "   .find(x=>/supplier/i.test(tail(x)+' '+labelOf(x)));"
-                + " if(!e) return '';"
-                + " e.id='__poSupplier';"
-                + " const reals=[...e.options].map((o,i)=>({o,i}))"
-                + "   .filter(x=>x.i>0 && !/^-*\\s*select\\s*-*$/i.test(norm(x.o.text)));"
-                + " return reals.length? JSON.stringify({index:reals[0].i, count:reals.length}) : ''; }");
-        String plainInfo = plain == null ? "" : plain.toString();
+        // The app (re)loads the Supplier list after the Store is chosen, so wait for real options first.
+        String plainInfo = "";
+        for (int attempt = 0; attempt < 25 && plainInfo.isEmpty(); attempt++) {
+            Object plain = page.evaluate("() => {" + JS
+                    + " document.querySelectorAll('#__poSupplier').forEach(e=>e.removeAttribute('id'));"
+                    + " const e=[...document.querySelectorAll('select')].filter(vis)"
+                    + "   .find(x=>/supplier/i.test(tail(x)+' '+labelOf(x)));"
+                    + " if(!e) return '';"
+                    + " e.id='__poSupplier';"
+                    + " const reals=[...e.options].map((o,i)=>({o,i}))"
+                    + "   .filter(x=>x.i>0 && !/^-*\\s*select\\s*-*$/i.test(norm(x.o.text)));"
+                    + " return reals.length? JSON.stringify({index:reals[Math.min(" + Integer.getInteger("poSupplier",0) + ",reals.length-1)].i, count:reals.length}) : ''; }");
+            plainInfo = plain == null ? "" : plain.toString();
+            if (plainInfo.isEmpty()) page.waitForTimeout(1000);
+        }
         if (!plainInfo.isEmpty()) {
             try {
                 java.util.Map<String, Object> m = parseFlatJson(plainInfo);
@@ -229,6 +234,11 @@ public class PurchaseOrder extends BasePage {
             }
         }
 
+        Object selState = page.evaluate("() => { const e=[...document.querySelectorAll('select')]"
+                + ".find(x=>/SupplierID/i.test(x.getAttribute('ng-model')||''));"
+                + " return e? ('Supplier select: '+e.options.length+' option(s), disabled='+e.disabled+', visible='"
+                + "+!!(e.offsetWidth||e.offsetHeight)) : 'no Supplier select in the page'; }");
+        System.out.println("PurchaseOrder: " + selState);
         // Fall back to the button+panel widget.
         page.evaluate("() => {" + JS
                 + " const b=[...document.querySelectorAll('button,a')].filter(vis)"
@@ -322,6 +332,72 @@ public class PurchaseOrder extends BasePage {
      * live on {@link ItemEnquiry} and reused on {@link Quotation}/{@link PurchaseRequest} (same
      * {@code ItemSearch.*}/{@code SearchItem()} models).
      */
+    /** What {@link #selectStore()} chose, or why it could not. */
+    public String lastStore = "";
+
+    /**
+     * Select the <b>Store</b> on the order form ({@code PurchaseOrder.StoreID}) — the first real option, waiting up to 20s
+     * for the app to fill the list. The item picker's own Store list, and its Search ("Please Select Store Name !!!!"),
+     * depend on it.
+     */
+    public String selectStore() {
+        lastStore = selectStoreIn("select[ng-model='PurchaseOrder.StoreID']", "Pharmacy (Central)", "Store", 20000);
+        System.out.println("PurchaseOrder: Store = " + lastStore);
+        return lastStore;
+    }
+
+    public boolean storeSelected() { return lastStore != null && !lastStore.isEmpty() && !lastStore.startsWith("("); }
+
+    /** What {@link #selectPickerStore()} chose, or why it could not. */
+    public String lastPickerStore = "";
+
+    /** Select the Store INSIDE the Item Search dialog ({@code ItemSearch.SearchStoreID}); its Search needs one. */
+    public String selectPickerStore() {
+        String want = lastStore == null ? "" : lastStore.replaceAll("\\s*\\(of \\d+ store\\(s\\)\\)$", "");
+        lastPickerStore = selectStoreIn(".modal select[ng-model='ItemSearch.SearchStoreID']", want, "dialog Store", 15000);
+        // Choosing the store makes the dialog reload its dependent lists; a Search clicked straight away can return 0 rows.
+        page.waitForTimeout(1500);
+        System.out.println("PurchaseOrder: dialog Store = " + lastPickerStore);
+        return lastPickerStore;
+    }
+
+    public boolean pickerStoreSelected() {
+        return lastPickerStore != null && !lastPickerStore.isEmpty() && !lastPickerStore.startsWith("(");
+    }
+
+    /**
+     * Pick a Store in the dropdown matching {@code css}: the one named {@code want} if listed, else a "pharmacy" store
+     * (stock-bearing), else the first real option. Selected by index with the dropdown's own change handling and read back,
+     * so a selection that does not stick is reported rather than assumed (writing the model by hand put it back on "-Select-").
+     */
+    private String selectStoreIn(String css, String want, String label, int waitMs) {
+        try {
+            page.waitForFunction("(s) => { const e=[...document.querySelectorAll(s)].find(x=>x.offsetWidth||x.offsetHeight||x.getClientRects().length);"
+                    + " return !!e && [...e.options].some(o=>o.value && !/^-*\\s*select/i.test((o.text||'').trim())); }",
+                    css, new Page.WaitForFunctionOptions().setTimeout(waitMs));
+        } catch (Exception ignore) { /* reported below from what is really there */ }
+        Object r = page.evaluate("([s, want, label]) => {" + JS
+                + " const e=[...document.querySelectorAll(s)].find(vis);"
+                + " if(!e) return '(no '+label+' dropdown found)';"
+                + " const reals=[...e.options].map((o,i)=>({o,i})).filter(x=>x.o.value && !/^-*\\s*select/i.test(norm(x.o.text)));"
+                + " if(!reals.length) return '(the '+label+' list is empty: '+e.options.length+' option(s), none selectable)';"
+                + " const pick=(want && reals.find(x=>norm(x.o.text)===norm(want)))"
+                + "   || reals.find(x=>/^pharmacy/i.test(norm(x.o.text))) || reals[0];"
+                + " e.selectedIndex=pick.i;"
+                + " e.dispatchEvent(new Event('change',{bubbles:true}));"
+                + " try{ angular.element(e).triggerHandler('change'); }catch(x){}"
+                + " return 'ok|'+reals.length; }", java.util.Arrays.asList(css, want == null ? "" : want, label));
+        waitForAngular(900);
+        String res = r == null ? "" : r.toString();
+        if (!res.startsWith("ok|")) return res;
+        Object shown = page.evaluate("(s) => { const e=[...document.querySelectorAll(s)].find(x=>x.offsetWidth||x.offsetHeight||x.getClientRects().length);"
+                + " return e ? ((e.options[e.selectedIndex]||{}).text||'').replace(/\\s+/g,' ').trim() : ''; }", css);
+        String text = shown == null ? "" : shown.toString();
+        return (text.isEmpty() || text.matches("^-*\\s*[Ss]elect.*"))
+                ? "(the " + label + " did not stay selected: shows \"" + text + "\")"
+                : text + " (of " + res.substring(3) + " store(s))";
+    }
+
     public String clickSearchItem() {
         page.evaluate("() => {" + JS
                 + " const b=[...document.querySelectorAll('button,a')].filter(vis)"
@@ -373,8 +449,20 @@ public class PurchaseOrder extends BasePage {
                 + "   || [...d.querySelectorAll('button,a')].filter(vis)"
                 + "     .find(x=>/^\\s*search\\s*$/i.test(norm(x.textContent)));"
                 + " if(b) b.click(); }");
-        waitForAngular(3500);
-        lastPickerSearch = "clicked Search -> " + pickerRowCount() + " row(s) in the item picker";
+        // A validation message (toast) the screen shows instead of searching — read it before it fades.
+        String shown = "";
+        try {
+            page.waitForTimeout(600);
+            Object msg = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                    + " return [...document.querySelectorAll('.toast-message,.toast,.jAlert,.sweet-alert,.alert,[id^=toast]')]"
+                    + "   .filter(e=>e.offsetWidth||e.offsetHeight||e.getClientRects().length)"
+                    + "   .map(e=>norm(e.textContent).replace(/^\\S?\\s*KPJ Portal\\s*/i,'')).filter(t=>t)"
+                    + "   .filter((t,i,a)=>a.indexOf(t)===i).join(' | ').slice(0,200); }");
+            shown = msg == null ? "" : msg.toString();
+        } catch (Exception ignore) { }
+        waitForAngular(3000);
+        lastPickerSearch = "clicked Search -> " + pickerRowCount() + " row(s) in the item picker"
+                + (shown.isEmpty() ? "" : "; the screen said: '" + shown + "'");
         System.out.println("PurchaseOrder: " + lastPickerSearch);
     }
 
@@ -402,10 +490,11 @@ public class PurchaseOrder extends BasePage {
                 + " const find=() => { const d=topDialog(); if(!d) return '';"
                 + "   const cb=[...d.querySelectorAll('input[type=checkbox]')].filter(vis)"
                 + "     .filter(e=>!/IsSpecialOrder|isPsychotropicdrug|ChkSelectAll/i.test(ngOf(e)))"
-                + "     .filter(e=>e.closest('tr,.ui-grid-row'))[0];"
-                + "   if(!cb) return '';"
-                + "   if(!cb.id) cb.id='__poItemCb';"
-                + "   return cb.id; };"
+                + "     .filter(e=>e.closest('tr,.ui-grid-row'));"
+                + "   const pick=cb[Math.min(" + Integer.getInteger("poItem",0) + ",cb.length-1)];"
+                + "   if(!pick) return '';"
+                + "   if(!pick.id) pick.id='__poItemCb';"
+                + "   return pick.id; };"
                 + " for (let attempt = 0; attempt < 8; attempt++) {"
                 + "   const id=find();"
                 + "   if(!id) continue;"
@@ -580,7 +669,7 @@ public class PurchaseOrder extends BasePage {
                 + " e.id=id;"
                 + " const reals=[...e.options].map((o,i)=>({o,i}))"
                 + "   .filter(x=>x.i>0 && !/^-*\\s*select\\s*-*$/i.test(norm(x.o.text)));"
-                + " return reals.length? JSON.stringify({index:reals[0].i, count:reals.length})"
+                + " return reals.length? JSON.stringify({index:reals[Math.min(" + Integer.getInteger("__poPrType".equals(tempId) ? "poPrType" : "poDelivery", 0) + ",reals.length-1)].i, count:reals.length})"
                 + "   : '(the list has no real option)'; }",
                 java.util.List.of(labelRegex, tempId));
         String info = r == null ? "" : r.toString();
@@ -646,6 +735,20 @@ public class PurchaseOrder extends BasePage {
         Object back = page.evaluate("(i) => { const e=document.getElementById(i);"
                 + " return e? (e.value||'') : '(gone)'; }", id);
         lastPlannedDeliveryDate = back == null ? "" : back.toString();
+        if (!value.equals(lastPlannedDeliveryDate)) {
+            // A pre-filled picker box (class txtDate, inputmode=none, maxlength 10): typed keystrokes are discarded and the
+            // box ends up empty. Set the value through the box's own model instead, as the other screens here do.
+            Object set = page.evaluate("(a) => { const e=document.getElementById(a.id); if(!e) return '(gone)';"
+                    + " e.value=a.v;"
+                    + " try{ const c=angular.element(e).controller('ngModel'); if(c){ c.$setViewValue(a.v); c.$render(); } }catch(x){}"
+                    + " e.dispatchEvent(new Event('input',{bubbles:true}));"
+                    + " e.dispatchEvent(new Event('change',{bubbles:true}));"
+                    + " e.dispatchEvent(new Event('blur',{bubbles:true}));"
+                    + " return e.value||''; }", java.util.Map.of("id", id, "v", value));
+            waitForAngular(500);
+            lastPlannedDeliveryDate = set == null ? "" : set.toString();
+        }
+        dismissDatePicker();   // close the calendar the date entry left open
         System.out.println("PurchaseOrder: planned delivery date -> " + lastPlannedDeliveryDate);
         return lastPlannedDeliveryDate;
     }
@@ -685,6 +788,9 @@ public class PurchaseOrder extends BasePage {
                 || t.contains("inserted") || t.contains("updated");
     }
 
+    /** What the server answered to the last Save (status, path, start of the body) — names the cause behind a bare "Error!". */
+    public String lastSaveHttp = "";
+
     public String saveAndGetToast() {
         try {
             page.evaluate("() => { try{ if(window.toastr) toastr.clear(); }catch(e){}"
@@ -693,6 +799,21 @@ public class PurchaseOrder extends BasePage {
         } catch (Exception ignore) { }
         waitForAngular(300);
 
+        final java.util.List<String> saveHttp = new java.util.concurrent.CopyOnWriteArrayList<>();
+        final java.util.function.Consumer<com.microsoft.playwright.Response> onSaveResp = r -> {
+            try {
+                String m = r.request().method();
+                if (r.url().toLowerCase().contains("/api/") && r.request().resourceType().matches("xhr|fetch")
+                        && ("POST".equals(m) || "PUT".equals(m) || "DELETE".equals(m))
+                        && !r.url().contains("getInternalmsgCountOnly")) {
+                    String body = r.text();
+                    body = body == null ? "" : body.replaceAll("\\s+", " ");
+                    saveHttp.add(r.status() + " " + m + " " + r.url().replaceFirst("^https?://[^/]+", "")
+                            + " -> " + body.substring(0, Math.min(260, body.length())));
+                }
+            } catch (Exception ignore) { }
+        };
+        page.onResponse(onSaveResp);
         Object clicked = page.evaluate("() => {" + JS
                 + " const b=[...document.querySelectorAll('button,a,input[type=submit],input[type=button]')]"
                 + "   .filter(vis).find(x=>/^\\s*save\\s*$/i.test(norm(x.textContent)||x.value||'')"
@@ -720,8 +841,11 @@ public class PurchaseOrder extends BasePage {
             } catch (Exception ignore) { }
             if (toast.isEmpty()) page.waitForTimeout(400);
         }
+        page.offResponse(onSaveResp);
+        lastSaveHttp = String.join(" | ", saveHttp);
         lastSaveDiagnostics = clickedText + (toast.isEmpty() ? "; no message within 15s" : "");
         lastSave = toast;
+        if (!lastSaveHttp.isEmpty()) System.out.println("PurchaseOrder: server -> " + lastSaveHttp);
         System.out.println("PurchaseOrder: save -> " + lastSaveDiagnostics + " toast=\"" + toast + "\"");
         return toast;
     }

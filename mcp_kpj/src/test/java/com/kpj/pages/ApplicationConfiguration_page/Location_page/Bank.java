@@ -676,6 +676,13 @@ public class Bank extends BasePage {
                 how = "every bank in the pool already exists - using " + code + " / " + remark;
             }
         }
+        // ALWAYS unique: the real-bank abbreviations (RHB, AFFIN, ...) are all on file already, so every pooled Code
+        // answered "Code already exist!". Use the screen's other house style (two letters + eight digits, e.g.
+        // CB00000065) built from the millisecond clock, and stamp the Remark — neither can repeat.
+        String ms = Long.toString(System.currentTimeMillis(), 36).toUpperCase();
+        code = "BK" + String.format("%08d", System.currentTimeMillis() % 100000000L);
+        if (attempt > 0) code = withShiftedPrefix(code, attempt);
+        remark = (remark == null ? BANKS[(int) (Math.abs(System.nanoTime() / 1000 + attempt) % BANKS.length)][1] : remark) + " " + ms + attempt;
         lastCode = code;
         lastRemark = remark;
         Object r = page.evaluate("(a) => { const A=window.angular;" + FIND_FIELDS

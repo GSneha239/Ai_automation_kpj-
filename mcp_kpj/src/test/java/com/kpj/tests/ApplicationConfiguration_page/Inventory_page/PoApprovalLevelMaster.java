@@ -99,6 +99,33 @@ public class PoApprovalLevelMaster extends DevHisBase {
         // not part of the requested steps) and try once more, so the report can say whether the refusal
         // was a missing precondition or the save itself failing.
         String toast = po.submitAndGetToast();
+        // "PO Approval Level already exists!" is a per-level (and per-location) duplicate: try the other levels
+        // with a fresh Min/Max, then the other locations with every level, instead of resubmitting the same one.
+        String levelNote = "";
+        for (int lv = 1; lv < po.levelCount && retryable(toast, po); lv++) {
+            String prev = level;
+            level = po.selectLevel(lv);
+            int k = (int) Math.abs(System.nanoTime() % 100000);
+            min = String.valueOf(100000 + k);
+            max = String.valueOf(200000 + k);
+            po.enterMinMax(min, max);
+            toast = po.submitAndGetToast();
+            levelNote += " [" + prev + " already existed -> tried " + level + " Min=" + min + " Max=" + max + ": " + toast + "]";
+        }
+        po.selectLocation(0);   // reads the location count
+        for (int loc = 0; loc < po.locationCount && retryable(toast, po); loc++) {
+            String locName = po.selectLocation(loc);
+            for (int lv = 0; lv < po.levelCount && retryable(toast, po); lv++) {
+                level = po.selectLevel(lv);
+                int k = (int) Math.abs(System.nanoTime() % 100000);
+                min = String.valueOf(100000 + k);
+                max = String.valueOf(200000 + k);
+                po.enterMinMax(min, max);
+                toast = po.submitAndGetToast();
+                levelNote += " [" + locName + " / " + level + " Min=" + min + " Max=" + max + ": " + toast + "]";
+            }
+        }
+        if (!levelNote.isEmpty()) addSummary("Level retry", levelNote);
         String retryNote = "";
         if (!com.kpj.pages.ApplicationConfiguration_page.Inventory_page.PoApprovalLevelMaster.isSuccess(toast)) {
             String first = toast;
@@ -154,5 +181,17 @@ public class PoApprovalLevelMaster extends DevHisBase {
         addSummary("Level", po.lastLevel);
         addSummary("Min / Max", min + " / " + max);
         addSummary("Result", ok ? toast : "Not confirmed (\"" + toast + "\")");
+    }
+
+    /**
+     * True when the last Submit did not save and trying another level / location is worth it: the toast says the level
+     * already exists, is a bare "Error!", or never appeared — the server's own answer to the save ("... already exist",
+     * ResultStatus 3) counts too, because the toast is not always shown.
+     */
+    private static boolean retryable(String toast, com.kpj.pages.ApplicationConfiguration_page.Inventory_page.PoApprovalLevelMaster po) {
+        if (com.kpj.pages.ApplicationConfiguration_page.Inventory_page.PoApprovalLevelMaster.isSuccess(toast)) return false;
+        String t = toast == null ? "" : toast.toLowerCase();
+        String http = po.lastSaveHttp == null ? "" : po.lastSaveHttp.toLowerCase();
+        return t.isEmpty() || t.contains("already exist") || t.contains("error") || http.contains("already exist");
     }
 }

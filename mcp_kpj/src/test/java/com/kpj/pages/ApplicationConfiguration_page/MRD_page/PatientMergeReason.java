@@ -115,7 +115,12 @@ public class PatientMergeReason extends BasePage {
     public String fillDetails() {
         String code = "PM" + String.format("%05d", Math.abs(System.nanoTime() % 100000));
         lastCode = code;
-        lastRemark = REMARKS[(int) (Math.abs(System.nanoTime()) % REMARKS.length)];
+        // The Remark is UNIQUE per run: the shared QA environment keeps every saved Patient Merge Reason, so a bare pool name collides
+        // with earlier runs. A realistic name + the run time never repeats.
+        // Kept within 30 characters: the first 35-character version got an HTTP 500 from CommonMaster/IUD.
+        String stamp = java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("ddHHmmss"));
+        String base = REMARKS[(int) (Math.abs(System.nanoTime()) % REMARKS.length)];
+        lastRemark = (base.length() + 1 + stamp.length() > 30 ? base.substring(0, 30 - 1 - stamp.length()).trim() : base) + " " + stamp;
         Object r = page.evaluate("(a) => { const A=window.angular;"
                 + " const set=(ng,v)=>{ const e=[...document.querySelectorAll(\"input[ng-model='\"+ng+\"'],textarea[ng-model='\"+ng+\"']\")].find(x=>x.offsetParent!==null); if(!e) return '(no field)'; const c=A.element(e).controller('ngModel'); e.value=v; if(c){c.$setViewValue(v);c.$render();} e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true})); return v; };"
                 + " const cd=set('commonmaster.Code', a.code); const rm=set('commonmaster.Description', a.remark);"

@@ -87,7 +87,9 @@ public class CampDetails extends BasePage {
     public String fillCampDetails(int attempt) {
         String code = "CMP" + String.format("%05d", Math.abs((System.nanoTime() + attempt * 7919L) % 100000));
         lastCode = code;
-        lastRemark = REMARKS[attempt % REMARKS.length] + (attempt >= REMARKS.length ? " " + (attempt / REMARKS.length + 1) : "");
+        // Unique on every call: the pool is picked by attempt number only, so every run started with the same text.
+        lastRemark = REMARKS[(int) (Math.abs(System.nanoTime() / 1000 + attempt) % REMARKS.length)]
+                + " " + Long.toString(System.currentTimeMillis(), 36).toUpperCase() + attempt;
         String from = java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"));
         String to = java.time.LocalDate.now().plusDays(30).format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"));
         Object r = page.evaluate("(a) => new Promise(async (resolve) => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const A=window.angular; const $=window.jQuery; const sleep=ms=>new Promise(r=>setTimeout(r,ms));"

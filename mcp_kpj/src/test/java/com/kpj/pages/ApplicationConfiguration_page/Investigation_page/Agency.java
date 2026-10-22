@@ -57,12 +57,17 @@ public class Agency extends BasePage {
                 page.waitForFunction("() => [...document.querySelectorAll('a')].some(a=>/application\\s*config/i.test((a.textContent||'')) && a.offsetParent!==null)",
                         null, new Page.WaitForFunctionOptions().setTimeout(15000));
             } catch (Exception ignore) { }
-            page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const a=[...document.querySelectorAll('a')].find(x=>/application\\s*config/i.test(norm(x.textContent)) && x.offsetParent!==null); if(a) a.click(); }");
-            waitForAngular(1200);
-            // EXACT "Investigation" — a prefix match can expand a different (similarly named) menu.
-            page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const a=[...document.querySelectorAll('a')].find(x=>/^\\s*investigations?\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null && (x.getAttribute('href')||'')==='#'); if(a) a.click(); }");
-            waitForAngular(1500);
-            Object href = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const a=[...document.querySelectorAll('a[href]')].find(x=>/^\\s*agency\\s*$/i.test(norm(x.textContent)) || /(^|\\/)agency/i.test(x.getAttribute('href')||'')); if(!a) return ''; a.id='__agMenu'; return a.getAttribute('href')||'link'; }");
+            // "Investigation" is ALSO a top-level sidebar module, so an unscoped lookup clicks that one and collapses
+            // Application Configuration. Expand each level idempotently and look INSIDE the Application Configuration entry.
+            final String appCfg = "application\\s*config";
+            boolean appOpen = expandMenuEntry(null, appCfg);
+            boolean invOpen = appOpen && expandMenuEntry(appCfg, "^\\s*investigations?\\s*$");
+            if (!invOpen) System.out.println("Agency.nav: Application Configuration open=" + appOpen + ", Investigation open=" + invOpen);
+            Object href = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                    + " const top=[...document.querySelectorAll('a')].find(x=>/application\\s*config/i.test(norm(x.textContent)) && x.offsetParent!==null);"
+                    + " const scope=(top&&top.closest('li'))||document;"
+                    + " const a=[...scope.querySelectorAll('a[href]')].find(x=>x.offsetParent!==null && (/^\\s*agency\\s*$/i.test(norm(x.textContent)) || /(^|\\/)agency/i.test(x.getAttribute('href')||'')));"
+                    + " if(!a) return ''; a.id='__agMenu'; return a.getAttribute('href')||'link'; }");
             if (href == null || href.toString().isEmpty()) { System.out.println("Agency.nav: menu link not found (attempt " + (attempt + 1) + ")"); continue; }
             if (href.toString().startsWith("#")) menuHref = href.toString();
             try { page.locator("#__agMenu").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000)); }
@@ -123,7 +128,10 @@ public class Agency extends BasePage {
     public String fillDetails(int attempt) {
         String code = "AG" + String.format("%05d", Math.abs((System.nanoTime() + attempt * 7919L) % 100000));
         lastCode = code;
-        lastRemark = REMARKS[(int) (Math.abs(System.nanoTime() / 1000 + attempt) % REMARKS.length)];
+        // Unique per run (a fixed pool is exhausted for good on the shared QA env), kept within 30 characters.
+        String suffix = " " + code.substring(2);
+        String base = REMARKS[(int) (Math.abs(System.nanoTime() / 1000 + attempt) % REMARKS.length)];
+        lastRemark = (base.length() + suffix.length() > 30 ? base.substring(0, 30 - suffix.length()).trim() : base) + suffix;
         Object r = page.evaluate("(a) => { const A=window.angular;" + FIND_FIELDS
                 + " const set=(e,v)=>{ if(!e) return '(no field)'; const c=A.element(e).controller('ngModel'); e.value=v; if(c){c.$setViewValue(v);c.$render();} e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true})); return v; };"
                 + " const cd=set(codeEl, a.code); const rm=set(remEl, a.remark);"

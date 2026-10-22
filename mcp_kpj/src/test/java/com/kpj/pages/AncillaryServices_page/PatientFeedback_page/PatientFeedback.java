@@ -76,16 +76,23 @@ public class PatientFeedback extends BasePage {
             System.out.println("PatientFeedback.nav: nav menu never appeared — is this session on an OPD counter?");
         }
 
-        page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                + " const a=[...document.querySelectorAll('a')].find(x=>/ancillary\\s*services?/i.test(norm(x.textContent)) && x.offsetParent!==null); if(a) a.click(); }");
-        waitForAngular(1200);
-
-        // The menu entry reads "Patient Feedback List".
-        Object tagged = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                + " const links=[...document.querySelectorAll('a[href]')].filter(x=>x.offsetParent!==null);"
-                + " const a=links.find(x=>/^patient\\s*feedback(\\s*list)?$/i.test(norm(x.textContent)))"
-                + "   || links.find(x=>/#\\/PatientFeedbackList/i.test(x.getAttribute('href')||''));"
-                + " if(!a) return false; a.id='__pfMenu'; return true; }");
+        // Sidebar parents TOGGLE on click and their children load lazily, so a blind click on an open Ancillary Services
+        // closes it. Open it only if it is closed, and walk the path again (up to 3 times) until the leaf is visible.
+        Object tagged = Boolean.FALSE;
+        for (int attempt = 1; attempt <= 3 && !Boolean.TRUE.equals(tagged); attempt++) {
+            boolean ancOpen = expandMenuEntry(null, "^\\s*ancillary\\s*services?\\s*$");
+            // The menu entry reads "Patient Feedback List".
+            tagged = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                    + " const links=[...document.querySelectorAll('a[href]')].filter(x=>x.offsetParent!==null);"
+                    + " const a=links.find(x=>/^patient\\s*feedback(\\s*list)?$/i.test(norm(x.textContent)))"
+                    + "   || links.find(x=>/#\\/PatientFeedbackList/i.test(x.getAttribute('href')||''));"
+                    + " if(!a) return false; a.id='__pfMenu'; return true; }");
+            if (!Boolean.TRUE.equals(tagged)) {
+                System.out.println("PatientFeedback.nav: attempt " + attempt + " - Ancillary Services open=" + ancOpen
+                        + ", Patient Feedback link not visible");
+                waitForAngular(1500);
+            }
+        }
         if (Boolean.TRUE.equals(tagged)) {
             try { page.locator("#__pfMenu").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000)); }
             catch (Exception e) { System.out.println("PatientFeedback.nav: menu click failed - " + e.getMessage()); }
@@ -410,6 +417,30 @@ public class PatientFeedback extends BasePage {
 
     public boolean templateSelected() {
         return lastTemplate != null && !lastTemplate.isEmpty() && !lastTemplate.startsWith("(");
+    }
+
+    /** The real options of the template dropdown (placeholder excluded), in on-screen order; empty if none found. */
+    public java.util.List<String> templateOptions() {
+        Object r = page.evaluate("() => {" + JS
+                + " const sels=[...document.querySelectorAll('select')].filter(vis)"
+                + "   .filter(x=>!/pagination/i.test(x.getAttribute('ng-model')||''));"
+                + " const attrs=e=>(e.getAttribute('ng-model')||'')+' '+(e.getAttribute('id')||'')+' '+(e.getAttribute('name')||'');"
+                + " const optText=e=>[...e.options].map(o=>norm(o.textContent)).join(' ');"
+                + " let e=sels.find(x=>/template/i.test(attrs(x)) || /template/i.test(labelOf(x)));"
+                + " if(!e) e=sels.find(x=>/feedback/i.test(optText(x)));"
+                + " if(!e) e=sels.find(x=>/Dischargeid/i.test(attrs(x)));"
+                + " if(!e) e=sels.find(x=>x.options.length>1);"
+                + " if(!e) return [];"
+                + " return [...e.options].map(o=>norm(o.textContent)).filter(t=>t && !/^-*\\s*select/i.test(t)); }");
+        java.util.List<String> out = new java.util.ArrayList<>();
+        if (r instanceof java.util.List) for (Object o : (java.util.List<?>) r) out.add(String.valueOf(o));
+        return out;
+    }
+
+    /** Select the template whose option text is exactly {@code text} (case-insensitive). */
+    public String selectTemplateExact(String text) {
+        String escaped = text.replaceAll("[\\\\^$.*+?()\\[\\]{}|/]", "\\\\$0");
+        return selectTemplate("^\\s*" + escaped + "\\s*$");
     }
 
     /**

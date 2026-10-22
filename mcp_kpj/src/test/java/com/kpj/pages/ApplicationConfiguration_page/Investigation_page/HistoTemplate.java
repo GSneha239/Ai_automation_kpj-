@@ -173,8 +173,9 @@ public class HistoTemplate extends BasePage {
     public String fillDetails(int attempt) {
         String code = "HT" + String.format("%05d", Math.abs((System.nanoTime() + attempt * 7919L) % 100000));
         lastCode = code;
-        lastName = NAMES[(int) (Math.abs(System.nanoTime() / 1000 + attempt) % NAMES.length)];
-        lastRemark = REMARKS[(int) (Math.abs(System.nanoTime() / 1000 + attempt) % REMARKS.length)];
+        String stamp = Long.toString(System.currentTimeMillis(), 36).toUpperCase() + attempt;   // unique: never repeats
+        lastName = NAMES[(int) (Math.abs(System.nanoTime() / 1000 + attempt) % NAMES.length)] + " " + stamp;
+        lastRemark = REMARKS[(int) (Math.abs(System.nanoTime() / 1000 + attempt) % REMARKS.length)] + " " + stamp;
         Object r = page.evaluate("(a) => { const A=window.angular;" + FIND_FIELDS + SET_DESC
                 + " const set=(e,v)=>{ if(!e) return '(no field)'; commit(e,v); return v; };"
                 + " const cd=set(codeEl, a.code); const nm=set(nameEl, a.name);"

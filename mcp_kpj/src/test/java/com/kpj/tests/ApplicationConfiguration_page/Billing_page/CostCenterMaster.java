@@ -60,8 +60,10 @@ public class CostCenterMaster extends DevHisBase {
         String fill = "", toast = "";
         boolean ok = false, exists = false;
         int used = 0;
+        byte[] filledShot = null;   // the form with the fields filled in, taken BEFORE Submit
         for (int attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
             fill = cc.fillDetails(attempt);
+            filledShot = snap();
             used++;
             toast = cc.submitAndGetToast();
             String tl = toast == null ? "" : toast.toLowerCase();
@@ -73,7 +75,8 @@ public class CostCenterMaster extends DevHisBase {
 
         boolean fillOk = fill != null && fill.contains("CostCentreCode=CC") && !fill.contains("Location=(no");
         String fillActual = fill + (used > 1 ? "  [details changed " + (used - 1) + "x after 'already exists']" : "");
-        step(page, "Enter Location, Cost Centre Code, Name, Profit Centre",
+        // The screenshot shows the form as filled in (taken before Submit), not the page after the save.
+        step(filledShot, "Enter Location, Cost Centre Code, Name, Profit Centre",
                 "Select Location; enter Cost Centre Code, Cost Centre Name, Profit Centre",
                 "All fields are entered", fillActual, fillOk ? "PASS" : "FAIL");
 
@@ -87,5 +90,11 @@ public class CostCenterMaster extends DevHisBase {
         addSummary("Cost Centre Name", cc.lastName);
         addSummary("Attempts", String.valueOf(used));
         addSummary("Result", ok ? toast : "Not confirmed (\"" + toast + "\")");
+    }
+
+    /** Screenshot of the page as it stands now. Never fails the test - returns null if the capture does not work. */
+    private byte[] snap() {
+        try { return page.screenshot(new com.microsoft.playwright.Page.ScreenshotOptions().setTimeout(10000)); }
+        catch (Exception e) { System.out.println("CostCenterMaster: screenshot failed - " + e.getMessage()); return null; }
     }
 }

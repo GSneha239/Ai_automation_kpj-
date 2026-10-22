@@ -26,6 +26,8 @@ public final class PdfReport {
         /** A sentence for the report, naming the evidence either way. */
         public String diagnostics = "";
         public int bytes, pdfPages, streams;
+        /** The PDF's first page rendered to PNG (null when it could not be rendered) — the screenshot a PDF viewer tab cannot give. */
+        public byte[] png;
     }
 
     /**
@@ -72,7 +74,8 @@ public final class PdfReport {
                     + " const text = new TextDecoder('latin1').decode(u8);"
                     + " const pages = (text.match(/\\/Type\\s*\\/Page[^s]/g)||[]).length;"
                     + " const streams = (text.match(/stream/g)||[]).length;"
-                    + " return {len:u8.length, head:head, pages:pages, streams:streams, status:res.status}; }");
+                    + " let bin=''; const chunk=0x8000; for(let i=0;i<u8.length;i+=chunk) bin += String.fromCharCode.apply(null, u8.subarray(i,i+chunk));"
+                    + " return {len:u8.length, head:head, pages:pages, streams:streams, status:res.status, b64:btoa(bin)}; }");
             @SuppressWarnings("unchecked")
             java.util.Map<String, Object> m = (java.util.Map<String, Object>) o;
             r.bytes = ((Number) m.get("len")).intValue();
@@ -80,6 +83,14 @@ public final class PdfReport {
             r.streams = ((Number) m.get("streams")).intValue();
             String head = String.valueOf(m.get("head"));
             boolean isPdf = head.startsWith("%PDF");
+            if (isPdf) {
+                try {
+                    byte[] pdf = java.util.Base64.getDecoder().decode(String.valueOf(m.get("b64")));
+                    r.png = com.kpj.core.PdfUtil.firstPageToPng(pdf);
+                } catch (Exception e) {
+                    System.out.println("PdfReport: could not render the PDF to an image — " + e.getMessage());
+                }
+            }
             // A document with nothing on it is a few hundred bytes of scaffolding and no content
             // stream; a real one carries fonts and streams.
             boolean hasContent = isPdf && r.bytes > 3000 && r.streams > 0;

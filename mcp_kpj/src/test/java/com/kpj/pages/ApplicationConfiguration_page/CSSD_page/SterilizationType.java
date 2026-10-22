@@ -73,21 +73,48 @@ public class SterilizationType extends BasePage {
     public String fillDetails(int attempt) {
         String code = "ST" + String.format("%06d", Math.abs((System.nanoTime() + attempt * 7919L) % 1000000));
         lastCode = code;
-        lastRemark = REMARKS[attempt % REMARKS.length] + (attempt >= REMARKS.length ? " " + (attempt / REMARKS.length + 1) : "");
+        // Unique per run (a fixed pool is exhausted for good on the shared QA env), kept within 30 characters.
+        String suffix = " " + code.substring(4);
+        String base = REMARKS[attempt % REMARKS.length];
+        lastRemark = (base.length() + suffix.length() > 30 ? base.substring(0, 30 - suffix.length()).trim() : base) + suffix;
         setNg("commonmaster.Code", code);
         setNg("commonmaster.Description", lastRemark);
         // Standard TAT (Mins) = the scope var `inputTime` (NOT in commonmaster). Real fill + set the scope var
         // directly (else Submit → "Standard TAT is mandatory!").
         try {
-            com.microsoft.playwright.Locator tat = page.locator("[ng-model='inputTime']").first();
+            com.microsoft.playwright.Locator tat = visibleTat();
             tat.click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(4000));
             tat.fill("30");
             tat.blur();
         } catch (Exception e) { System.out.println("fillDetails: TAT fill failed - " + e.getMessage()); }
-        setScopeInputTime("30");
+        ensureTat("30");
         setNg("commonmaster.threshold", "80"); // Alert Threshold (%)
         waitForAngular(400);
         return "Code=" + code + " | Remark=" + lastRemark + " | StandardTAT=30 | AlertThreshold=80";
+    }
+
+    /**
+     * Make sure the visible Standard TAT (Mins) box really holds {@code v}: the scope var alone can leave the box
+     * blank (placeholder "Minutes", red border) if the form re-renders, and Submit then fails on "mandatory".
+     */
+    private void ensureTat(String v) {
+        setScopeInputTime(v);
+        try {
+            com.microsoft.playwright.Locator tat = visibleTat();
+            if (!v.equals(tat.inputValue(new com.microsoft.playwright.Locator.InputValueOptions().setTimeout(3000)))) {
+                tat.click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(4000));
+                tat.fill("");
+                tat.pressSequentially(v);
+                tat.blur();
+                setScopeInputTime(v);
+            }
+            System.out.println("SterilizationType: Standard TAT box = '" + tat.inputValue() + "'");
+        } catch (Exception e) { System.out.println("ensureTat: " + String.valueOf(e.getMessage()).replaceAll("\\s+", " ")); }
+    }
+
+    /** The Standard TAT box: several inputs share ng-model inputTime, so take the VISIBLE one (placeholder "Minutes"). */
+    private com.microsoft.playwright.Locator visibleTat() {
+        return page.locator("input[ng-model='inputTime']:visible, input[placeholder='Minutes']:visible").first();
     }
 
     /** Set the scope var {@code inputTime} (Standard TAT) on every scope that has it, then $apply. */
@@ -98,7 +125,7 @@ public class SterilizationType extends BasePage {
 
     /** Click <b>Submit</b> (commonmaster save handler / text Submit) and return the toast (toastr cleared first). */
     public String submitAndGetToast() {
-        setScopeInputTime("30"); // re-assert Standard TAT right before Submit
+        ensureTat("30"); // re-assert Standard TAT right before Submit
         Object tagged = page.evaluate("() => { window.__stToasts=[]; if(window.__stObs) window.__stObs.disconnect();"
                 + " try{ if(window.toastr) toastr.clear(); }catch(e){} document.querySelectorAll('#toast-container .toast, .toast-message').forEach(t=>t.remove());"
                 + " const grab=()=>{ document.querySelectorAll('.toast-message,.toast,[id^=toast]').forEach(el=>{ const t=(el.textContent||'').replace(/\\s+/g,' ').trim(); if(t && !window.__stToasts.includes(t)) window.__stToasts.push(t); }); };"

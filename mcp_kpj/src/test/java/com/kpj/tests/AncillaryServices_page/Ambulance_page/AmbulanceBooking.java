@@ -17,7 +17,8 @@ import com.kpj.pages.LoginPage;
  *   <li>Click <b>Save</b> → verify the success toast.</li>
  * </ol>
  *
- * <p><b>MRN.</b> Pass one with {@code -Dmrn=100000956}; without it the flow uses {@link #DEFAULT_MRN}.
+ * <p><b>MRN.</b> Pass one with {@code -Dmrn=1100339336}; without it the flow uses {@link #DEFAULT_MRN}. The MRN is
+ * always entered in the MRN field and looked up with Find Patient; the Search Patient popup is used only with {@code -Dpopup=true}.
  * The MRN must exist in the target environment — if the search returns nothing the flow reports that
  * step as FAIL and stops rather than saving a booking against no patient.</p>
  *
@@ -25,8 +26,8 @@ import com.kpj.pages.LoginPage;
  */
 public class AmbulanceBooking extends DevHisBase {
 
-    /** Used when {@code -Dmrn=} is not supplied. Override per environment. */
-    public static final String DEFAULT_MRN = "100000956";
+    /** Used when {@code -Dmrn=} is not supplied (a patient that exists in the QA env). Override per environment. */
+    public static final String DEFAULT_MRN = "1100339336";
 
     /** DevHIS only builds the nav menu for an outpatient counter. Override with {@code -Dcounter=}. */
     public static final String COUNTER_FOR_MENU = "OPD-B-01";
@@ -63,7 +64,7 @@ public class AmbulanceBooking extends DevHisBase {
         // fallback source (tried after this screen's own booking history below), since a patient from OPD
         // Bill is not guaranteed to satisfy whatever precondition Ambulance Booking enforces.
         java.util.List<String> broadCandidates = java.util.Collections.emptyList();
-        if (System.getProperty("mrn") == null) {
+        if (Boolean.getBoolean("popup")) {
             com.kpj.pages.Billing_page.OpdBill opb = new com.kpj.pages.Billing_page.OpdBill(page);
             if (opb.navigateTo(BASE)) broadCandidates = opb.candidateOpdMrnsFromPopup(8);
         }
@@ -108,10 +109,24 @@ public class AmbulanceBooking extends DevHisBase {
 
         // 3) MRN + Search — if the pinned/default MRN isn't a patient in this environment, fall back to
         // the candidates harvested from the list above, trying each in turn until one resolves.
-        String searchResult = booking.searchByMrn(mrn);
-        boolean found = booking.patientLoaded();
+        // First choice: the Search Patient popup with a short MRN filter ("11" first - real patients here carry an
+        // 11-prefixed MRN), picking the first real row. Then the pinned/default MRN, then other MRNs.
+        // An MRN passed with -Dmrn=... skips the popup: it is entered into the MRN field and looked up with the MRN
+        // search (SearchPatientByMRNo), since the popup would only swap it for an MRN of its own choosing.
         java.util.List<String> tried = new java.util.ArrayList<>();
-        tried.add(mrn);
+        String searchResult = "";
+        boolean found = false;
+        if (Boolean.getBoolean("popup")) {
+            searchResult = booking.searchByPopup("11", "10", "12", "13", "20", "21", "22", "30");
+            found = booking.patientLoaded();
+            tried.add("popup");
+            if (found) mrn = booking.lastMrn;
+        }
+        if (!found) {
+            searchResult = booking.searchByMrn(mrn);
+            found = booking.patientLoaded();
+            tried.add(mrn);
+        }
         if (!found && !mrnCandidates.isEmpty()) {
             for (String candidate : mrnCandidates) {
                 if (candidate.equals(mrn)) continue;

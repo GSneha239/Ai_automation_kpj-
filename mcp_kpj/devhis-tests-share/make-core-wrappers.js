@@ -9,6 +9,7 @@ const envs = {
   klg:    'KLG QA - https://klg-nhisqa.kpjhealth.com.my',
   dsh:    'DSH QA - https://dsh-nhisqa.kpjhealth.com.my',
   ks:     'KS QA - https://ks-nhisqa.kpjhealth.com.my',
+  nhistest: 'NHIS Test - https://nhistest.sancyberhad.com',
 };
 
 for (const [env, label] of Object.entries(envs)) {

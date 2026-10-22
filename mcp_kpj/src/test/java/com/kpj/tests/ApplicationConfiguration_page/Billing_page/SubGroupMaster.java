@@ -20,7 +20,7 @@ import com.kpj.pages.LoginPage;
 public class SubGroupMaster extends DevHisBase {
 
     /** How many times to re-enter fresh details when the server says the sub group already exists. */
-    private static final int MAX_ATTEMPTS = 40;
+    private static final int MAX_ATTEMPTS = 100;   // the Sub Group Code dropdown lists 100 values; try each in turn
 
     public SubGroupMaster() { super("ApplicationConfig_Billing_SubGroupMaster"); }
 
@@ -73,10 +73,10 @@ public class SubGroupMaster extends DevHisBase {
             ok = tl.contains("saved") || tl.contains("success") || tl.contains("added") || tl.contains("updated");
             exists = tl.contains("exist") || tl.contains("already");
             if (ok || !exists) break;   // saved, or a different (non-retryable) message
-            System.out.println("SubGroupMaster: attempt " + used + " (" + hdr + ") already exists — changing the details");
+            System.out.println("SubGroupMaster: attempt " + used + " (" + hdr + ") -> \"" + toast + "\" — choosing the next value in the dropdowns");
         }
 
-        boolean hdrOk = hdr.contains("SubGroupCode=SG") && !hdr.contains("Location=(no") && !hdr.contains("Group=(no");
+        boolean hdrOk = !hdr.contains("SubGroupCode=(no") && !hdr.contains("SubGroup=(no") && !hdr.contains("Location=(no") && !hdr.contains("Group=(no");
         String hdrActual = hdr + (used > 1 ? "  [details changed " + (used - 1) + "x after 'already exists']" : "");
         step(page, "Enter Location, Group, Sub Group Code, Sub Group",
                 "Enter Location, Group, Sub Group Code and Sub Group name",

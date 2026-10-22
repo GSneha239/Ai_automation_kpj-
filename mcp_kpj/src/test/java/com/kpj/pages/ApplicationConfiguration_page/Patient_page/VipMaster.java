@@ -26,7 +26,7 @@ public class VipMaster extends BasePage {
     public VipMaster(Page page) { super(page); }
 
     public static final String ROUTE = "#/VIPMaster";
-    public String lastCode = "", lastName = "", lastNric = "";
+    public String lastCode = "", lastName = "", lastNric = "", lastRemark = "";
     /** Screenshot taken while the success toast was still visible (toastr auto-dismisses). */
     public byte[] toastPng;
     /** Screenshot of the VIP Family / Dependent fields WHILE THEY ARE STILL FILLED — clicking Add moves the values
@@ -113,13 +113,19 @@ public class VipMaster extends BasePage {
      * the City list is polled afterwards.</p>
      */
     public String fillDetails() {
-        String code = "VIP" + String.format("%05d", Math.abs(System.nanoTime() % 100000));
+        // Everything is stamped from the wall clock (milliseconds). System.nanoTime() ticks in 100 ns steps on this
+        // machine, so its remainders end in "00" and a Code taken from them came from only ~1,000 values; the shared QA
+        // environment keeps every VIP ever saved, so Code, Name and Remark must never come from a small pool.
+        long ms = System.currentTimeMillis();
+        String code = "VIP" + String.format("%05d", ms % 100000);
         lastCode = code;
-        lastName = new String[]{"Ahmad Faizal","Lim Wei Sheng","Siti Nurhaliza","Rajesh Kumar","Nurul Aina","Tan Chee Keong"}[(int)(Math.abs(System.nanoTime())%6)];
+        lastName = new String[]{"Ahmad Faizal","Lim Wei Sheng","Siti Nurhaliza","Rajesh Kumar","Nurul Aina","Tan Chee Keong"}[(int)(ms % 6)]
+                + " " + String.format("%05d", ms % 100000);
         // 12-digit NRIC, unique per run (the app rejects duplicates).
-        lastNric = "8" + String.format("%011d", Math.abs(System.nanoTime() % 100000000000L));
+        lastNric = "8" + String.format("%011d", ms % 100000000000L);
         String expiry = java.time.LocalDate.now().plusYears(1).toString();          // input[type=date] → yyyy-MM-dd
-        String mobile = "60" + String.format("%09d", Math.abs(System.nanoTime() % 1000000000L));
+        String mobile = "60" + String.format("%09d", ms % 1000000000L);
+        lastRemark = "Board member - priority admission " + String.format("%05d", ms % 100000);
         Object r = page.evaluate("(a) => new Promise(async (resolve) => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const A=window.angular; const $=window.jQuery; const sleep=ms=>new Promise(r=>setTimeout(r,ms));"
                 + " const set=(ng,v)=>{ const e=[...document.querySelectorAll(\"input[ng-model='\"+ng+\"'],textarea[ng-model='\"+ng+\"']\")].find(x=>x.offsetParent!==null); if(!e) return '(no)'; const c=A.element(e).controller('ngModel'); e.value=v; if(c){c.$setViewValue(v);c.$render();} e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true})); return v; };"
                 + " const pick=async(ng)=>{ for(let k=0;k<12;k++){ const e=[...document.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')===ng && x.offsetParent!==null); if(e){ const i=[...e.options].findIndex(o=>o.value && !/^-*\\s*select\\s*-*$/i.test(norm(o.textContent))); if(i>=0){ e.selectedIndex=i; e.dispatchEvent(new Event('change',{bubbles:true})); try{A.element(e).triggerHandler('change');}catch(x){} if($){try{$(e).trigger('change');}catch(x){}} return norm(e.options[i].textContent); } } await sleep(400); } return '(no-opt)'; };"
@@ -139,7 +145,7 @@ public class VipMaster extends BasePage {
                 + " out.push('DOB='+set('commonmaster.DOB', a.dob));"
                 + " out.push('Address='+set('commonmaster.Address','No 12, Jalan Test'));"
                 + " out.push('PostCode='+set('commonmaster.PostCode','81000'));"
-                + " out.push('Remark='+set('commonmaster.Remarks','Board member - priority admission'));"
+                + " out.push('Remark='+set('commonmaster.Remarks', a.remark));"
                 // State FIRST — the City list (~443 options) is RELOADED off it. Picking a city too early takes one
                 // from the unfiltered list (e.g. Ajil, which is in Terengganu, not Johor) and the reload then drops
                 // it back to --Select--. So: pick, wait, VERIFY it stuck, and retry if it reverted.
@@ -157,7 +163,7 @@ public class VipMaster extends BasePage {
                 + " out.push('City='+city);"
                 + " resolve(out.join(' | ')); })",
                 java.util.Map.of("code", code, "name", lastName, "nric", lastNric,
-                        "passport", "P" + code, "mobile", mobile, "expiry", expiry,
+                        "passport", "P" + code, "mobile", mobile, "expiry", expiry, "remark", lastRemark,
                         "dob", java.time.LocalDate.now().minusYears(40).toString()));
         waitForAngular(600);
         return r == null ? "" : r.toString();
@@ -189,7 +195,7 @@ public class VipMaster extends BasePage {
      * lands in the dependent grid. Returns the entered values + the resulting row count.
      */
     public String fillDependentAndAdd() {
-        String dnric = "9" + String.format("%011d", Math.abs(System.nanoTime() % 100000000000L));
+        String dnric = "9" + String.format("%011d", System.currentTimeMillis() % 100000000000L);
         int before = dependentRowCount();
         Object r = page.evaluate("(a) => new Promise(async (resolve) => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const A=window.angular; const $=window.jQuery; const sleep=ms=>new Promise(r=>setTimeout(r,ms));"
                 + " const set=(ng,v)=>{ const e=[...document.querySelectorAll(\"input[ng-model='\"+ng+\"'],textarea[ng-model='\"+ng+\"']\")].find(x=>x.offsetParent!==null); if(!e) return '(no)'; const c=A.element(e).controller('ngModel'); e.value=v; if(c){c.$setViewValue(v);c.$render();} e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true})); return v; };"

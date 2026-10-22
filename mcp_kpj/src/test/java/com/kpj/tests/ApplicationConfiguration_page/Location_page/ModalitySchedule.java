@@ -101,7 +101,10 @@ public class ModalitySchedule extends DevHisBase {
         boolean ok = false;
         StringBuilder tries = new StringBuilder();
         int deptIndex = 0, modIndex = ms.lastModalityIndex + 1;
-        for (int attempt = 0; attempt < 6 && !ok; attempt++) {
+        // A modality can hold only one schedule, and earlier runs have used up the first department's six — so keep
+        // walking on through the modalities, then the next departments: up to 40 attempts by default (-DmodalityTries=).
+        int maxTries = Integer.getInteger("modalityTries", 40);
+        for (int attempt = 0; attempt < maxTries && !ok; attempt++) {
             toast = ms.submitAndGetToast();
             tl = toast == null ? "" : toast.toLowerCase();
             ok = tl.contains("saved") || tl.contains("success") || tl.contains("added");

@@ -340,6 +340,7 @@ public class OtSchedulingMaster extends BasePage {
     public boolean tableSelected() { return chosen(lastTable); }
 
     private int theatreCursor = -1, tableCursor = 0;
+    private final java.util.Set<String> triedTheatres = new java.util.HashSet<>();
 
     /**
      * Move to the NEXT theatre/table combination, clearing the form first.
@@ -349,13 +350,30 @@ public class OtSchedulingMaster extends BasePage {
      * moves on to a free combination rather than reporting a defect.</p>
      */
     public String nextCombination() {
-        // Clear whatever the refused attempt left on the form.
+        // A refused Submit leaves the form holding state (Clear does not reset it: the next Add then adds no row and Submit
+        // has nothing to save), so go Back to the list and open a FRESH Add form instead.
         page.evaluate("() => {" + JS
                 + " const b=[...document.querySelectorAll('button,a')].filter(vis)"
-                + "   .find(x=>/clearForm/i.test(x.getAttribute('ng-click')||''));"
+                + "   .find(x=>/closeForm/i.test(x.getAttribute('ng-click')||'') || /^\\s*back\\s*$/i.test(norm(x.textContent)));"
                 + " if(b) b.click(); }");
+        waitForAngular(2000);
+        openFormIfNeeded();
         waitForAngular(1500);
 
+        // Clear also resets the OT Theatre to "--Select--" (the OT Table list stays populated, so it looks fine). Without a
+        // theatre the second Add adds no row and Submit has nothing to save — so choose the current theatre again first.
+        if (lastTheatre != null && !lastTheatre.isEmpty()) {
+            String curName = lastTheatre.contains(" [") ? lastTheatre.substring(0, lastTheatre.indexOf(" [")) : lastTheatre;
+            Object idx = page.evaluate("(n) => { const s=document.querySelector(\"select[ng-model='deptScheduleInfo.otid']\"); if(!s) return -1;"
+                    + " const i=[...s.options].findIndex(o=>(o.textContent||'').replace(/\\s+/g,' ').trim()===n); return i; }", curName);
+            if (idx instanceof Number && ((Number) idx).intValue() > 0) {
+                selectIndex("deptScheduleInfo.otid", "__otsTheatre", ((Number) idx).intValue());
+                waitForAngular(1500);
+                long wait = System.currentTimeMillis() + 9000;
+                while (System.currentTimeMillis() < wait && optionCount("deptScheduleInfo.ottableid") < 2) page.waitForTimeout(300);
+                System.out.println("OtSchedulingMaster: re-selected theatre " + curName + " after Clear");
+            }
+        }
         java.util.List<Integer> tables = realIndexes("deptScheduleInfo.ottableid");
         if (tableCursor + 1 < tables.size()) {
             tableCursor++;
@@ -367,8 +385,15 @@ public class OtSchedulingMaster extends BasePage {
 
         // No table left under this theatre — move to the next theatre that offers one.
         java.util.List<Integer> theatres = realIndexes("deptScheduleInfo.otid");
+        if (lastTheatre != null && !lastTheatre.isEmpty())
+            triedTheatres.add(lastTheatre.contains(" [") ? lastTheatre.substring(0, lastTheatre.indexOf(" [")) : lastTheatre);
         while (theatreCursor + 1 < theatres.size()) {
             theatreCursor++;
+            // A theatre whose tables were all refused already must not be revisited (the cursor starts at the list's top,
+            // not at the theatre the flow first chose).
+            Object optText = page.evaluate("(i) => { const s=document.querySelector(\"select[ng-model='deptScheduleInfo.otid']\");"
+                    + " return s&&s.options[i]? (s.options[i].textContent||'').replace(/\\s+/g,' ').trim() : ''; }", theatres.get(theatreCursor));
+            if (optText != null && triedTheatres.contains(optText.toString())) continue;
             int before = optionCount("deptScheduleInfo.ottableid");
             String name = selectIndex("deptScheduleInfo.otid", "__otsTheatre", theatres.get(theatreCursor));
             long deadline = System.currentTimeMillis() + 9000;

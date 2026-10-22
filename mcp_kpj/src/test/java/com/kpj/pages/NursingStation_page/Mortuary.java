@@ -107,9 +107,10 @@ public class Mortuary extends BasePage {
                     null, new Page.WaitForFunctionOptions().setTimeout(30000));
         } catch (Exception ignore) { }
 
-        page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                + " const a=[...document.querySelectorAll('a')].find(x=>/^\\s*nursing\\s*station\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null); if(a) a.click(); }");
-        waitForAngular(1200);
+        // Open Nursing Station only if it is closed and wait for its children (a blind click toggles an open entry shut, or
+        // lands before the lazily-rendered submenu exists — either leaves the Mortuary link hidden and the screen blank).
+        expandMenuEntry(null, "^\\s*nursing\\s*station\\s*$");
+        waitForAngular(800);
         page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
                 + " const a=[...document.querySelectorAll('a[href]')].filter(x=>x.offsetParent!==null)"
                 + "   .find(x=>/^mortuary$/i.test(norm(x.textContent))"
@@ -489,7 +490,8 @@ public class Mortuary extends BasePage {
                     + " const root=dlg||document;"
                     + " const text=[...root.querySelectorAll('tr,.ui-grid-row')].filter(vis)"
                     + "   .map(t=>norm(t.textContent)).join(' ');"
-                    + " return [...new Set((text.match(/\\b100\\d{6}\\b/g)||[]))].slice(0,max); }", max);
+                    // This environment's MRNs are 10 digits (e.g. 1100338666, 1000006849); older ones were 9 (100000684).
+                    + " return [...new Set((text.match(/\\b1\\d{9}\\b|\\b100\\d{6}\\b/g)||[]))].slice(0,max); }", max);
             if (r instanceof java.util.List) for (Object o : (java.util.List<?>) r) found.add(o.toString());
             page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
                     + " const vis=e=>!!e && !!(e.offsetWidth||e.offsetHeight||e.getClientRects().length);"
@@ -769,7 +771,36 @@ public class Mortuary extends BasePage {
     // ---- save --------------------------------------------------------------
 
     /** Click <b>Save</b> and return the toast ("" if none appeared). */
+    /** What the server answered to Save (status, path, start of the body) — read even when the page then navigates away. */
+    public String lastSaveHttp = "";
+
     public String saveAndGetToast() {
+        final java.util.List<String> saveHttp = new java.util.concurrent.CopyOnWriteArrayList<>();
+        final java.util.function.Consumer<com.microsoft.playwright.Response> onSaveResp = resp -> {
+            try {
+                String m = resp.request().method();
+                if (resp.request().resourceType().matches("xhr|fetch|document")
+                        && ("POST".equals(m) || "PUT".equals(m) || resp.status() >= 300)
+                        && !resp.url().contains("getInternalmsgCountOnly")) {
+                    String body = "";
+                    try { body = resp.text(); } catch (Exception ignore) { }
+                    body = body == null ? "" : body.replaceAll("\\s+", " ");
+                    saveHttp.add(resp.status() + " " + m + " " + resp.url().replaceFirst("^https?://[^/]+", "")
+                            + " -> " + body.substring(0, Math.min(160, body.length())));
+                }
+            } catch (Exception ignore) { }
+        };
+        page.onResponse(onSaveResp);
+        try {
+            return saveAndGetToastInner();
+        } finally {
+            page.offResponse(onSaveResp);
+            lastSaveHttp = String.join(" || ", saveHttp);
+            if (!lastSaveHttp.isEmpty()) System.out.println("Mortuary.save: server -> " + lastSaveHttp);
+        }
+    }
+
+    private String saveAndGetToastInner() {
         try {
             page.waitForFunction("() => ![...document.querySelectorAll('.toast-message,.toast,[id^=toast]')]"
                     + ".some(e=>e.offsetParent!==null && (e.textContent||'').trim())",
@@ -782,17 +813,27 @@ public class Mortuary extends BasePage {
                 + "   if(t && !window.__mtToasts.includes(t)) window.__mtToasts.push(t); }); };"
                 + " window.__mtObs=new MutationObserver(grab); window.__mtObs.observe(document.body,{childList:true,subtree:true}); grab();"
                 + " window.__mtPrior=(window.__mtToasts||[]).slice();"
-                + " const c=[...document.querySelectorAll('button,a,input[type=submit],input[type=button]')].filter(x=>x.offsetParent!==null);"
-                + " const b=c.find(x=>/^\\s*save\\s*$/i.test(norm(x.textContent||x.value)))"
-                + "   || c.find(x=>/IUDMortuary|save|IUD/i.test(x.getAttribute('ng-click')||''));"
+                // Never a control inside the CKEditor template editor: its toolbar has its own "Save" button
+                // (class cke_button__save) which submits the editor's form — that reloads the page and logs the user off.
+                + " const c=[...document.querySelectorAll('button,a,input[type=submit],input[type=button]')]"
+                + "   .filter(x=>x.offsetParent!==null && !x.closest('.cke,[class*=cke_]') && !/cke_/.test(x.className||''));"
+                + " const b=c.find(x=>/IUDMortuary/i.test(x.getAttribute('ng-click')||''))"
+                + "   || c.find(x=>/^\\s*save\\s*$/i.test(norm(x.textContent||x.value)))"
+                + "   || c.find(x=>/save|IUD/i.test(x.getAttribute('ng-click')||''));"
                 + " if(!b) return false; b.id='__mtSave'; return true; }");
         if (!Boolean.TRUE.equals(tagged)) { System.out.println("Mortuary.save: Save button not found"); return ""; }
+        Object which = page.evaluate("() => { const e=document.getElementById('__mtSave'); return e? e.outerHTML.slice(0,220) : '(gone)'; }");
+        System.out.println("Mortuary.save: clicking -> " + which);
 
         try { page.locator("#__mtSave").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000)); }
         catch (Exception e) { System.out.println("Mortuary.save: Save click failed - " + e.getMessage()); }
-        page.evaluate("() => { const e=document.getElementById('__mtSave'); if(e) e.removeAttribute('id'); }");
+        // A successful Save redirects to the mortuary list, which destroys the page context mid-read ("Execution context was
+        // destroyed, most likely because of a navigation"). That is the expected outcome, not a failure — so every read after
+        // the click tolerates it, and the redirect itself is verified by the next step.
+        try { page.evaluate("() => { const e=document.getElementById('__mtSave'); if(e) e.removeAttribute('id'); }"); }
+        catch (Exception navigated) { System.out.println("Mortuary.save: the page navigated right after Save"); }
         waitForAngular(800);
-        acceptSaveDialog();
+        try { acceptSaveDialog(); } catch (Exception ignore) { }
         waitForAngular(500);
 
         try {
@@ -800,20 +841,26 @@ public class Mortuary extends BasePage {
                     null, new Page.WaitForFunctionOptions().setTimeout(20000));
         } catch (Exception ignore) { page.waitForTimeout(2500); }
 
-        Object r = page.evaluate("() => { const prior=window.__mtPrior||[];"
-                + " const a=(window.__mtToasts||[]).filter(x=>!prior.includes(x));"
-                + " return a.find(x=>/(saved|added|updated)\\s*success|success/i.test(x)) || a.find(x=>x) || ''; }");
+        Object r = null;
+        try {
+            r = page.evaluate("() => { const prior=window.__mtPrior||[];"
+                    + " const a=(window.__mtToasts||[]).filter(x=>!prior.includes(x));"
+                    + " return a.find(x=>/(saved|added|updated)\\s*success|success/i.test(x)) || a.find(x=>x) || ''; }");
+        } catch (Exception navigated) { System.out.println("Mortuary.save: the page navigated while reading the toast"); }
         String toast = r == null ? "" : r.toString().trim();
 
         if (toast.isEmpty()) {
             // Last resort: read the page text. This screen answers in a "KPJ Portal" banner that carries no
             // toast class, so a class-based observer never sees it — which is how a clear refusal
             // ("Mortuary already added for this patient (active record exists).!") was mistaken for silence.
-            Object banner = page.evaluate("() => {"
-                    + " const t=(document.body? document.body.innerText : '').replace(/\\s+/g,' ');"
-                    + " const m=t.match(/[^.!]*\\b(already added|active record exists|saved successfully"
-                    + "|added successfully|updated successfully)\\b[^.!]*[.!]?/i);"
-                    + " return m? m[0].trim().slice(0,160) : ''; }");
+            Object banner = null;
+            try {
+                banner = page.evaluate("() => {"
+                        + " const t=(document.body? document.body.innerText : '').replace(/\\s+/g,' ');"
+                        + " const m=t.match(/[^.!]*\\b(already added|active record exists|saved successfully"
+                        + "|added successfully|updated successfully)\\b[^.!]*[.!]?/i);"
+                        + " return m? m[0].trim().slice(0,160) : ''; }");
+            } catch (Exception navigated) { System.out.println("Mortuary.save: the page navigated while reading the banner"); }
             String fromPage = banner == null ? "" : banner.toString().trim();
             if (!fromPage.isEmpty()) {
                 toast = fromPage;

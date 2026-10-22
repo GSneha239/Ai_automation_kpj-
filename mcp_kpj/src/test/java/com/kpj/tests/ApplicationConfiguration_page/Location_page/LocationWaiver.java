@@ -81,7 +81,10 @@ public class LocationWaiver extends DevHisBase {
         boolean ok = false;
         StringBuilder tries = new StringBuilder();
         int ppIndex = 0, svcIndex = 0;
-        for (int attempt = 0; attempt < 8 && !ok; attempt++) {
+        // A waiver is unique per Location + Pricing Policy + Service, and every earlier run has used up the first
+        // combinations in the list — so keep walking on: up to 40 combinations by default (-DwaiverTries= to change).
+        int maxTries = Integer.getInteger("waiverTries", 40);
+        for (int attempt = 0; attempt < maxTries && !ok; attempt++) {
             toast = lw.submitAndGetToast();
             tl = toast == null ? "" : toast.toLowerCase();
             ok = tl.contains("saved") || tl.contains("success") || tl.contains("added");

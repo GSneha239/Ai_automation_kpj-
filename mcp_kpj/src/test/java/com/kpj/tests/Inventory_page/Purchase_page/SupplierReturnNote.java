@@ -95,6 +95,14 @@ public class SupplierReturnNote extends DevHisBase {
 
         addSummary("Form controls", srn.describeControls());
 
+        // 2b) The main form's Store must be chosen BEFORE the items are added: left on "-Select-" the server builds an
+        // empty transaction number and Save fails with a duplicate-key 500 (fintransheader_tranno).
+        String store = srn.selectStore();
+        boolean storeOk = srn.storeSelected();
+        step(page, "Select Store", "Select the Store on the Supplier Return Note form",
+                "A Store is selected", storeOk ? "PASSES: Store = " + store : "FAILS: " + store,
+                storeOk ? "PASS" : "FAIL");
+
         // 3) Click Search Item
         String searchItem = srn.clickSearchItem();
         boolean dialogOpen = srn.dialogOpen();
@@ -196,7 +204,8 @@ public class SupplierReturnNote extends DevHisBase {
         boolean success = com.kpj.pages.Inventory_page.Purchase_page.SupplierReturnNote.isSuccess(toast);
         String actual = toast == null || toast.isEmpty()
                 ? "No message appeared — " + srn.lastSaveDiagnostics
-                : (success ? toast : "Save not confirmed — the screen answered: \"" + toast + "\"");
+                : (success ? toast : "Save not confirmed — the screen answered: \"" + toast + "\""
+                        + (srn.lastSaveHttp.isEmpty() ? "" : "; the server answered: " + srn.lastSaveHttp));
         step(page, "Verify success toast message", "Wait for the success toast",
                 "'... saved successfully' toast", actual, success ? "PASS" : "FAIL");
 

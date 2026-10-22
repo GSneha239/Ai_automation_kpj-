@@ -21,7 +21,10 @@ import com.microsoft.playwright.Page;
  */
 public class RegistrationForeignTest extends DevHisBase {
 
-    private static final String NATIONALITY = System.getProperty("devhis.nationality", "Indonesian");
+    private static final String NATIONALITY = System.getProperty("devhis.nationality", "India");
+    // India, not Indonesia: the app treats ASEAN nationalities (Indonesia, Myanmar, Singapore, Thailand) as visa-exempt, so the
+    // Visa popup refuses to add details for them ("not required for the selected nationality") while Save still demands
+    // them for a Passport holder. A visa-required nationality is the one where Visa Details can actually be filled.
 
     public RegistrationForeignTest() { super("OP_Registration_ForeignNationality"); }
 

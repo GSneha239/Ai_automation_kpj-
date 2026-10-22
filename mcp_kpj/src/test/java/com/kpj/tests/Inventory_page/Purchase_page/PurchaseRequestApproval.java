@@ -65,7 +65,7 @@ public class PurchaseRequestApproval extends DevHisBase {
                         + "[Reject PR] tick Reject for another item and Reject PR.");
 
         String counter = System.getProperty("counter", COUNTER_FOR_MENU);
-        String from = System.getProperty("from", "01/01/2020");
+        String from = System.getProperty("from", "01/01/2026");
         String to = System.getProperty("to", "31/12/2026");
 
         new LoginPage(page).login(BASE, USER, PASS, counter);
@@ -98,9 +98,41 @@ public class PurchaseRequestApproval extends DevHisBase {
                 datesOk ? "PASSES: " + dates : "FAILS: " + dates,
                 datesOk ? "PASS" : "FAIL");
 
+        // 2b) The three search filters: Requesting Store, Supplier, PR Approval Level.
+        String filters = pra.selectSearchFilters();
+        boolean filtersOk = pra.searchFiltersSelected();
+        step(page, "Select Requesting Store and Supplier (PR Approval Level ignored)",
+                "Select a Requesting Store and a Supplier; the PR Approval Level is optional and ignored",
+                "Requesting Store and Supplier are selected",
+                filtersOk ? "PASSES: " + filters : "FAILS: " + filters,
+                filtersOk ? "PASS" : "FAIL");
+
         // 3) Search + verify results
         String search = pra.clickSearch();
         int rows = pra.rowCount();
+        if (rows == 0) {
+            // The first store chosen may simply not match any purchase request: try a DIFFERENT Requesting Store, one after
+            // another (up to 15), keeping the Supplier chosen, until a search lists something.
+            StringBuilder tried = new StringBuilder();
+            String first = search;
+            for (int k = 1; k <= 15 && rows == 0; k++) {
+                String storeName = pra.selectRequestingStoreAt(k);
+                if (storeName.startsWith("(")) { tried.append(" [").append(storeName).append("]"); break; }
+                String s = pra.clickSearch();
+                rows = pra.rowCount();
+                tried.append(" [").append(storeName).append(": ").append(rows).append(" row(s)]");
+                if (rows > 0) search = s + "  ||  the first Requesting Store listed nothing (" + first + "); a different one did:" + tried;
+            }
+            if (rows == 0) {
+                // Still nothing: search once more with all three filters cleared (dates only), so the report says whether the
+                // screen lists anything at all.
+                String cleared = pra.clearSearchFilters();
+                String s = pra.clickSearch();
+                rows = pra.rowCount();
+                search = s + "  ||  no Requesting Store gave rows (" + first + ";" + tried + "); with the filters cleared (" + cleared + ") the search"
+                        + " listed " + rows + " row(s).";
+            }
+        }
         step(page, "Click Search; verify results appear", "Click Search",
                 "Results appear in the list",
                 rows > 0 ? "PASSES because the search returned rows: " + search

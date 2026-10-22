@@ -27,6 +27,7 @@ public class RowMaster extends BasePage {
 
     public static final String LIST_ROUTE = "#/RowMasterList";
     public String lastRack = "", lastCode = "", lastRemark = "";
+    private int fillCount = 0;
     /** Screenshot taken while the success toast was still visible (toastr auto-dismisses). */
     public byte[] toastPng;
 
@@ -122,9 +123,13 @@ public class RowMaster extends BasePage {
      * the list would be silently dropped by Angular.
      */
     public String fillDetails() {
-        String code = "RW" + String.format("%05d", Math.abs(System.nanoTime() % 100000));
+        // The Row Code must be UNIQUE and must really vary: System.nanoTime() % 100000 only ticks in steps of 100 on Windows (every code
+        // ended in "00"), i.e. about 1000 possible values, which this shared environment has long since used up ("Code already exist!").
+        // The Remark is stamped with the run time (+ the fill count, so a retry is different too) rather than taken from a small list.
+        String code = "RW" + String.format("%05d", java.util.concurrent.ThreadLocalRandom.current().nextInt(100000));
         lastCode = code;
-        lastRemark = REMARKS[(int) (Math.abs(System.nanoTime()) % REMARKS.length)];
+        String stamp = java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyMMddHHmmss"));
+        lastRemark = REMARKS[(int) (Math.abs(System.nanoTime()) % REMARKS.length)] + " " + stamp + (++fillCount > 1 ? "-" + fillCount : "");
         Object r = page.evaluate("(a) => new Promise(async (resolve) => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const A=window.angular; const $=window.jQuery; const sleep=ms=>new Promise(r=>setTimeout(r,ms));"
                 + " const set=(ng,v)=>{ const e=[...document.querySelectorAll(\"input[ng-model='\"+ng+\"'],textarea[ng-model='\"+ng+\"']\")].find(x=>x.offsetParent!==null); if(!e) return '(no field)'; const c=A.element(e).controller('ngModel'); e.value=v; if(c){c.$setViewValue(v);c.$render();} e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true})); return v; };"
                 // Rack: async ng-options select — poll for a real option, pick it from the select's own list.
@@ -178,12 +183,9 @@ public class RowMaster extends BasePage {
             // details (fillDetails() picks a fresh Code and a different description) and try again.
             if (last.toLowerCase().matches(".*(exist|already).*")) {
                 System.out.println("submitAndGetToast: \"" + last + "\" — regenerating the details and retrying");
+                // fillDetails() now gives every call a new random Code and a new time-stamped Remark. (It used to append a number to
+                // lastRemark AFTER the form had been filled, so that number never reached the form.)
                 fillDetails();
-                // The realistic-name pool is SMALL and this environment already holds EVERY entry, so
-                // picking another name collides again — that is why the retries kept failing. Append a
-                // short number so the retry is genuinely unique, while still reading like configuration
-                // ("Peanut 4821", not machine noise). The FIRST attempt keeps the clean name.
-                lastRemark = lastRemark + " " + (Math.abs(System.nanoTime()) % 10000);
             }
             page.evaluate("() => { window.__rwToasts=[]; document.querySelectorAll('.toast-message,.toast').forEach(t=>t.remove()); }");
         }

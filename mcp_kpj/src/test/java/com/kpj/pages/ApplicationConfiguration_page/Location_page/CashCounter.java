@@ -787,6 +787,13 @@ public class CashCounter extends BasePage {
 
     /** Type {@link #lastCode} / {@link #lastRemark} into the two boxes and report what landed where. */
     private String fillBoxes(String how) {
+        // ALWAYS unique: every counter code the table-copying logic can produce (CC01, ADM1, ...) is already on file
+        // and answered "Code Already exists!". Build the Code from the millisecond clock (letters + digits, like the
+        // screen's own codes) and stamp the Cash Counter name — neither can repeat.
+        long msNow = System.currentTimeMillis();
+        lastCode = "CC" + String.format("%06d", msNow % 1000000L);
+        lastRemark = (lastRemark == null || lastRemark.isEmpty() ? "Counter" : lastRemark.replaceAll("\\s+[A-Z0-9]{6,}$", ""))
+                + " " + Long.toString(msNow, 36).toUpperCase();
         Object r = page.evaluate("(a) => { const A=window.angular;" + FIND_FIELDS
                 + " const set=(e,v)=>{ if(!e) return '(no field)'; const c=A.element(e).controller('ngModel'); e.value=v; if(c){c.$setViewValue(v);c.$render();}"
                 + "   e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true})); return v; };"

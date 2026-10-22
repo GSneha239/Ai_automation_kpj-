@@ -74,10 +74,10 @@ public class Payor extends DevHisBase {
         }
 
         boolean fillOk = fill != null && fill.contains("PayableCode=PY") && !fill.contains("PayorType=(no")
-                && !fill.contains("Payor=(no") && !fill.contains("Email=(no");
+                && !fill.contains("Payor=(no") && !fill.contains("Email=(no") && !fill.contains("PayorStatus=(no");
         String fillActual = fill + (used > 1 ? "  [details changed " + (used - 1) + "x after 'already exists']" : "");
-        step(page, "Enter Payor Type, Payable Code, Payor, Phone, E-mail, Contact Person",
-                "Enter Payor Type, Payable Code, Payor, Primary Phone No, E-mail, Primary Contact Person",
+        step(page, "Enter Payor Type, Payable Code, Payor, Phone, E-mail, Contact Person, Payor Status",
+                "Enter Payor Type, Payable Code, Payor, Primary Phone No, E-mail, Primary Contact Person and select Payor Status",
                 "All fields are entered", fillActual, fillOk ? "PASS" : "FAIL");
 
         String actual = toast == null || toast.isEmpty() ? "No toast appeared"

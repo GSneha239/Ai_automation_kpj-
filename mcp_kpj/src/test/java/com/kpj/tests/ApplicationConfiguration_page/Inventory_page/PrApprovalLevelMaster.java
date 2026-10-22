@@ -99,6 +99,34 @@ public class PrApprovalLevelMaster extends DevHisBase {
         // not part of the requested steps) and try once more, so the report can say whether the refusal
         // was a missing precondition or the save itself failing.
         String toast = pr.submitAndGetToast();
+        // "PR Approval Level already exists!" is a per-level duplicate: move on to the next level with a
+        // fresh Min/Max instead of resubmitting the same one.
+        String levelNote = "";
+        for (int lv = 1; lv < pr.levelCount && toast != null && toast.toLowerCase().contains("already exist"); lv++) {
+            String prev = level;
+            level = pr.selectLevel(lv);
+            int k = (int) Math.abs(System.nanoTime() % 100000);
+            min = String.valueOf(100000 + k);
+            max = String.valueOf(200000 + k);
+            pr.enterMinMax(min, max);
+            toast = pr.submitAndGetToast();
+            levelNote += " [" + prev + " already existed -> tried " + level + " Min=" + min + " Max=" + max + ": " + toast + "]";
+        }
+        // Every level already exists for Location "--All--": try the other locations, each with every level.
+        pr.selectLocation(0);   // reads the location count
+        for (int loc = 0; loc < pr.locationCount && toast != null && toast.toLowerCase().contains("already exist"); loc++) {
+            String locName = pr.selectLocation(loc);
+            for (int lv = 0; lv < pr.levelCount && toast != null && toast.toLowerCase().contains("already exist"); lv++) {
+                level = pr.selectLevel(lv);
+                int k = (int) Math.abs(System.nanoTime() % 100000);
+                min = String.valueOf(100000 + k);
+                max = String.valueOf(200000 + k);
+                pr.enterMinMax(min, max);
+                toast = pr.submitAndGetToast();
+                levelNote += " [" + locName + " / " + level + " Min=" + min + " Max=" + max + ": " + toast + "]";
+            }
+        }
+        if (!levelNote.isEmpty()) addSummary("Level retry", levelNote);
         String retryNote = "";
         if (!com.kpj.pages.ApplicationConfiguration_page.Inventory_page.PrApprovalLevelMaster.isSuccess(toast)) {
             String first = toast;

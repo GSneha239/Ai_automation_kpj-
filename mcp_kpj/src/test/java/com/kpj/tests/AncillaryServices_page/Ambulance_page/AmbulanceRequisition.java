@@ -17,7 +17,8 @@ import com.kpj.pages.LoginPage;
  *   <li>Click <b>Save</b> → verify the success toast.</li>
  * </ol>
  *
- * <p><b>MRN.</b> Pass one with {@code -Dmrn=100000956}; without it the flow uses {@link #DEFAULT_MRN}.
+ * <p><b>MRN.</b> Pass one with {@code -Dmrn=1100339336}; without it the flow uses {@link #DEFAULT_MRN}. The MRN is
+ * always entered in the MRN field and looked up with Find Patient; the Search Patient popup is used only with {@code -Dpopup=true}.
  * The MRN is looked up under OPD, then IPD, then External — whichever resolves a patient wins. If none
  * does, the flow reports that step FAIL and stops rather than saving against no patient.</p>
  *
@@ -25,8 +26,8 @@ import com.kpj.pages.LoginPage;
  */
 public class AmbulanceRequisition extends DevHisBase {
 
-    /** Used when {@code -Dmrn=} is not supplied. Override per environment. */
-    public static final String DEFAULT_MRN = "100000956";
+    /** Used when {@code -Dmrn=} is not supplied (a patient that exists in the QA env). Override per environment. */
+    public static final String DEFAULT_MRN = "1100339336";
 
     /** DevHIS only builds the nav menu for an outpatient counter. Override with {@code -Dcounter=}. */
     public static final String COUNTER_FOR_MENU = "OPD-B-01";
@@ -91,11 +92,17 @@ public class AmbulanceRequisition extends DevHisBase {
         // enough to use here carry an "11"-prefixed MRN, so that filter is tried first; a few more are
         // tried after it for resilience, then — only if the popup finds nothing at all — fall back to the
         // pinned/default MRN, this screen's own harvested list, and MRNs already confirmed elsewhere.
-        String searchResult = req.searchByPopup("11", "10", "12", "13", "20");
-        boolean found = req.patientLoaded();
+        // An MRN passed with -Dmrn=... skips the popup: it is entered into the MRN field and looked up with the MRN
+        // search (SearchPatientByMRNo), since the popup would only swap it for an MRN of its own choosing.
+        String searchResult = "";
+        boolean found = false;
         java.util.List<String> tried = new java.util.ArrayList<>();
-        tried.add("popup");
-        if (found) mrn = req.lastMrn;
+        if (Boolean.getBoolean("popup")) {
+            searchResult = req.searchByPopup("11", "10", "12", "13", "20");
+            found = req.patientLoaded();
+            tried.add("popup");
+            if (found) mrn = req.lastMrn;
+        }
         if (!found) {
             searchResult = req.searchByMrn(mrn);
             found = req.patientLoaded();

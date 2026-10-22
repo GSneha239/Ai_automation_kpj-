@@ -94,6 +94,14 @@ public class PurchaseRequest extends DevHisBase {
 
         addSummary("Form controls", pr.describeControls());
 
+        // 2b) Store — the item picker's Search refuses to run without one ("Please Select Store Name !!!!").
+        String store = pr.selectStore();
+        boolean storeOk = pr.storeSelected();
+        step(page, "Select Store", "Select the Store",
+                "A Store is selected",
+                storeOk ? "PASSES: Store = " + store : "FAILS: " + store,
+                storeOk ? "PASS" : "FAIL");
+
         // 3) Get Items
         String getItems = pr.clickGetItems();
         boolean pickerOpen = pr.itemPickerOpen();
@@ -104,6 +112,14 @@ public class PurchaseRequest extends DevHisBase {
         if (!pickerOpen) { addSummary("Result", "FAILED — the item picker never opened"); return; }
 
         addSummary("Item picker controls", pr.describeControls());
+
+        // 3b) The dialog's own Store — its Search refuses to run (0 rows, "Please Select Store Name !!!!") while none is chosen.
+        String pickerStore = pr.selectPickerStore();
+        boolean pickerStoreOk = pr.pickerStoreSelected();
+        step(page, "In the dialog, select the Store", "Select the Store from the dialog's Store dropdown",
+                "A Store is selected in the dialog",
+                pickerStoreOk ? "PASSES: Store = " + pickerStore : "FAILS: " + pickerStore,
+                pickerStoreOk ? "PASS" : "FAIL");
 
         // 4) Search + verify rows
         String rowsResult = pr.clickSearchAndVerifyRows();
@@ -180,7 +196,8 @@ public class PurchaseRequest extends DevHisBase {
         boolean success = com.kpj.pages.Inventory_page.Purchase_page.PurchaseRequest.isSuccess(toast);
         String actual = toast == null || toast.isEmpty()
                 ? "No message appeared — " + pr.lastSaveDiagnostics
-                : (success ? toast : "Save not confirmed — the screen answered: \"" + toast + "\"");
+                : (success ? toast : "Save not confirmed — the screen answered: \"" + toast + "\""
+                        + (pr.lastSaveHttp.isEmpty() ? "" : "; the server answered: " + pr.lastSaveHttp));
         step(page, "Click Save & verify success toast", "Click Save; wait for the success toast",
                 "'... saved successfully' toast", actual, success ? "PASS" : "FAIL");
 

@@ -338,11 +338,22 @@ public class EmailTemplate extends BasePage {
                     + " if(size){ size.selectedIndex=size.options.length-1;"
                     + "   size.dispatchEvent(new Event('change',{bubbles:true})); } }");
             waitForAngular(2500);
-            Object hit = page.evaluate("(c) => {" + JS
-                    + " const rows=[...document.querySelectorAll('tr,.ui-grid-row')].filter(vis)"
-                    + "   .map(t=>norm(t.textContent)).filter(t=>t);"
+            // The grid draws only the rows in view (20 of 25 here), so a new record near the bottom is not in the DOM until it
+            // is scrolled to. Read what is drawn, then scroll the grid down a screen at a time, collecting every row seen.
+            Object hit = page.evaluate("async (c) => {" + JS
+                    + " const sleep=ms=>new Promise(r=>setTimeout(r,ms));"
+                    + " const seen=new Set();"
+                    + " const read=()=>[...document.querySelectorAll('tr,.ui-grid-row')].filter(vis)"
+                    + "   .map(t=>norm(t.textContent)).filter(t=>t).forEach(t=>seen.add(t));"
+                    + " const vp=[...document.querySelectorAll('.ui-grid-viewport')].filter(vis)[0];"
+                    + " read();"
+                    + " if(vp){ vp.scrollTop=0; await sleep(300); read();"
+                    + "   for(let i=0;i<60;i++){ const before=vp.scrollTop;"
+                    + "     vp.scrollTop=before+Math.max(120,vp.clientHeight-60); await sleep(350); read();"
+                    + "     if(vp.scrollTop===before) break; } }"
+                    + " const rows=[...seen];"
                     + " const m=rows.find(t=>c && t.includes(c));"
-                    + " return m? 'FOUND: '+m.slice(0,120) : 'not in the list ('+rows.length+' rows shown)'; }",
+                    + " return m? 'FOUND: '+m.slice(0,120) : 'not in the list ('+rows.length+' rows seen while scrolling)'; }",
                     needle);
             lastListCheck = "looked for \"" + needle + "\" -> " + (hit == null ? "" : hit);
         } catch (Exception e) {

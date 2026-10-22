@@ -121,9 +121,12 @@ public class BoxMaster extends BasePage {
      * the list would be silently dropped by Angular.
      */
     public String fillDetails() {
-        String code = "BX" + String.format("%05d", Math.abs(System.nanoTime() % 100000));
+        // Time-based, so a Code is never reused: the millisecond clock in base 36 (last 6 chars repeat only every ~25 days).
+        String ms36 = Long.toString(System.currentTimeMillis(), 36).toUpperCase();
+        String code = "BX" + ms36.substring(Math.max(0, ms36.length() - 6));
         lastCode = code;
-        lastRemark = REMARKS[(int) (Math.abs(System.nanoTime()) % REMARKS.length)];
+        lastRemark = REMARKS[(int) (Math.abs(System.nanoTime()) % REMARKS.length)]
+                + " " + Long.toString(System.currentTimeMillis(), 36).toUpperCase();   // unique: never repeats
         Object r = page.evaluate("(a) => new Promise(async (resolve) => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const A=window.angular; const $=window.jQuery; const sleep=ms=>new Promise(r=>setTimeout(r,ms));"
                 + " const set=(ng,v)=>{ const e=[...document.querySelectorAll(\"input[ng-model='\"+ng+\"'],textarea[ng-model='\"+ng+\"']\")].find(x=>x.offsetParent!==null); if(!e) return '(no field)'; const c=A.element(e).controller('ngModel'); e.value=v; if(c){c.$setViewValue(v);c.$render();} e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true})); return v; };"
                 // Row: async ng-options select — poll for a real option, pick it from the select's own list.
@@ -177,12 +180,10 @@ public class BoxMaster extends BasePage {
             // details (fillDetails() picks a fresh Code and a different description) and try again.
             if (last.toLowerCase().matches(".*(exist|already).*")) {
                 System.out.println("submitAndGetToast: \"" + last + "\" — regenerating the details and retrying");
+                // fillDetails() now stamps every Remark with a millisecond timestamp, so the form itself holds a
+                // new, never-repeated description (and a new Code) — the previous version only changed the
+                // saved variable AFTER the form was filled, so the form kept the duplicate.
                 fillDetails();
-                // The realistic-name pool is SMALL and this environment already holds EVERY entry, so
-                // picking another name collides again — that is why the retries kept failing. Append a
-                // short number so the retry is genuinely unique, while still reading like configuration
-                // ("Peanut 4821", not machine noise). The FIRST attempt keeps the clean name.
-                lastRemark = lastRemark + " " + (Math.abs(System.nanoTime()) % 10000);
             }
             page.evaluate("() => { window.__bmToasts=[]; document.querySelectorAll('.toast-message,.toast').forEach(t=>t.remove()); }");
         }

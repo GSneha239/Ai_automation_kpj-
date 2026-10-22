@@ -104,12 +104,9 @@ public class HouseKeepingSchedule extends BasePage {
             System.out.println("HouseKeepingSchedule.nav: nav menu never appeared");
         }
 
-        page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                + " const a=[...document.querySelectorAll('a')].find(x=>/ancillary\\s*services?/i.test(norm(x.textContent)) && x.offsetParent!==null); if(a) a.click(); }");
-        waitForAngular(1000);
-        page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                + " const a=[...document.querySelectorAll('a')].find(x=>/^house\\s*keeping$/i.test(norm(x.textContent)) && x.offsetParent!==null); if(a) a.click(); }");
-        waitForAngular(1000);
+        // Expand each level only if it is not already open (a click on an open entry closes it), waiting for its children.
+        expandMenuEntry(null, "^\\s*ancillary\\s*services?\\s*$");
+        expandMenuEntry("^\\s*ancillary\\s*services?\\s*$", "^\\s*house\\s*keeping\\s*$");
 
         Object tagged = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
                 + " const links=[...document.querySelectorAll('a[href]')].filter(x=>x.offsetParent!==null);"
@@ -409,21 +406,36 @@ public class HouseKeepingSchedule extends BasePage {
      */
     public String clickAddEmployeeActivity() {
         int before = assignedActivitiesRowCount();
-
-        Object tagged = page.evaluate("() => { const c=[...document.querySelectorAll('button')].filter(x=>x.offsetParent!==null);"
-                + " const b=c.find(x=>/AddEmployeeActivity\\(\\)/i.test(x.getAttribute('ng-click')||''));"
-                + " if(!b) return false; b.id='__hkAdd2'; return true; }");
-        if (!Boolean.TRUE.equals(tagged)) { System.out.println("HouseKeepingSchedule.clickAddEmployeeActivity: Add button not found"); return ""; }
-        try { page.locator("#__hkAdd2").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000)); }
-        catch (Exception e) { System.out.println("HouseKeepingSchedule.clickAddEmployeeActivity: click failed - " + e.getMessage()); }
-        page.evaluate("() => { const e=document.getElementById('__hkAdd2'); if(e) e.removeAttribute('id'); }");
-
+        // The app's Add handler reads the Activity / Day that the chosen Schedule fills in from the server once Schedule + Employee
+        // are selected; clicked before they arrive it throws inside the handler and silently adds no row (then Save says "Should
+        // Have Atleast One Activity"). So wait for the Activity select to hold a real value first.
         try {
-            page.waitForFunction("(n) => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                    + " const cap=[...document.querySelectorAll('caption')].find(c=>/Assigned\\/Change Activities/i.test(norm(c.textContent)));"
-                    + " const t=cap?cap.closest('table'):null; const rows=t?t.querySelectorAll('tbody tr').length:0; return rows>n; }",
-                    before, new Page.WaitForFunctionOptions().setTimeout(8000));
-        } catch (Exception ignore) { System.out.println("HouseKeepingSchedule.clickAddEmployeeActivity: row count did not increase"); }
+            page.waitForFunction("(m) => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                    + " const e=[...document.querySelectorAll(\"[ng-model='\"+m+\"activityid']\")].find(x=>x.offsetParent!==null);"
+                    + " const o=e&&e.options[e.selectedIndex]; return !!(o && o.value && !/^-*\\s*select|^\\s*$|^--/i.test(norm(o.textContent))); }",
+                    AM, new Page.WaitForFunctionOptions().setTimeout(8000));
+        } catch (Exception ignore) { System.out.println("HouseKeepingSchedule.clickAddEmployeeActivity: Activity was not filled in before Add"); }
+
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            Object tagged = page.evaluate("() => { const c=[...document.querySelectorAll('button')].filter(x=>x.offsetParent!==null);"
+                    + " const b=c.find(x=>/AddEmployeeActivity\\(\\)/i.test(x.getAttribute('ng-click')||''));"
+                    + " if(!b) return false; b.id='__hkAdd2'; return true; }");
+            if (!Boolean.TRUE.equals(tagged)) { System.out.println("HouseKeepingSchedule.clickAddEmployeeActivity: Add button not found"); return ""; }
+            try { page.locator("#__hkAdd2").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000)); }
+            catch (Exception e) { System.out.println("HouseKeepingSchedule.clickAddEmployeeActivity: click failed - " + e.getMessage()); }
+            page.evaluate("() => { const e=document.getElementById('__hkAdd2'); if(e) e.removeAttribute('id'); }");
+
+            try {
+                page.waitForFunction("(n) => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                        + " const cap=[...document.querySelectorAll('caption')].find(c=>/Assigned\\/Change Activities/i.test(norm(c.textContent)));"
+                        + " const t=cap?cap.closest('table'):null; const rows=t?t.querySelectorAll('tbody tr').length:0; return rows>n; }",
+                        before, new Page.WaitForFunctionOptions().setTimeout(attempt == 1 ? 6000 : 4000));
+                break;
+            } catch (Exception ignore) {
+                System.out.println("HouseKeepingSchedule.clickAddEmployeeActivity: row count did not increase after click " + attempt
+                        + (attempt < 3 ? " - clicking Add again" : ""));
+            }
+        }
         waitForAngular(400);
 
         List<String> rows = assignedActivitiesRows();

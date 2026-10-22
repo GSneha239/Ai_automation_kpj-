@@ -37,8 +37,11 @@ public class AppointmentListTest extends DevHisBase {
     // excludes every freshly-booked one — the Registration section then reports "No more registrable patients".
     private static final String TO_DATE   = java.time.LocalDate.now().plusMonths(1).format(DTF);
 
-    // Request MRD File — MRD Details values
-    private static final String FILE_TYPE           = "MRD file";
+    // Request MRD File — MRD Details values. FILE_TYPE was "MRD file" — confirmed live (devhis build
+    // v2026.09.29.149) that option no longer exists (today's File Type list: Normal Adult Patient,
+    // Minor/Pediatrics, Psychiatric/Mental Health, Inpatient Case Notes, Consent Documents, ...), so
+    // fillMRDDetails() found "(no-opt)" and Save was rejected with "Please fill all fields!" every run.
+    private static final String FILE_TYPE           = "Normal Adult Patient";
     private static final String PATIENT_TYPE        = "Normal Patient";
     private static final String ALLOCATION_LOCATION = "MRD";
 
@@ -159,6 +162,8 @@ public class AppointmentListTest extends DevHisBase {
     }
 
     // ===== Section 1: Request MRD File =====================================
+    private static final int MRD_MAX_PATIENTS = 4; // how many DISTINCT patients to try before giving up
+
     private void sectionRequestMRD() {
         openAndSearch("MRD");
 
@@ -167,19 +172,47 @@ public class AppointmentListTest extends DevHisBase {
         // row 0 blindly, which is often an AutoBook row (patientid=0) for which Request MRD File does
         // nothing, so neither the create-confirm nor the report tab appears and the report screenshot
         // is never captured.
-        int idx = listPage.findRowNeedingMRDFile();
-        boolean expectCreate = idx >= 0;
-        if (idx < 0) idx = listPage.findRowWithMRDFile();
-        if (idx < 0) idx = 0;
-        AppointmentListPage.MRDResult res = listPage.selectRowAndRequestMRD(idx);
-        String appt = res.label == null ? "(unknown)" : res.label;
+        //
+        // "No response" (neither branch fires) can be a PATIENT-level gap, not a one-off row — confirmed
+        // live (2026-09-30) one patient (Shaliny, patientid=339273, ~8 appointments in the list) got no
+        // response on EVERY one of her rows, while other patients work fine. A per-row retry just kept
+        // re-selecting HER other appointments without ever reaching a different patient, so exclusion is
+        // by patientid, not row index — the same pattern sectionRegistration() already uses for its
+        // patient retries.
+        java.util.LinkedHashSet<Long> triedPatientIds = new java.util.LinkedHashSet<>();
+        java.util.List<String> triedLabels = new java.util.ArrayList<>();
+        AppointmentListPage.MRDResult res = null;
+        String appt = null;
+        boolean expectCreate = false;
+        int idx = -1;
+        for (int attempt = 1; attempt <= MRD_MAX_PATIENTS; attempt++) {
+            idx = listPage.findRowNeedingMRDFile(triedPatientIds);
+            expectCreate = idx >= 0;
+            if (idx < 0) idx = listPage.findRowWithMRDFile(triedPatientIds);
+            if (idx < 0 && triedPatientIds.isEmpty()) idx = 0; // last resort only on the very first attempt
+            if (idx < 0) break; // no more untried patients
+
+            res = listPage.selectRowAndRequestMRD(idx);
+            appt = res.label == null ? "(unknown)" : res.label;
+            triedPatientIds.add(res.patientId);
+            triedLabels.add(appt);
+            if (res.fileExists || res.needsCreate) break; // got a response — proceed with this row
+            System.out.println("sectionRequestMRD: no response for patient " + res.patientId + " (" + appt + ") — trying a different patient ("
+                    + attempt + "/" + MRD_MAX_PATIENTS + ")");
+            res = null; // discard — this attempt did not respond
+        }
+
+        boolean responded = res != null && (res.fileExists || res.needsCreate);
         step("MRD · Select & Request MRD File",
-                (expectCreate ? "Select an appointment with no file yet" : "Select the appointment row") + " and click 'Request MRD File'",
+                (expectCreate ? "Select an appointment with no file yet" : "Select the appointment row") + " and click 'Request MRD File'"
+                        + " — retry a different PATIENT if the first gives no response",
                 "Report opens (file exists) or 'create one?' confirm appears",
-                res.fileExists ? "File exists -> report opened for: " + appt
-                        : res.needsCreate ? "No file -> 'create one?' confirm for: " + appt : "No response for: " + appt,
-                (res.fileExists || res.needsCreate) ? "PASS" : "FAIL");
-        if (!res.fileExists && !res.needsCreate) return;
+                responded
+                        ? (res.fileExists ? "File exists -> report opened for: " + appt : "No file -> 'create one?' confirm for: " + appt)
+                                + (triedPatientIds.size() > 1 ? " (after trying: " + String.join(", ", triedLabels) + ")" : "")
+                        : "No response for any of " + triedPatientIds.size() + " distinct patients tried: " + String.join(", ", triedLabels),
+                responded ? "PASS" : "FAIL");
+        if (!responded) return;
 
         String toast = null;
         Page reportTab;

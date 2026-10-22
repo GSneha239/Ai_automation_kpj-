@@ -253,6 +253,89 @@ public class StoreIndent extends BasePage {
         return lastIssuingStore;
     }
 
+    /** What {@link #selectOwnStore()} chose, or why it could not. */
+    public String lastOwnStore = "";
+
+    /**
+     * Select the form's own <b>Store</b> ({@code StoreIndent.SearchStoreID}) — the first real option, waiting up to 20s for
+     * the app to fill the list. The Item Search dialog's Search answers "Please Select Store Name !!!!" without it.
+     */
+    public String selectOwnStore() {
+        final String sel = "select[ng-model='StoreIndent.SearchStoreID']";
+        try {
+            page.waitForFunction("(s) => { const e=[...document.querySelectorAll(s)].find(x=>x.offsetWidth||x.offsetHeight||x.getClientRects().length);"
+                    + " return !!e && [...e.options].some(o=>o.value && !/^-*\\s*select/i.test((o.text||'').trim())); }",
+                    sel, new Page.WaitForFunctionOptions().setTimeout(20000));
+        } catch (Exception ignore) { /* reported below from what is really there */ }
+        // A Requesting Store DIFFERENT from the Issuing Store (the app rejects a matching pair). Selected by index with the
+        // dropdown's own change handling — writing the model by hand ($setViewValue/$render) put it back on "-Select-".
+        Object r = page.evaluate("([s, avoid]) => {" + JS
+                + " const e=[...document.querySelectorAll(s)].find(vis);"
+                + " if(!e) return '(no Store dropdown on the form)';"
+                + " const reals=[...e.options].map((o,i)=>({o,i})).filter(x=>x.o.value && !/^-*\\s*select/i.test(norm(x.o.text)));"
+                + " if(!reals.length) return '(the Store list is empty: '+e.options.length+' option(s), none selectable)';"
+                + " const pick=reals.find(x=>norm(x.o.text)!==norm(avoid)) || reals[0];"
+                + " e.selectedIndex=pick.i;"
+                + " e.dispatchEvent(new Event('change',{bubbles:true}));"
+                + " try{ angular.element(e).triggerHandler('change'); }catch(x){}"
+                + " return pick.i+'|'+reals.length; }", java.util.Arrays.asList(sel, lastIssuingStore == null ? "" : lastIssuingStore));
+        waitForAngular(900);
+        String res = r == null ? "" : r.toString();
+        if (!res.matches("\\d+\\|\\d+")) { lastOwnStore = res; System.out.println("StoreIndent: Store = " + lastOwnStore); return lastOwnStore; }
+        Object shown = page.evaluate("(s) => { const e=[...document.querySelectorAll(s)].find(x=>x.offsetWidth||x.offsetHeight||x.getClientRects().length);"
+                + " return e ? ((e.options[e.selectedIndex]||{}).text||'').replace(/\\s+/g,' ').trim() : ''; }", sel);
+        String text = shown == null ? "" : shown.toString();
+        r = (text.isEmpty() || text.matches("^-*\\s*[Ss]elect.*"))
+                ? "(the Requesting Store did not stay selected: shows \"" + text + "\")"
+                : text + " (of " + res.substring(res.indexOf('|') + 1) + " store(s))";
+        lastOwnStore = r == null ? "" : r.toString();
+        System.out.println("StoreIndent: Store = " + lastOwnStore);
+        return lastOwnStore;
+    }
+
+    /** What {@link #selectDialogStore()} chose, or why it could not. */
+    public String lastDialogStore = "";
+
+    /**
+     * Select the <b>Store</b> dropdown INSIDE the Item Search dialog ({@code ItemSearch.SearchStoreID}) — the first real
+     * option, waiting up to 15s for the dialog to fill the list. The dialog's Search answers "Please Select Store Name !!!!"
+     * while it is empty.
+     */
+    public String selectDialogStore() {
+        final String sel = ".modal select[ng-model='ItemSearch.SearchStoreID']";
+        try {
+            page.waitForFunction("(s) => { const e=[...document.querySelectorAll(s)].find(x=>x.offsetWidth||x.offsetHeight||x.getClientRects().length);"
+                    + " return !!e && [...e.options].some(o=>o.value && !/^-*\\s*select/i.test((o.text||'').trim())); }",
+                    sel, new Page.WaitForFunctionOptions().setTimeout(15000));
+        } catch (Exception ignore) { /* reported below from what is really there */ }
+        // The dialog searches the STOCK of this store: prefer the Issuing Store just chosen (Pharmacy (Central) — confirmed to
+        // carry stock; "Administration", the first option, carries none and returns 0 rows), then any "pharmacy" store.
+        Object r = page.evaluate("([s, want]) => {" + JS
+                + " const e=[...document.querySelectorAll(s)].find(vis);"
+                + " if(!e) return '(no Store dropdown in the Item Search dialog)';"
+                + " const reals=[...e.options].map((o,i)=>({o,i})).filter(x=>x.o.value && !/^-*\\s*select/i.test(norm(x.o.text)));"
+                + " if(!reals.length) return '(the dialog Store list is empty: '+e.options.length+' option(s), none selectable)';"
+                + " const pick=(want && reals.find(x=>norm(x.o.text)===norm(want)))"
+                + "   || reals.find(x=>/^pharmacy/i.test(norm(x.o.text))) || reals[0];"
+                + " e.selectedIndex=pick.i;"
+                + " e.dispatchEvent(new Event('change',{bubbles:true}));"
+                + " try{ angular.element(e).triggerHandler('change'); }catch(x){}"
+                + " return norm((e.options[e.selectedIndex]||{}).text||'')+' (of '+reals.length+' store(s))'; }",
+                java.util.Arrays.asList(sel, lastIssuingStore == null ? "" : lastIssuingStore));
+        waitForAngular(900);
+        lastDialogStore = r == null ? "" : r.toString();
+        System.out.println("StoreIndent: dialog Store = " + lastDialogStore);
+        return lastDialogStore;
+    }
+
+    public boolean dialogStoreSelected() {
+        return lastDialogStore != null && !lastDialogStore.isEmpty() && !lastDialogStore.startsWith("(");
+    }
+
+    public boolean ownStoreSelected() {
+        return lastOwnStore != null && !lastOwnStore.isEmpty() && !lastOwnStore.startsWith("(");
+    }
+
     public boolean issuingStoreSelected() {
         return lastIssuingStore != null && !lastIssuingStore.isEmpty() && !lastIssuingStore.startsWith("(");
     }
@@ -263,7 +346,15 @@ public class StoreIndent extends BasePage {
                     .click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000));
             lastGetItems = "clicked Get Items";
         } catch (Exception e) {
-            lastGetItems = "(Get Items click failed: " + e.getMessage().split("\n")[0] + ")";
+            // The first line of a Playwright error is just "Error {"; the useful part is the reason in the call log
+            // (e.g. "<div ...> intercepts pointer events" or "element is not enabled").
+            String why = "";
+            for (String ln : String.valueOf(e.getMessage()).split("\n")) {
+                String t = ln.trim();
+                if (t.startsWith("message=") || t.contains("intercepts pointer") || t.contains("not enabled")
+                        || t.contains("not visible") || t.contains("Timeout")) { why += (why.isEmpty() ? "" : " | ") + t; }
+            }
+            lastGetItems = "(Get Items click failed: " + (why.isEmpty() ? e.getMessage().split("\n")[0] : why) + ")";
         }
         waitForAngular(1500);
         System.out.println("StoreIndent: " + lastGetItems);
@@ -286,6 +377,17 @@ public class StoreIndent extends BasePage {
         } catch (Exception e) {
             lastDialogSearch = "(Search click failed: " + e.getMessage().split("\n")[0] + ")";
         }
+        // A validation message (toast) the screen shows instead of searching — read it before it fades.
+        String shown = "";
+        try {
+            page.waitForTimeout(600);
+            Object msg = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                    + " return [...document.querySelectorAll('.toast-message,.toast,.jAlert,.sweet-alert,.alert,[id^=toast]')]"
+                    + "   .filter(e=>e.offsetWidth||e.offsetHeight||e.getClientRects().length)"
+                    + "   .map(e=>norm(e.textContent).replace(/^\\S?\\s*KPJ Portal\\s*/i,'')).filter(t=>t)"
+                    + "   .filter((t,i,a)=>a.indexOf(t)===i).join(' | ').slice(0,200); }");
+            shown = msg == null ? "" : msg.toString();
+        } catch (Exception ignore) { }
         // Confirmed live this dialog's own search (up to 100 rows) can take noticeably longer to render
         // than the fixed wait used elsewhere in this module — poll instead of a single fixed wait.
         waitForAngular(1500);
@@ -295,7 +397,8 @@ public class StoreIndent extends BasePage {
             page.waitForTimeout(500);
             count = dialogItemRowCount();
         }
-        lastDialogSearch += " -> " + count + " row(s)";
+        lastDialogSearch += " -> " + count + " row(s)"
+                + (shown.isEmpty() ? "" : "; the screen said: '" + shown + "'");
         System.out.println("StoreIndent: " + lastDialogSearch);
         return lastDialogSearch;
     }
@@ -353,7 +456,49 @@ public class StoreIndent extends BasePage {
      *  ({@code ng-model="Itm.unitqty"}). Uses Playwright's real {@code fill()} — confirmed live this
      *  screen's Save is gated by a jQuery {@code validationEngine} check that raw JS field-setting left
      *  failing even though the underlying Angular-bound value looked correct. */
+    /** The quantity actually entered when it had to be raised to the item's minimum indent quantity; null otherwise. */
+    private String raisedQty = null;
+
     public String enterUnitQuantity(String qty) {
+        raisedQty = null;
+        // Each item carries its own MinIndentQty (20 on the one picked here); Save answers "Please Enter Indent Quantity!" for
+        // anything below it. Read it off the row and raise the quantity to it when the requested one is lower.
+        try {
+            Object min = page.evaluate("() => { try{ const e=document.querySelector(\"input[ng-model='Itm.unitqty']\");"
+                    + " const m=angular.element(e).scope().Itm.MinIndentQty; return (m==null)?'':String(m); }catch(x){ return ''; } }");
+            String ms = min == null ? "" : min.toString().trim();
+            if (!ms.isEmpty()) {
+                double need = Double.parseDouble(ms);
+                double have = Double.parseDouble(qty.trim());
+                if (have < need) {
+                    raisedQty = (need == Math.rint(need)) ? String.valueOf((long) need) : ms;
+                    System.out.println("StoreIndent: quantity " + qty + " is below this item's minimum indent quantity " + ms
+                            + " - using " + raisedQty);
+                    qty = raisedQty;
+                }
+            }
+        } catch (Exception ignore) { }
+        // The item row also carries a select tick (Itm.isselect) and a UOM dropdown (Itm.uomid); Save answered
+        // "Please Enter Indent Quantity!" with only the quantity filled in, so tick the row and make sure a UOM is chosen first.
+        try {
+            com.microsoft.playwright.Locator tick = page.locator("input[ng-model=\"Itm.isselect\"]").first();
+            if (tick.count() > 0 && !tick.isChecked()) {
+                tick.click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(4000));
+                waitForAngular(400);
+            }
+            Object uom = page.evaluate("() => {" + JS
+                    + " const e=[...document.querySelectorAll(\"select[ng-model='Itm.uomid']\")].find(vis); if(!e) return '(no UOM dropdown)';"
+                    + " const cur=norm((e.options[e.selectedIndex]||{}).text||'');"
+                    + " if(e.value && !/^-*\\s*select/i.test(cur)) return 'UOM already '+cur;"
+                    + " const r=[...e.options].map((o,i)=>({o,i})).find(x=>x.o.value && !/^-*\\s*select/i.test(norm(x.o.text)));"
+                    + " if(!r) return '(UOM list has no real option)';"
+                    + " e.selectedIndex=r.i; e.dispatchEvent(new Event('change',{bubbles:true}));"
+                    + " try{ angular.element(e).triggerHandler('change'); }catch(x){}"
+                    + " return 'UOM set to '+norm(r.o.text); }");
+            System.out.println("StoreIndent: item row -> ticked; " + uom);
+        } catch (Exception e) {
+            System.out.println("StoreIndent: item row prep failed - " + String.valueOf(e.getMessage()).split("\n")[0]);
+        }
         try {
             page.locator("input[ng-model=\"Itm.unitqty\"]").first()
                     .fill(qty, new com.microsoft.playwright.Locator.FillOptions().setTimeout(6000));
@@ -367,7 +512,13 @@ public class StoreIndent extends BasePage {
     }
 
     public boolean unitQuantityEntered(String expected) {
-        return lastUnitQty != null && lastUnitQty.equals(expected);
+        String want = raisedQty != null ? raisedQty : expected;
+        return lastUnitQty != null && lastUnitQty.equals(want);
+    }
+
+    /** A sentence for the report when the requested quantity was raised to the item's minimum, else "". */
+    public String quantityNote() {
+        return raisedQty == null ? "" : " (raised to " + raisedQty + ", this item's minimum indent quantity)";
     }
 
     public String enterRemarks(String value) {

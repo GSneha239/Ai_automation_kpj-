@@ -97,8 +97,12 @@ public class DepartmentSchedule extends DevHisBase {
         String toast = "", tl = "";
         boolean ok = false;
         StringBuilder tries = new StringBuilder();
-        int deptIndex = ds.lastDepartmentIndex + 1;
-        for (int attempt = 0; attempt < 4 && !ok; attempt++) {
+        // The shared environment has already used up the first departments (each can only hold ONE schedule, and every
+        // rejected try costs ~35 s), so the retries start further into the list: -DdeptStart= (default 20).
+        int deptIndex = ds.lastDepartmentIndex + 1 + Integer.getInteger("deptStart", 20);
+        // Up to 40 departments by default (-DdeptTries= to change).
+        int maxTries = Integer.getInteger("deptTries", 40);
+        for (int attempt = 0; attempt < maxTries && !ok; attempt++) {
             int held = ds.scheduleId();
             if (held > 0) {
                 System.out.println("Submit: the form is holding schedule id " + held + " — Submit would UPDATE it; taking a fresh form");

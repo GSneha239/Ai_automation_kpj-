@@ -19,7 +19,7 @@ public class CancellationReason extends BasePage {
     public CancellationReason(Page page) { super(page); }
 
     public static final String ROUTE = "#/CANCELLATION";
-    public String lastCode = "", lastRemark = "", lastCodeModel = "", lastRemarkModel = "";
+    public String lastCode = "", lastRemark = "", lastCodeModel = "", lastRemarkModel = "", lastFormName = "";
     private String menuHref = "";
     public byte[] toastPng;
 
@@ -53,15 +53,15 @@ public class CancellationReason extends BasePage {
                 page.waitForFunction("() => [...document.querySelectorAll('a')].some(a=>/application\\s*config/i.test((a.textContent||'')) && a.offsetParent!==null)",
                         null, new Page.WaitForFunctionOptions().setTimeout(15000));
             } catch (Exception ignore) { }
-            page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const a=[...document.querySelectorAll('a')].find(x=>/application\\s*config/i.test(norm(x.textContent)) && x.offsetParent!==null); if(a) a.click(); }");
-            waitForAngular(1200);
-            // EXACT "Billing" — a prefix match can expand a different (similarly named) menu.
-            page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const a=[...document.querySelectorAll('a')].find(x=>/^\\s*billing\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null); if(a) a.click(); }");
-            waitForAngular(1000);
+            // Expand each level only if it is not already open: a click on an open entry CLOSES it, and this loop used to re-click
+            // Application Configuration on every attempt. "Billing" is also a top-level module in the sidebar, listed before
+            // Application Configuration, so it is looked up INSIDE the Application Configuration entry only.
+            expandMenuEntry(null, "^\\s*application\\s*config(uration)?\\s*$");
+            expandMenuEntry("^\\s*application\\s*config(uration)?\\s*$", "^\\s*billing\\s*$");
             // EXACT text match FIRST (a bare href-contains fallback picked "Receipt Cancellation" instead of
             // "Cancellation Reason" when both are on the Billing submenu — never combine the two in one find()).
             Object href = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                    + " const links=[...document.querySelectorAll('a[href]')];"
+                    + " const links=[...document.querySelectorAll('a[href]')].filter(x=>x.offsetParent!==null);"
                     + " const a = links.find(x=>/^\\s*cancellation\\s*reason\\s*$/i.test(norm(x.textContent)))"
                     + "   || links.find(x=>/^\\s*cancellation\\s*$/i.test(norm(x.textContent)));"
                     + " if(!a) return ''; a.id='__crMenu'; return a.getAttribute('href')||'link'; }");
@@ -128,7 +128,13 @@ public class CancellationReason extends BasePage {
     public String fillDetails(int attempt) {
         String code = "CR" + String.format("%05d", Math.abs((System.nanoTime() + attempt * 7919L) % 100000));
         lastCode = code;
-        lastRemark = REMARKS[(int) (Math.abs(System.nanoTime() / 1000 + attempt) % REMARKS.length)];
+        // The Description (Remark) must be UNIQUE: the shared QA environment keeps every saved Cancellation Reason and answers
+        // "already exists" for a repeated one, so a bare pool name collides once the pool is used up. A realistic name + the run
+        // time (+ the retry number) never repeats.
+        String stamp = java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyMMddHHmmss"));
+        lastRemark = REMARKS[(int) (Math.abs(System.nanoTime() / 1000 + attempt) % REMARKS.length)] + " " + stamp + (attempt > 0 ? "-" + attempt : "");
+        // Form Name is a mandatory (*) dropdown on this form; left at "--Select--" Submit saves nothing and shows no toast.
+        lastFormName = selectByLabel("form\\s*name");
         Object r = page.evaluate("(a) => { const A=window.angular;" + FIND_FIELDS
                 + " const set=(e,v)=>{ if(!e) return '(no field)'; const c=A.element(e).controller('ngModel'); e.value=v; if(c){c.$setViewValue(v);c.$render();} e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true})); return v; };"
                 + " const cd=set(codeEl, a.code); const rm=set(remEl, a.remark);"
@@ -139,7 +145,36 @@ public class CancellationReason extends BasePage {
         String res = r == null ? "" : r.toString();
         java.util.regex.Matcher m = java.util.regex.Pattern.compile("\\[models: ([^/]+) / ([^\\]]+)\\]").matcher(res);
         if (m.find()) { lastCodeModel = m.group(1).trim(); lastRemarkModel = m.group(2).trim(); }
-        return res;
+        return res + " | FormName=" + lastFormName;
+    }
+
+    /**
+     * Choose a real option in the select that belongs to the label matching {@code labelRegex}. The select is found through its
+     * label rather than a guessed ng-model, and set in the page with change events fired through Angular and jQuery. The list can
+     * load a moment after the form opens, so it is polled.
+     *
+     * @return the chosen text plus its ng-model, or {@code (no-label)} / {@code (no-select)} / {@code (no-option)}
+     */
+    private String selectByLabel(String labelRegex) {
+        String r = "(no-option)";
+        for (int i = 0; i < 12 && r.startsWith("(no-option)"); i++) {
+            if (i > 0) waitForAngular(500);
+            Object o = page.evaluate("(rx) => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                    + " const lab=[...document.querySelectorAll('label')].find(l=>new RegExp(rx,'i').test(norm(l.textContent)) && l.offsetParent!==null);"
+                    + " if(!lab) return '(no-label)';"
+                    + " let sel=null; const f=lab.getAttribute('for'); if(f) sel=document.getElementById(f);"
+                    + " for(let c=lab.parentElement, n=0; !sel && c && n<4; c=c.parentElement, n++) sel=c.querySelector('select');"
+                    + " if(!sel) return '(no-select)';"
+                    + " const real=x=>x.value && norm(x.textContent) && !/^-*\\s*select/i.test(norm(x.textContent));"
+                    + " const k=[...sel.options].findIndex(real); if(k<0) return '(no-option)';"
+                    + " sel.selectedIndex=k; sel.dispatchEvent(new Event('change',{bubbles:true}));"
+                    + " try{ window.angular.element(sel).triggerHandler('change'); }catch(e){}"
+                    + " if(window.jQuery){ try{ window.jQuery(sel).trigger('change'); }catch(e){} }"
+                    + " return norm(sel.options[k].textContent)+' ['+(sel.getAttribute('ng-model')||'?')+']'; }", labelRegex);
+            r = o == null ? "(no-option)" : o.toString();
+        }
+        waitForAngular(300);
+        return r;
     }
 
     /**

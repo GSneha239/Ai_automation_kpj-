@@ -42,6 +42,103 @@ public abstract class BasePage {
         try { page.mouse().click(2, 2); } catch (Exception ignore) { }
     }
 
+    /** JS that finds any OPEN date-picker calendar popup (a visible "Month YYYY" header and its popup container). */
+    private static final String PICKER_ROOTS_JS =
+            "const mon=/^(January|February|March|April|May|June|July|August|September|October|November|December)\\s+\\d{4}$/i;"
+          + "const pickerRoots=()=>{ const out=[];"
+          + "  for(const h of document.querySelectorAll('th,span,div,button,a,td,strong,b')){"
+          + "    if(!(h.offsetWidth||h.offsetHeight)) continue;"
+          + "    const t=(h.textContent||'').replace(/[^A-Za-z0-9 ]/g,' ').replace(/\\s+/g,' ').trim();"
+          + "    if(t.length>25 || !mon.test(t)) continue;"
+          + "    let r=h; for(let i=0;i<8&&r.parentElement;i++){ const cs=getComputedStyle(r);"
+          + "      if(cs.position==='absolute'||cs.position==='fixed'||/datepicker|dropdown-menu|popover/i.test(String(r.className||''))) break;"
+          + "      r=r.parentElement; }"
+          + "    if(!out.includes(r)) out.push(r); }"
+          + "  return out; };";
+
+    /**
+     * Close a date-picker calendar that is still open after a date was entered.
+     *
+     * <p>Setting the date through the box's model, or typing into it, leaves the calendar popup showing over the form (it
+     * only closes on a click outside it), where it hides the controls beneath and ends up in screenshots. The box is
+     * blurred and a harmless spot is clicked — the dialog's own title when a dialog is open, never Escape (that closes the
+     * dialog) — and if the calendar is still showing it is hidden outright.</p>
+     *
+     * @return {@code true} when no calendar is showing afterwards
+     */
+    protected boolean dismissDatePicker() {
+        try {
+            Object was = page.evaluate("() => {" + PICKER_ROOTS_JS + " return pickerRoots().length; }");
+            int open = was instanceof Number ? ((Number) was).intValue() : 0;
+            page.evaluate("() => { const e=document.activeElement; if(e && e.blur) e.blur(); }");
+            Object modal = page.evaluate("() => { const m=[...document.querySelectorAll('.modal')].filter(e=>e.offsetWidth||e.offsetHeight).pop();"
+                    + " if(!m) return false; const t=m.querySelector('.modal-title,.modal-header,h3,h4'); if(t) { t.click(); return true; } return true; }");
+            if (!Boolean.TRUE.equals(modal)) { try { page.mouse().click(2, 2); } catch (Exception ignore) { } }
+            page.waitForTimeout(300);
+            Object still = page.evaluate("() => {" + PICKER_ROOTS_JS + " return pickerRoots().length; }");
+            int left = still instanceof Number ? ((Number) still).intValue() : 0;
+            if (left > 0) {
+                page.evaluate("() => {" + PICKER_ROOTS_JS + " pickerRoots().forEach(r=>{ r.style.display='none'; }); }");
+                page.waitForTimeout(200);
+            }
+            System.out.println("dismissDatePicker: " + (open == 0 ? "no calendar was open" : "calendar was open"
+                    + (left > 0 ? ", a click did not close it so it was hidden" : ", closed by a click away")));
+            return true;
+        } catch (Exception e) {
+            System.out.println("dismissDatePicker: " + String.valueOf(e.getMessage()).split("\n")[0]);
+            return false;
+        }
+    }
+
+    /**
+     * Make sure a sidebar menu entry is <b>expanded</b>, clicking it only when it is not already open.
+     *
+     * <p>A sidebar entry toggles: clicking one that is already open CLOSES it. A flow that walks the menu a second
+     * time in the same session (e.g. a setup step opened House Keeping Schedule, then the page under test walks
+     * Ancillary Services &gt; House Keeping &gt; ... again) used to collapse the menu it needed and end on the
+     * dashboard. The entry's children are also filled in after the click and the click is sometimes swallowed, so
+     * this waits for visible children and clicks again (up to 3 times) if none appear.</p>
+     *
+     * @param parentRegex text regex of the entry to search INSIDE (its {@code li}), or {@code null} to search the whole
+     *                    sidebar — scoping stops a same-named top-level module (e.g. "Billing") being matched instead
+     * @param entryRegex  text regex of the entry to expand (matched against the whole, trimmed link text)
+     * @return true when the entry is open with visible children
+     */
+    protected boolean expandMenuEntry(String parentRegex, String entryRegex) {
+        final String find = "const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                + " const scopeA=pr?[...document.querySelectorAll('a')].find(x=>new RegExp(pr,'i').test(norm(x.textContent)) && x.offsetParent!==null):null;"
+                + " const scope=(scopeA&&scopeA.closest('li'))||document;"
+                + " const a=[...scope.querySelectorAll('a')].find(x=>new RegExp(er,'i').test(norm(x.textContent)) && x.offsetParent!==null);"
+                + " const kids=a?(a.closest('li')?[...a.closest('li').querySelectorAll('a')].filter(x=>x!==a&&x.offsetParent!==null).length:0):-1;";
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            Object state = page.evaluate("([pr, er]) => {" + find
+                    + " if(!a) return 'missing'; if(kids>0) return 'open'; a.click(); return 'clicked'; }",
+                    java.util.Arrays.asList(parentRegex, entryRegex));
+            if ("missing".equals(String.valueOf(state))) {
+                // The sidebar is built lazily after login (and each level's children after its click), so "missing" right
+                // now may only mean "not built yet" — give it a few seconds to appear before concluding it is absent.
+                try {
+                    page.waitForFunction("([pr, er]) => {" + find + " return !!a; }",
+                            java.util.Arrays.asList(parentRegex, entryRegex), new Page.WaitForFunctionOptions().setTimeout(12000));
+                    continue;
+                } catch (Exception notThere) {
+                    return false;
+                }
+            }
+            if ("open".equals(String.valueOf(state))) return true;
+            waitForAngular(1000);
+            try {
+                page.waitForFunction("([pr, er]) => {" + find + " return kids>0; }",
+                        java.util.Arrays.asList(parentRegex, entryRegex), new Page.WaitForFunctionOptions().setTimeout(7000));
+                return true;
+            } catch (Exception ignore) {
+                System.out.println("expandMenuEntry: '" + entryRegex + "' still has no visible children after click " + attempt
+                        + (attempt < 3 ? " - clicking again" : ""));
+            }
+        }
+        return false;
+    }
+
     // ---- JS helpers shared across many pages -----------------------------
 
     /** Dispatch a native 'change' event on a DOM element found by selector string. */

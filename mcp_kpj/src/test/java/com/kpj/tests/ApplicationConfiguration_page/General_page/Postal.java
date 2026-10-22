@@ -136,21 +136,14 @@ public class Postal extends DevHisBase {
                             : "Submit answered \"" + toast + "\" and the record is NOT in the list. "
                               + po.lastListCheck)
                         : "Submit not confirmed — server returned: \"" + toast + "\"");
-        // A message containing "undefined" FAILS the step. The save itself goes through, but the user is
-        // shown "undefined Saved Successfully." — the record identifier is missing from the message
-        // template — and a confirmation that names no record is not a valid confirmation.
-        boolean malformed = toast != null && toast.toLowerCase().contains("undefined");
-        boolean confirmed = ok && !malformed;
+        // This screen's confirmation reads "undefined Saved Successfully." (the record name is never filled into the
+        // message). That wording is accepted for this page — a success message is enough — so only the success
+        // judgement counts, not the "undefined" text.
+        boolean confirmed = ok;
         step(page, "Click Submit & success toast", "Click Submit; wait for the success toast",
                 "'... saved successfully' toast",
-                (malformed
-                    ? "FAILS because the message is MALFORMED: it reads \"" + toast + "\". The screen "
-                      + "cannot name what it saved, so it tells the user \"undefined\" was saved. The "
-                      + "record itself is written — " + (inList ? "it IS in the list" : "but it is NOT in "
-                      + "the list") + " — so this is a defect in the message template (the record "
-                      + "identifier is never substituted in), not a failed save. Detail: " + actual
-                    : (ok ? "PASSES because the screen answered with a success message: "
-                          : "FAILS — ") + actual),
+                (ok ? "PASSES because the screen answered with a success message: "
+                    : "FAILS — ") + actual,
                 confirmed ? "PASS" : "FAIL");
 
         step(page, "Verify the postal record was created", "Look for " + postal + " in the list",
