@@ -64,9 +64,13 @@ public class Agency extends DevHisBase {
         String details = "", toast = "";
         boolean ok = false, exists = false;
         int used = 0;
+        byte[] filledPng = null;
         for (int attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
             details = ag.fillDetails(attempt);
             used++;
+            // Screenshot the FILLED form before Submit — Submit clears the form, so a later shot shows empty boxes.
+            try { filledPng = page.screenshot(new com.microsoft.playwright.Page.ScreenshotOptions().setTimeout(8000)); }
+            catch (Exception e) { System.out.println("Agency: filled-form screenshot failed - " + e.getMessage()); }
             toast = ag.submitAndGetToast();
             String tl = toast == null ? "" : toast.toLowerCase();
             ok = tl.contains("saved") || tl.contains("success") || tl.contains("added") || tl.contains("updated");
@@ -76,10 +80,14 @@ public class Agency extends DevHisBase {
         }
 
         boolean detOk = details.contains("Code=AG") && !details.contains("(no field)");
-        step(page, "Enter Code and Remark", "Enter Code* (unique) and Remark*",
-                "Code and Remark are entered",
-                details + (used > 1 ? "  [details changed " + (used - 1) + "x after 'already exists']" : ""),
-                detOk ? "PASS" : "FAIL");
+        String detActual = details + (used > 1 ? "  [details changed " + (used - 1) + "x after 'already exists']" : "");
+        if (filledPng != null && filledPng.length > 0) {
+            step(filledPng, "Enter Code and Remark", "Enter Code* (unique) and Remark*",
+                    "Code and Remark are entered", detActual, detOk ? "PASS" : "FAIL");
+        } else {
+            step(page, "Enter Code and Remark", "Enter Code* (unique) and Remark*",
+                    "Code and Remark are entered", detActual, detOk ? "PASS" : "FAIL");
+        }
 
         String actual = toast == null || toast.isEmpty() ? "No toast appeared\n" + ag.describeForm()
                 : (ok ? toast

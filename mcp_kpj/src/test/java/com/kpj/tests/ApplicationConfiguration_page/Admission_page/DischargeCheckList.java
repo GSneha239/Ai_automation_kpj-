@@ -70,10 +70,14 @@ public class DischargeCheckList extends DevHisBase {
         // 5) Submit — the record must really be created (the list grid is paged, so verify via the master API).
         String toast = dcl.submitAndGetToast();
         String saved = dcl.fetchSavedRow(dcl.lastCode);
-        boolean savedOk = saved != null && saved.startsWith("id=");
-        step(page, "Click Submit", "Click Submit; verify the new Discharge CheckList row exists",
+        // The new row may be on another page of the list: search the Code filter, then page through every page.
+        String inList = dcl.verifyInList(dcl.lastCode);
+        boolean savedOk = (saved != null && saved.startsWith("id=")) || dcl.listFound;
+        step(dcl.listPng != null && dcl.listPng.length > 0 ? dcl.listPng : dcl.toastPng, "Click Submit", "Click Submit; verify the new Discharge CheckList row exists (search the list, then check every page)",
                 "The Discharge CheckList row is created (Code, Remark, Mandatory = true)",
-                savedOk ? "Saved: " + saved : "Row NOT created (" + dcl.lastCode + ")", savedOk ? "PASS" : "FAIL");
+                savedOk ? "Saved: " + (saved != null && saved.startsWith("id=") ? saved + "  ||  " : "") + "list check: " + inList
+                        : "Row NOT created (" + dcl.lastCode + ") — the save toast said: \"" + toast + "\"; list check: " + inList + "; master API: " + dcl.lastFetchNote,
+                savedOk ? "PASS" : "FAIL");
 
         // 6) Success toast.
         String tl = toast == null ? "" : toast.toLowerCase();

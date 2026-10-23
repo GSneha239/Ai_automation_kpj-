@@ -85,9 +85,12 @@ public class RadiologyReportDelivery extends DevHisBase {
                 (opdIpdOk ? "PASSES: " + opdIpd : "FAILS: " + opdIpd),
                 opdIpdOk ? "PASS" : "FAIL");
 
-        String reportStatus = rd.selectReportStatus("^\\s*not\\s*delivered\\.?\\s*$");
+        // -DdeliveryStatus=Delivered looks at already-delivered reports instead (to tell "no data" from "search broken").
+        boolean wantDelivered = "delivered".equalsIgnoreCase(System.getProperty("deliveryStatus", "").trim());
+        String reportStatus = rd.selectReportStatus(wantDelivered ? "^\\s*delivered\\.?\\s*$" : "^\\s*not\\s*delivered\\.?\\s*$");
         boolean reportStatusOk = reportStatus != null && reportStatus.startsWith("selected");
-        step(page, "Select the report status filter", "Select \"Not Delivered\" in the status filter",
+        step(page, "Select the report status filter",
+                "Select \"" + (wantDelivered ? "Delivered" : "Not Delivered") + "\" in the status filter",
                 "The filter is selected",
                 (reportStatusOk ? "PASSES: " + reportStatus : "FAILS: " + reportStatus),
                 reportStatusOk ? "PASS" : "FAIL");

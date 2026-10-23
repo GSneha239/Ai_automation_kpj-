@@ -78,9 +78,22 @@ public class AmbulanceUsage extends BasePage {
             System.out.println("AmbulanceUsage.nav: nav menu never appeared — is this session on an OPD counter?");
         }
 
-        page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                + " const a=[...document.querySelectorAll('a')].find(x=>/ancillary\\s*services?/i.test(norm(x.textContent)) && x.offsetParent!==null); if(a) a.click(); }");
-        waitForAngular(1000);
+        // The Ancillary Services submenu is filled in AFTER the click, and the click is sometimes swallowed (the
+        // dashboard is still loading) - the entry then stays childless and the walk found no "Ambulance" at all.
+        // So wait for its entries to exist and, if they do not, click it again.
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                    + " const a=[...document.querySelectorAll('a')].find(x=>/ancillary\\s*services?/i.test(norm(x.textContent)) && x.offsetParent!==null); if(a) a.click(); }");
+            waitForAngular(1000);
+            try {
+                page.waitForFunction("() => { const a=[...document.querySelectorAll('a')].find(x=>/^\\s*ancillary\\s*services?\\s*$/i.test((x.textContent||'').replace(/\\s+/g,' ').trim()));"
+                        + " const li=a&&a.closest('li'); return !!li && li.querySelectorAll('a').length>1; }",
+                        null, new Page.WaitForFunctionOptions().setTimeout(7000));
+                break;
+            } catch (Exception ignore) {
+                System.out.println("AmbulanceUsage.nav: Ancillary Services submenu still empty after click " + attempt + (attempt < 3 ? " - clicking again" : ""));
+            }
+        }
         page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
                 + " const a=[...document.querySelectorAll('a')].find(x=>/^\\s*ambulance\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null); if(a) a.click(); }");
         waitForAngular(1000);
@@ -199,7 +212,9 @@ public class AmbulanceUsage extends BasePage {
                     + "   || radios.find(x=>new RegExp(mode,'i').test(norm((x.closest('label,div,td,span')||{}).textContent||'')));"
                     + " if(r && !r.checked) r.click();"
                     + " setInp('" + M + "MRNo', m);"
-                    + " const b=[...document.querySelectorAll('button,a,i,span,img,input[type=button]')]"
+                    // The form can carry TWO copies of the MRN block (toggled by the Vehicle Type); only the VISIBLE copy's
+                    // Find Patient button can be clicked.
+                    + " const b=[...document.querySelectorAll('button,a,i,span,img,input[type=button]')].filter(vis)"
                     + "   .find(x=>/SearchPatientByMRNo/i.test(x.getAttribute('ng-click')||''));"
                     + " if(b) b.id='__usgMrnSearch'; }", java.util.List.of(mrn, mode));
             try { page.locator("#__usgMrnSearch").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000)); }
@@ -207,9 +222,13 @@ public class AmbulanceUsage extends BasePage {
             page.evaluate("() => { const e=document.getElementById('__usgMrnSearch'); if(e) e.removeAttribute('id'); }");
 
             try {
-                page.waitForFunction("() => { const e=[...document.querySelectorAll(\"[ng-model='" + M + "patientname']\")].find(x=>x.offsetParent!==null);"
-                        + " return e && e.value && e.value.trim().length>0; }",
-                        null, new Page.WaitForFunctionOptions().setTimeout(8000));
+                // Resolved = the patient banner above the form shows this MRN ("Name : ... MRN: 1100339336 ..."), or the
+                // Patient Name field was filled (older screen layout).
+                page.waitForFunction("(m) => { const t=document.body.innerText||'';"
+                        + " if(new RegExp('MRN\\\\s*:\\\\s*'+m).test(t)) return true;"
+                        + " const e=[...document.querySelectorAll(\"[ng-model='" + M + "patientname']\")].find(x=>x.offsetParent!==null);"
+                        + " return !!(e && e.value && e.value.trim().length>0); }",
+                        mrn, new Page.WaitForFunctionOptions().setTimeout(8000));
                 matched = mode;
                 System.out.println("AmbulanceUsage: MRN resolved under " + mode);
                 break;
@@ -220,13 +239,18 @@ public class AmbulanceUsage extends BasePage {
         lastPatientType = matched;
         waitForAngular(600);
 
-        Object r = page.evaluate("() => {" + JS
-                + " const val=ng=>{ const e=byNg(ng); return e?norm(e.value):''; };"
-                + " const msg=[...document.querySelectorAll('.toast-message,.toast')].map(x=>norm(x.textContent)).join(' ');"
-                + " return 'patient='+val('" + M + "patientname')+(msg?' | msg='+msg:''); }");
-        lastSearchResult = (matched.isEmpty() ? "" : matched + ": ") + (r == null ? "" : r.toString());
-        Object pn = page.evaluate("() => {" + JS + " const e=byNg('" + M + "patientname'); return e?norm(e.value):''; }");
+        // Patient Name field when it is filled, else the name in the patient banner ("Name : John Peter MRN: ...").
+        Object pn = page.evaluate("(m) => {" + JS
+                + " const e=byNg('" + M + "patientname'); const v=e?norm(e.value):'';"
+                + " if(v) return v;"
+                + " const mm=(document.body.innerText||'').match(new RegExp('Name\\\\s*:\\\\s*(.+?)\\\\s+MRN\\\\s*:\\\\s*'+m));"
+                + " return mm?norm(mm[1]):''; }", mrn);
         lastPatientName = pn == null ? "" : pn.toString();
+
+        Object r = page.evaluate("(name) => {" + JS
+                + " const msg=[...document.querySelectorAll('.toast-message,.toast')].map(x=>norm(x.textContent)).join(' ');"
+                + " return 'patient='+name+(msg?' | msg='+msg:''); }", lastPatientName);
+        lastSearchResult = (matched.isEmpty() ? "" : matched + ": ") + (r == null ? "" : r.toString());
         System.out.println("AmbulanceUsage: search MRN " + mrn + " -> " + lastSearchResult);
         return lastSearchResult;
     }

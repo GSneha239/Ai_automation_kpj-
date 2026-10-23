@@ -114,7 +114,10 @@ public class DrugInstruction extends BasePage {
     public String fillDetails(int attempt) {
         String code = "DI" + String.format("%05d", Math.abs((System.nanoTime() + attempt * 7919L) % 100000));
         lastCode = code;
-        lastDescription = DESCRIPTIONS[(int) (Math.abs(System.nanoTime() / 1000 + attempt) % DESCRIPTIONS.length)];
+        // Unique per run (a fixed pool is exhausted for good on the shared QA env), kept within 30 characters.
+        String suffix = " " + code.substring(2);
+        String base = DESCRIPTIONS[(int) (Math.abs(System.nanoTime() / 1000 + attempt) % DESCRIPTIONS.length)];
+        lastDescription = (base.length() + suffix.length() > 30 ? base.substring(0, 30 - suffix.length()).trim() : base) + suffix;
         Object r = page.evaluate("(a) => { const A=window.angular;"
                 + " const set=(ng,v)=>{ const e=[...document.querySelectorAll(\"input[ng-model='\"+ng+\"'],textarea[ng-model='\"+ng+\"']\")].find(x=>x.offsetParent!==null); if(!e) return '(no)'; const c=A.element(e).controller('ngModel'); e.value=v; if(c){c.$setViewValue(v);c.$render();} e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true})); return v; };"
                 + " const cd=set('DrugInstruction.code', a.code); const de=set('DrugInstruction.description', a.desc);"

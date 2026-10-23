@@ -129,7 +129,22 @@ public class RadiologyResultEntry extends BasePage {
         waitForAngular(500);
         Object back = page.evaluate("(m) => { const e=document.querySelector(\"input[ng-model='\"+m+\"']\");"
                 + " return e? (e.value||'') : '(gone)'; }", model);
-        return back == null ? "" : back.toString();
+        String got = back == null ? "" : back.toString();
+        if (!value.equals(got)) {
+            // A pre-filled picker box (class txtDate, inputmode=none, maxlength 10): typed keystrokes are discarded and the
+            // box ends up empty. Set the value through the box's own model instead, as the other screens here do.
+            Object set = page.evaluate("(a) => { const e=document.querySelector(\"input[ng-model='\"+a.m+\"']\"); if(!e) return '(gone)';"
+                    + " e.value=a.v;"
+                    + " try{ const c=angular.element(e).controller('ngModel'); if(c){ c.$setViewValue(a.v); c.$render(); } }catch(x){}"
+                    + " e.dispatchEvent(new Event('input',{bubbles:true}));"
+                    + " e.dispatchEvent(new Event('change',{bubbles:true}));"
+                    + " e.dispatchEvent(new Event('blur',{bubbles:true}));"
+                    + " return e.value||''; }", java.util.Map.of("m", model, "v", value));
+            waitForAngular(500);
+            got = set == null ? "" : set.toString();
+        }
+        dismissDatePicker();   // close the calendar the date entry left open
+        return got;
     }
 
     public boolean datesEntered(String from, String to) {
@@ -296,6 +311,9 @@ public class RadiologyResultEntry extends BasePage {
      * <p>The report is a PDF shown in Chrome's viewer, so the file itself is judged rather than the page
      * around it — screenshotting that viewer is blank however good the report is.</p>
      */
+    /** First page of the generated report rendered as an image (or a page screenshot when it could not be rendered). */
+    public byte[] reportPng;
+
     public String clickReportAndVerify() {
         int tabsBefore = page.context().pages().size();
         page.evaluate("() => {" + JS
@@ -306,6 +324,11 @@ public class RadiologyResultEntry extends BasePage {
         com.kpj.pages.PdfReport.Result r = com.kpj.pages.PdfReport.capture(page, tabsBefore, 12000);
         reportBlank = r.blank;
         lastReport = r.diagnostics;
+        // The report step shows the first page of the PDF itself — a screenshot of Chrome's PDF viewer is blank.
+        reportPng = r.png;
+        if (reportPng == null || reportPng.length == 0) {
+            try { reportPng = page.screenshot(new Page.ScreenshotOptions().setTimeout(10000)); } catch (Exception ignore) { }
+        }
         System.out.println("RadiologyResultEntry: report -> " + lastReport);
         return lastReport;
     }

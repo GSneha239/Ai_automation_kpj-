@@ -152,13 +152,18 @@ public class OtSchedulingMaster extends DevHisBase {
         // combinations it had to walk through.
         String toast = ots.submitAndGetToast();
         StringBuilder combos = new StringBuilder("first tried " + ots.lastTheatre + " / " + ots.lastTable);
-        for (int attempt = 1; attempt <= 3
+        for (int attempt = 1; attempt <= Integer.getInteger("otTries", 15)
                 && com.kpj.pages.ApplicationConfiguration_page.OTConfiguration_page.OtSchedulingMaster.alreadyScheduled(toast);
                 attempt++) {
             String moved = ots.nextCombination();
             combos.append("  ||  \"").append(toast).append("\" -> ").append(moved);
             if (moved.startsWith("(")) break;
-            ots.enterTimes(startTime, endTime);
+            // Each retry also moves the timing (one-hour slot, 08:00 AM onwards), as well as the theatre / table.
+            int h = 8 + attempt % 9;
+            java.util.function.IntFunction<String> hhmm = x -> String.format("%02d:00 %s", x % 12 == 0 ? 12 : x % 12, x < 12 ? "AM" : "PM");
+            String retryStart = hhmm.apply(h), retryEnd = hhmm.apply(h + 1);
+            combos.append(" (time ").append(retryStart).append(" - ").append(retryEnd).append(")");
+            ots.enterTimes(retryStart, retryEnd);
             ots.tickDay(day);
             ots.clickAdd();
             toast = ots.submitAndGetToast();

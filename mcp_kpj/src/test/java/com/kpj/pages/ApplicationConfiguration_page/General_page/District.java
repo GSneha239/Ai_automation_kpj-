@@ -45,9 +45,29 @@ public class District extends BasePage {
      * "Complaint Type" is routed {@code #/ComplaintListType} — so a hand-written route lands on the
      * dashboard.</p>
      */
+    /** Server errors (HTTP 400+) seen while opening the screen, e.g. {@code "HTTP 500 GET .../GeneralConfig/Load/DistrictList"}. */
+    public final java.util.List<String> httpErrors = new java.util.concurrent.CopyOnWriteArrayList<>();
+
     public boolean navigateViaMenu(String baseUrl) {
         try { page.waitForFunction("() => window.angular", null,
                 new Page.WaitForFunctionOptions().setTimeout(20000)); } catch (Exception ignore) { }
+
+        // The menu click can be answered by a failing list request after which the app stays on the dashboard — record any
+        // such response so the report can name the server error instead of only saying the screen was not reached.
+        final java.util.function.Consumer<com.microsoft.playwright.Response> onResp = r -> {
+            try {
+                if (r.status() >= 400) httpErrors.add("HTTP " + r.status() + " " + r.request().method() + " " + r.url());
+            } catch (Exception ignore) { }
+        };
+        page.onResponse(onResp);
+        try {
+            return walkMenu(baseUrl);
+        } finally {
+            page.offResponse(onResp);
+        }
+    }
+
+    private boolean walkMenu(String baseUrl) {
 
         // Retried: the Application Configuration / General menus are built after login and a click that
         // lands too early expands nothing, leaving the run on the dashboard. One attempt is a coin flip.

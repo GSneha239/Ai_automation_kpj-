@@ -105,6 +105,44 @@ public class PurchaseOrderApproval extends DevHisBase {
         // 3) Search + verify a row of data exists and appears
         String search = poa.clickSearch();
         boolean rowsOk = poa.rowsFound();
+        if (!rowsOk) {
+            // No status filter is ticked by default, so the screen may be listing nothing for that reason: tick "All PO"
+            // and search again, and say so in the report.
+            String allPo = poa.tickAllPoFilter();
+            String first = search;
+            search = poa.clickSearch();
+            rowsOk = poa.rowsFound();
+            search = search + "  ||  the first search (" + first + ") listed nothing, so the flow ticked the All PO filter"
+                    + " (" + allPo + ") and searched again.";
+            if (!rowsOk) {
+                // Still nothing with no Store chosen: the Store filter may be what the screen needs. Try the stores one after
+                // another (up to 16 — "Pharmacy (Central)" first, then the list in order), All PO still ticked, until a
+                // search lists something.
+                StringBuilder tried = new StringBuilder();
+                // A hung browser call must not stall the run for hours (a CI job sat 13h here): the loop has a 5-minute
+                // budget, and a watchdog closes the page after 8 minutes so any hung call throws.
+                final long storeLoopEnd = System.currentTimeMillis() + 5 * 60_000L;
+                java.util.Timer watchdog = new java.util.Timer(true);
+                watchdog.schedule(new java.util.TimerTask() {
+                    @Override public void run() { try { page.close(); } catch (Exception ignore) { } }
+                }, 8 * 60_000L);
+                try {
+                    for (int k = 0; k < 16 && !rowsOk; k++) {
+                        if (System.currentTimeMillis() > storeLoopEnd) { tried.append(" [stopped: 5-minute store budget used]"); break; }
+                        String storeName = poa.selectSearchStoreAt(k);
+                        if (storeName.startsWith("(")) { tried.append(" [").append(storeName).append("]"); break; }
+                        String s = poa.clickSearch();
+                        rowsOk = poa.rowsFound();
+                        tried.append(" [").append(storeName).append(": ").append(rowsOk ? "rows found" : "0 rows").append("]");
+                        if (rowsOk) search = s;
+                    }
+                } catch (RuntimeException e) {
+                    String m = String.valueOf(e.getMessage());
+                    tried.append(" [store loop aborted: ").append(m.split("\\R")[0]).append("]");
+                } finally { watchdog.cancel(); }
+                search = search + "  ||  with a Store chosen, one after another:" + tried;
+            }
+        }
         step(page, "Click Search; verify row of data exists and appears", "Click Search",
                 "A row of data appears in the list",
                 rowsOk ? "PASSES: " + search : "FAILS: " + search,

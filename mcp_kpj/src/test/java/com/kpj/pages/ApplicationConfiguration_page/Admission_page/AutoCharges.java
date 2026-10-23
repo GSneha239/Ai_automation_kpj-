@@ -147,8 +147,144 @@ public class AutoCharges extends BasePage {
         return r == null ? "" : r.toString();
     }
 
+    private int gridBefore = -1, gridAfter = -1;
+
+    private int servicesGridRows() {
+        Object n = page.evaluate("() => { const vis=e=>e.offsetWidth||e.offsetHeight||e.getClientRects().length;"
+                + " return [...document.querySelectorAll('.ui-grid-row,table tbody tr')].filter(vis)"
+                + "   .filter(r=>(r.textContent||'').replace(/\\s+/g,' ').trim()).length; }");
+        return n instanceof Number ? ((Number) n).intValue() : 0;
+    }
+
+    /** Click the <b>Add</b> button beside the Services dropdown (puts the chosen service into the Services grid). */
+    public String clickInnerAdd() {
+        waitForAngular(1200);   // let the Services choice reach the model before Add reads it
+        String first = clickInnerAddOnce();
+        if (serviceAdded()) return first;
+        waitForAngular(1500);
+        return first + "  ||  retried: " + clickInnerAddOnce();
+    }
+
+    private String clickInnerAddOnce() {
+        gridBefore = servicesGridRows();
+        Object tagged = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                + " const b=[...document.querySelectorAll('button,a,input[type=button]')].filter(x=>x.offsetWidth||x.offsetHeight||x.getClientRects().length)"
+                + "   .find(x=>/^\\s*add\\s*$/i.test(norm(x.textContent||x.value)));"
+                + " if(!b) return false; b.id='__acInnerAdd'; return true; }");
+        if (!Boolean.TRUE.equals(tagged)) { gridAfter = gridBefore; return "no Add button found on the form"; }
+        final java.util.List<com.microsoft.playwright.Response> got = new java.util.concurrent.CopyOnWriteArrayList<>();
+        final java.util.function.Consumer<com.microsoft.playwright.Response> onResp = r -> {
+            try { if (r.url().toLowerCase().contains("/api/")) got.add(r); } catch (Exception ignore) { }
+        };
+        page.onResponse(onResp);
+        try { page.locator("#__acInnerAdd").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000)); }
+        catch (Exception e) { System.out.println("AutoCharges.clickInnerAdd: " + e.getMessage().split("\n")[0]); }
+        page.evaluate("() => { const e=document.getElementById('__acInnerAdd'); if(e) e.removeAttribute('id'); }");
+        // The grid may fill after a server round trip: give it up to 6 s.
+        long end = System.currentTimeMillis() + 6000;
+        gridAfter = servicesGridRows();
+        while (gridAfter <= gridBefore && System.currentTimeMillis() < end) { page.waitForTimeout(400); gridAfter = servicesGridRows(); }
+        page.offResponse(onResp);
+        StringBuilder calls = new StringBuilder();
+        for (com.microsoft.playwright.Response r : got) {
+            try {
+                String body = r.text(); body = body == null ? "" : body.replaceAll("\\s+", " ");
+                calls.append(calls.length() > 0 ? " ;; " : "").append(r.request().method()).append(' ').append(r.status()).append(' ')
+                     .append(r.url().replaceFirst("^https?://[^/]+", "")).append(" => ").append(body.substring(0, Math.min(200, body.length())));
+            } catch (Exception ignore) { }
+        }
+        return "clicked Add; Services grid rows " + gridBefore + " -> " + gridAfter
+                + (calls.length() == 0 ? "  (the click made no server call)" : "  ||  server calls: " + calls);
+    }
+
+    public boolean serviceAdded() { return gridAfter > gridBefore; }
+
+    public boolean recordInList = false;
+
+    /**
+     * After the save the app is back on the list: choose the Location, click Search, then look for the saved service in the
+     * grid ({@code div[id$='-grid-container']} — the id's numeric prefix changes on every load). The Services column filter is
+     * used to narrow the grid to the service code first, so a paged grid cannot hide the row.
+     */
+    public String verifyRecordInList(String serviceText) {
+        recordInList = false;
+        String code = serviceText == null ? "" : serviceText.split(" - ")[0].trim();
+        String svcName = serviceText == null || !serviceText.contains(" - ") ? "" : serviceText.substring(serviceText.indexOf(" - ") + 3).trim();
+        final String needle = code + "|" + svcName;
+        String loc = selectLocationFirst();
+        if (loc.isEmpty()) {
+            Object f = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                    + " const e=[...document.querySelectorAll('select')].find(x=>/location/i.test(x.getAttribute('ng-model')||'')&&(x.offsetWidth||x.offsetHeight));"
+                    + " if(!e) return ''; const i=[...e.options].findIndex(o=>o.value&&!/^-*\\s*select/i.test(norm(o.textContent))); if(i<0) return '';"
+                    + " e.selectedIndex=i; e.dispatchEvent(new Event('change',{bubbles:true})); try{window.angular.element(e).triggerHandler('change');}catch(x){}"
+                    + " return norm(e.options[i].textContent); }");
+            loc = f == null ? "" : f.toString();
+        }
+        waitForAngular(800);
+        try {
+            page.locator("button:visible:text-is('Search'), a:visible:text-is('Search')").first()
+                    .click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000));
+        } catch (Exception e) { System.out.println("AutoCharges.verifyRecordInList: Search - " + e.getMessage().split("\n")[0]); }
+        waitForAngular(3000);
+        // Wait for the data to LOAD: the grid first shows empty rows, so wait until a row actually carries text (up to 20 s).
+        try {
+            page.waitForFunction("() => { const vis=e=>e.offsetWidth||e.offsetHeight||e.getClientRects().length;"
+                    + " const g=[...document.querySelectorAll(\"[id$='-grid-container']\")].find(vis); if(!g) return false;"
+                    + " return [...g.querySelectorAll('.ui-grid-row')].filter(vis).some(r=>(r.textContent||'').replace(/\\s+/g,' ').trim().length>0); }",
+                    null, new Page.WaitForFunctionOptions().setTimeout(20000));
+        } catch (Exception ignore) { System.out.println("AutoCharges.verifyRecordInList: the grid showed no data within 20 s"); }
+        waitForAngular(1000);
+        // Read the grid as it stands after Search (before any column filter).
+        Object pre = page.evaluate("(c) => { const vis=e=>e.offsetWidth||e.offsetHeight||e.getClientRects().length;"
+                + " const g=[...document.querySelectorAll(\"[id$='-grid-container']\")].find(vis); if(!g) return 'nogrid';"
+                + " const n=[...g.querySelectorAll('.ui-grid-row')].filter(vis).length;"
+                + " return n+'|'+((g.textContent||'').toLowerCase().includes(c.split('|')[0].toLowerCase())||(c.split('|')[1]&&(g.textContent||'').replace(/\s+/g,' ').toLowerCase().includes(c.split('|')[1].toLowerCase()))?'found':'absent'); }", needle);
+        String preState = pre == null ? "" : pre.toString();
+        // Narrow the grid to the service code through the Services column filter.
+        try {
+            com.microsoft.playwright.Locator filter = page.locator("input[ng-model='colFilter.term']:visible").first();
+            if (!code.isEmpty() && filter.count() > 0) { filter.fill(code); waitForAngular(1500); }
+        } catch (Exception ignore) { }
+        Object r = page.evaluate("(c) => { const vis=e=>e.offsetWidth||e.offsetHeight||e.getClientRects().length;"
+                + " const g=[...document.querySelectorAll(\"[id$='-grid-container']\")].find(vis);"
+                + " if(!g) return JSON.stringify({grid:false,rows:0,found:false,text:''});"
+                + " const rows=[...g.querySelectorAll('.ui-grid-row')].filter(vis);"
+                + " const text=(g.textContent||'').replace(/\\s+/g,' ').trim();"
+                + " return JSON.stringify({grid:true,id:g.id,rows:rows.length,found:text.toLowerCase().includes(c.split('|')[0].toLowerCase())||(!!c.split('|')[1]&&text.toLowerCase().includes(c.split('|')[1].toLowerCase())),text:text.slice(0,200)}); }", needle);
+        String s = r == null ? "" : r.toString();
+        recordInList = (s.contains("\"found\":true") || preState.endsWith("|found")) && !code.isEmpty();
+        return "Location = " + (loc.isEmpty() ? "(none)" : loc) + "; looked for \"" + code + "\" in the list grid -> after Search (rows|result): "
+                + preState + "; after filtering by the code: " + s;
+    }
+
     /** Click <b>Submit</b> and return the toast (success, "already exists", or a server error). */
+    public String lastSaveHttp = "";
+
     public String submitAndGetToast() {
+        // Remember the save call's answer (the toast alone says just "Error!"); bodies are read AFTER the click settles.
+        final java.util.List<com.microsoft.playwright.Response> got = new java.util.concurrent.CopyOnWriteArrayList<>();
+        final java.util.function.Consumer<com.microsoft.playwright.Response> onResp = r -> {
+            try { if (r.url().toLowerCase().contains("/api/") && "POST".equalsIgnoreCase(r.request().method())) got.add(r); }
+            catch (Exception ignore) { }
+        };
+        page.onResponse(onResp);
+        try {
+            return submitInner();
+        } finally {
+            page.offResponse(onResp);
+            StringBuilder sb = new StringBuilder();
+            for (com.microsoft.playwright.Response r : got) {
+                try {
+                    String body = r.text(); body = body == null ? "" : body.replaceAll("\\s+", " ");
+                    sb.append(sb.length() > 0 ? " ;; " : "").append(r.status()).append(' ').append(r.url().replaceFirst("^https?://[^/]+", ""))
+                      .append(" => ").append(body.substring(0, Math.min(400, body.length())));
+                } catch (Exception ignore) { }
+            }
+            lastSaveHttp = sb.toString();
+        }
+    }
+
+    private String submitInner() {
         Object tagged = page.evaluate("() => { window.__acToasts=[]; if(window.__acObs) window.__acObs.disconnect();"
                 + " const grab=()=>{ document.querySelectorAll('.toast-message,.toast,[id^=toast]').forEach(el=>{ const t=(el.textContent||'').replace(/\\s+/g,' ').trim(); if(t && !window.__acToasts.includes(t)) window.__acToasts.push(t); }); };"
                 + " window.__acObs=new MutationObserver(grab); window.__acObs.observe(document.body,{childList:true,subtree:true}); grab();"

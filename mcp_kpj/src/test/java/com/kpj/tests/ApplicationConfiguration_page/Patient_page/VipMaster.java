@@ -81,7 +81,9 @@ public class VipMaster extends DevHisBase {
         }
 
         String toast = vip.saveAndGetToast();
-        String tl = toast == null ? "" : toast.toLowerCase();
+        // Drop the toast frame's close "×" and "KPJ Portal" title so the report shows just the message.
+        if (toast != null) toast = toast.replaceFirst("^[\\u00d7x\\s]*KPJ\\s*Portal\\s*", "").trim();
+        String tl =toast == null ? "" : toast.toLowerCase();
         boolean ok = tl.contains("saved") || tl.contains("success") || tl.contains("added") || tl.contains("updated");
         String actual = toast == null || toast.isEmpty() ? "No toast appeared"
                 : (ok ? toast : "Save not confirmed - server returned: \"" + toast + "\"");
@@ -97,6 +99,7 @@ public class VipMaster extends DevHisBase {
         addSummary("VIP Code", vip.lastCode);
         addSummary("VIP Name", vip.lastName);
         addSummary("NRIC", vip.lastNric);
+        addSummary("Remark", vip.lastRemark);
         addSummary("Route", "#/VIPMaster (Add opens the form in place)");
         addSummary("Result", ok ? toast : (toast == null || toast.isEmpty() ? "Not confirmed" : toast));
     }

@@ -76,21 +76,18 @@ public class DepartmentSchedule extends BasePage {
             page.waitForFunction("() => [...document.querySelectorAll('a')].some(a=>/application\\s*config/i.test((a.textContent||'')) && a.offsetParent!==null)",
                     null, new Page.WaitForFunctionOptions().setTimeout(15000));
         } catch (Exception ignore) { }
-        try {
-            page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                    + " const a=[...document.querySelectorAll('a')].find(x=>/application\\s*config/i.test(norm(x.textContent)) && x.offsetParent!==null); if(a) a.click(); }");
-            waitForAngular(1200);
-            page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                    + " const a=[...document.querySelectorAll('a')].find(x=>/^\\s*locations?\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null && (x.getAttribute('href')||'')==='#'); if(a) a.click(); }");
-            waitForAngular(1500);
-        } catch (Exception e) {
-            System.out.println("DepartmentSchedule.nav: menu entry raced the SPA route change - " + e.getMessage());
-        }
+        // Scope every lookup to the Application Configuration entry: same-named top-level modules otherwise get clicked and
+        // collapse it (the app then stays on the Patient Dashboard). Each level is expanded idempotently.
+        final String appCfg = "application\\s*config";
+        boolean appOpen = expandMenuEntry(null, appCfg);
+        boolean locOpen = appOpen && expandMenuEntry(appCfg, "^\\s*locations?\\s*$");
+        if (!locOpen) System.out.println("DepartmentSchedule.nav: Application Configuration open=" + appOpen + ", Location open=" + locOpen);
         Object href = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                + " const top=[...document.querySelectorAll('a')].find(x=>/application\\s*config/i.test(norm(x.textContent)) && x.offsetParent!==null);"
+                + " const scope=(top&&top.closest('li'))||document;"
                 + " const want=x=>/^\\s*department\\s*schedule\\s*$/i.test(norm(x.textContent));"
-                + " const a=[...document.querySelectorAll('a[href]')].find(x=>want(x) && x.offsetParent!==null)"
-                + "   || [...document.querySelectorAll('a[href]')].find(want)"
-                + "   || [...document.querySelectorAll('a[href]')].find(x=>/departmentschedule/i.test(x.getAttribute('href')||''));"
+                + " const a=[...scope.querySelectorAll('a[href]')].find(x=>want(x) && x.offsetParent!==null)"
+                + "   || [...scope.querySelectorAll('a[href]')].find(want);"
                 + " if(!a) return ''; a.id='__dsMenu'; return a.getAttribute('href')||'link'; }");
         if (href != null && !href.toString().isEmpty()) {
             if (href.toString().contains("#/")) ROUTE = href.toString().substring(href.toString().indexOf("#/"));
@@ -114,8 +111,9 @@ public class DepartmentSchedule extends BasePage {
     }
 
     public boolean onScreen() {
-        if (!ROUTE.isEmpty() && page.url().toLowerCase().contains(ROUTE.replace("#/", "").toLowerCase())) return true;
-        return Boolean.TRUE.equals(page.evaluate("() => /department\\s*schedule/i.test(document.body.innerText||'')"));
+        // URL only: a page-text match also matches the sidebar's own "Department Schedule" menu item, so the Patient
+        // Dashboard counted as the screen.
+        return !ROUTE.isEmpty() && page.url().toLowerCase().contains(ROUTE.replace("#/", "").toLowerCase());
     }
 
     // ---- actions ---------------------------------------------------------

@@ -126,6 +126,34 @@ public class OutPatientQueueManagementPage extends BasePage {
         return r == null ? null : r.toString();
     }
 
+    /**
+     * The rows of the CURRENT queue grid whose patient name matches {@code nameRegex} (case-insensitive), newest visit
+     * first. Each row is {@code mrn}, {@code visitId}, {@code name}, {@code queueNo} — read from the grid's data model
+     * ({@code MRNo}, {@code visitid}, {@code patientname}, {@code tokenno}, confirmed live on devhis 2026-10-20). This is
+     * how a newly registered patient's MRN is found: Registration shows it only inside a PDF label.
+     */
+    @SuppressWarnings("unchecked")
+    public java.util.List<java.util.Map<String, String>> queueRowsMatching(String nameRegex) {
+        Object r = page.evaluate("(re) => { const rx=new RegExp(re,'i'); let data=null;"
+                + " document.querySelectorAll('*').forEach(el=>{ if(data) return; try{ const s=angular.element(el).scope();"
+                + "   if(s && s.grid && s.grid.options && s.grid.options.data && s.grid.options.data.length) data=s.grid.options.data; }catch(e){} });"
+                + " if(!data) return [];"
+                + " return data.filter(x=>rx.test(((x.PatientName||x.patientname||'')+'')))"
+                + "   .map(x=>({mrn:String(x.MRNo||x.mrno||'').trim(), visitId:String(x.visitid||x.VisitID||x.visitId||''),"
+                + "             name:String(x.PatientName||x.patientname||'').replace(/\\s+/g,' ').trim(), queueNo:String(x.tokenno||x.TokenNo||'')}))"
+                + "   .sort((a,b)=>Number(b.visitId)-Number(a.visitId)); }", nameRegex);
+        java.util.List<java.util.Map<String, String>> out = new java.util.ArrayList<>();
+        if (r instanceof java.util.List) {
+            for (Object o : (java.util.List<Object>) r) {
+                java.util.Map<String, String> row = new java.util.LinkedHashMap<>();
+                for (java.util.Map.Entry<String, Object> e : ((java.util.Map<String, Object>) o).entrySet())
+                    row.put(e.getKey(), e.getValue() == null ? "" : e.getValue().toString());
+                out.add(row);
+            }
+        }
+        return out;
+    }
+
     // Skip junk/test patients (e.g. "DUMMY PATIENT RX", "TEST EMR") when auto-selecting a queue row.
     private static final String SKIP_PATIENTS_RE = "dummy|test\\s*emr";
 

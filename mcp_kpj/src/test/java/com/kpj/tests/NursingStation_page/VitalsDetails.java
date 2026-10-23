@@ -63,8 +63,11 @@ public class VitalsDetails extends DevHisBase {
 
         String mrn = System.getProperty("mrn", DEFAULT_MRN);
         String counter = System.getProperty("counter", COUNTER_FOR_MENU);
-        int vitals = Integer.getInteger("vitals", 3);
-        String value = System.getProperty("value", "36");
+        // By default the vitals Save REQUIRES are ticked (Temperature, BP, Heart Rate, Respiratory Rate, Weight, Height) and each
+        // gets a realistic value; -Dvitals=<n> (first n rows) and -Dvalue=<v> (same value everywhere) override that.
+        Integer vitalsProp = Integer.getInteger("vitals");
+        String valueProp = System.getProperty("value");
+        String value = valueProp != null ? valueProp : "36";
         String remark = System.getProperty("remark", "Automated test reading");
 
         new LoginPage(page).login(BASE, USER, PASS, counter);
@@ -109,15 +112,20 @@ public class VitalsDetails extends DevHisBase {
         }
 
         // 3) Tick the Select checkboxes
-        String ticked = vd.selectVitalRows(vitals);
+        String ticked = vitalsProp != null ? vd.selectVitalRows(vitalsProp) : vd.selectMandatoryVitals();
         step(page, "Click the Select checkboxes",
-                "Tick the Select checkbox on the first " + vitals + " vital rows",
+                vitalsProp != null ? "Tick the Select checkbox on the first " + vitalsProp + " vital rows"
+                        : "Tick the Select checkbox on the mandatory vitals (Temperature, Blood Pressure, Heart Rate, "
+                          + "Respiratory Rate, Weight, Height)",
                 "The chosen vital rows are selected", ticked, vd.rowsSelected() ? "PASS" : "FAIL");
         if (!vd.rowsSelected()) { addSummary("Result", "FAILED — no vital row could be selected"); return; }
 
         // 4) Values
-        String values = vd.enterValues(value);
-        step(page, "Enter value", "Enter the value " + value + " on each selected row",
+        String values = valueProp != null ? vd.enterValues(valueProp) : vd.enterVitalValues(value);
+        step(page, "Enter value",
+                valueProp != null ? "Enter the value " + valueProp + " on each selected row"
+                        : "Enter a realistic value on each selected row (BP 120/80, pulse 75, temperature 36.8, "
+                          + "respiration 16, height 170, weight 70)",
                 "Every selected row has a value", values, vd.valuesEntered() ? "PASS" : "FAIL");
 
         // 5) Remarks
@@ -145,10 +153,11 @@ public class VitalsDetails extends DevHisBase {
         // above — Save then answers "Please select at least one parameter!". That is worth recording as
         // screen behaviour, and the entries are re-applied so Save is still exercised on real data rather
         // than failing for a reason that has nothing to do with saving.
-        boolean survived = vd.rowsSelected() && vd.valuesEntered();
+        boolean survived = vd.entriesStillPresent();   // read from the grid itself, not from what was remembered
         String reapplied = "";
         if (!survived) {
-            reapplied = vd.selectVitalRows(vitals) + " | " + vd.enterValues(value)
+            reapplied = (vitalsProp != null ? vd.selectVitalRows(vitalsProp) : vd.selectMandatoryVitals()) + " | "
+                    + (valueProp != null ? vd.enterValues(valueProp) : vd.enterVitalValues(value))
                     + " | " + vd.enterRemarks(remark);
             if (!vd.takenBySelected()) vd.selectTakenBy();
         }

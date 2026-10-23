@@ -93,6 +93,18 @@ public class ItemEnquiry extends DevHisBase {
                 newOk ? "PASS" : "FAIL");
         if (!newOk) { addSummary("Result", "FAILED — the entry form never opened"); return; }
 
+        // The entry form's own controls (before the picker opens) — shows whether a Store / Location must be chosen first.
+        addSummary("Entry form controls", ie.describeControls());
+
+        // 2b) Store — chosen on the entry form first; the item picker's Search refuses to run without one.
+        String store = ie.selectStore();
+        boolean storeOk = ie.storeSelected();
+        step(page, "Select Store", "Select the Store on the entry form",
+                "A Store is selected",
+                storeOk ? "PASSES: Store = " + store
+                        : "FAILS: " + store + " — without a Store the item picker's Search answers \"Please Select Store Name !!!!\"",
+                storeOk ? "PASS" : "FAIL");
+
         // 3) Get Items
         String getItems = ie.clickGetItems();
         boolean pickerOpen = ie.itemPickerOpen();
@@ -103,6 +115,14 @@ public class ItemEnquiry extends DevHisBase {
         if (!pickerOpen) { addSummary("Result", "FAILED — the item picker never opened"); return; }
 
         addSummary("Item picker controls", ie.describeControls());
+
+        // 3b) The dialog's own Store — its Search refuses to run (0 rows, "Please Select Store Name !!!!") while none is chosen.
+        String pickerStore = ie.selectPickerStore();
+        boolean pickerStoreOk = ie.pickerStoreSelected();
+        step(page, "In the dialog, select the Store", "Select the Store from the dialog's Store dropdown",
+                "A Store is selected in the dialog",
+                pickerStoreOk ? "PASSES: Store = " + pickerStore : "FAILS: " + pickerStore,
+                pickerStoreOk ? "PASS" : "FAIL");
 
         // 4) Item Name
         boolean touchField = !itemName.isEmpty();

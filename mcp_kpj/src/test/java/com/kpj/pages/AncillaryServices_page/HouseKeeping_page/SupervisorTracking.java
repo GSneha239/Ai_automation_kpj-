@@ -102,12 +102,10 @@ public class SupervisorTracking extends BasePage {
             System.out.println("SupervisorTracking.nav: nav menu never appeared");
         }
 
-        page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                + " const a=[...document.querySelectorAll('a')].find(x=>/ancillary\\s*services?/i.test(norm(x.textContent)) && x.offsetParent!==null); if(a) a.click(); }");
-        waitForAngular(1000);
-        page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                + " const a=[...document.querySelectorAll('a')].find(x=>/^house\\s*keeping$/i.test(norm(x.textContent)) && x.offsetParent!==null); if(a) a.click(); }");
-        waitForAngular(1000);
+        // Expand each level only if it is not already open: the setup step has just walked this same menu, and a second
+        // click on an open entry would CLOSE it again (and the walk then ended on the dashboard).
+        expandMenuEntry(null, "^\\s*ancillary\\s*services?\\s*$");
+        expandMenuEntry("^\\s*ancillary\\s*services?\\s*$", "^\\s*house\\s*keeping\\s*$");
 
         Object tagged = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
                 + " const links=[...document.querySelectorAll('a[href]')].filter(x=>x.offsetParent!==null);"

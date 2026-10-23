@@ -51,6 +51,83 @@ public class ItemFactorizationTemplate extends DevHisBase {
                 on ? "PASS" : "FAIL");
         if (!on) { addSummary("Result", "FAILED - wrong page opened: " + landed); return; }
 
+        // ---- List screen: date range, Store, Search, select an item, Print (report opens in a NEW tab) ----
+        java.time.LocalDate today = java.time.LocalDate.now();
+        java.time.format.DateTimeFormatter dmy = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy");
+        String fromDate = today.minusMonths(1).format(dmy), toDate = today.format(dmy);
+        String dates = ift.setDateRange(fromDate, toDate);
+        boolean datesOk = dates.contains("From=" + fromDate) && dates.contains("To=" + toDate);
+        step(page, "Enter From Date and To Date (one month range)", "Enter From Date " + fromDate + " and To Date " + toDate,
+                "Both dates are entered, one month apart", dates, datesOk ? "PASS" : "FAIL");
+
+        // Stores one after another until the table shows data.
+        StringBuilder tried = new StringBuilder();
+        int rows = 0;
+        long storeEnd = System.currentTimeMillis() + 4 * 60_000L;
+        for (int k = 0; k < 20 && rows == 0 && System.currentTimeMillis() < storeEnd; k++) {
+            String st = ift.selectStoreAt(k);
+            if (!ift.storeChosen()) { tried.append(" [").append(st).append("]"); break; }
+            rows = ift.clickSearchList();
+            tried.append(" [").append(st).append(": ").append(rows).append(" row(s)]");
+        }
+        step(page, "Select the Store from the dropdown and Search", "Select a Store, click Search",
+                "Values are displayed in the table", (rows > 0 ? "Store = " + ift.lastStore + ", " + rows + " row(s) shown" : "No store returned any rows")
+                        + "  ||  tried:" + tried, rows > 0 ? "PASS" : "FAIL");
+
+        boolean haveList = rows > 0;
+        String rowText = haveList ? ift.selectFirstListRow() : "";
+        int detailRows = haveList ? ift.detailRowCount() : 0;
+        step(page, "Select one Item Fraction List row", "Click a different row of the Item Fraction List (not the first)",
+                "The selected item is displayed in Item Fraction Details",
+                haveList ? "Selected: \"" + rowText + "\"  ||  Item Fraction Details now shows " + detailRows + " row(s): " + ift.detailRowsText()
+                         : "No row to select (the list is empty)",
+                haveList && detailRows > 0 ? "PASS" : "FAIL");
+
+        if (haveList) {
+            String expectedItem = ift.firstDetailItem();
+            int tabsBefore = page.context().pages().size();
+            String reportUrl = ift.clickPrintAndCaptureReport();
+            boolean newTab = !reportUrl.isEmpty() && page.context().pages().size() == tabsBefore + 1;
+            step(page, "Click Print - report opens in a new tab", "Click Print",
+                    "The report opens in a NEW tab (2 tabs open)",
+                    newTab ? "Report tab opened (" + page.context().pages().size() + " tabs open): " + reportUrl
+                           : "No new tab opened after Print (" + page.context().pages().size() + " tab(s) open)",
+                    newTab ? "PASS" : "FAIL");
+            if (ift.reportPage != null) {
+                byte[] reportPng = null;
+                try { reportPng = ift.reportPage.screenshot(new com.microsoft.playwright.Page.ScreenshotOptions().setFullPage(true).setTimeout(20000)); }
+                catch (Exception e) { System.out.println("ItemFactorizationTemplate: report screenshot failed - " + e.getMessage().split("\n")[0]); }
+                String body = "";
+                try { Object t = ift.reportPage.evaluate("() => (document.body?document.body.innerText:'').replace(/\\s+/g,' ').trim().slice(0,200)"); body = t == null ? "" : t.toString(); }
+                catch (Exception ignore) { }
+                boolean shot = reportPng != null && reportPng.length > 0;
+                String title = ""; try { title = ift.reportPage.title(); } catch (Exception ignore) { }
+                if (shot) {
+                    step(reportPng, "Screenshot of the report (full page, all data)", "Capture the report tab",
+                            "The report with all its data is captured", "Tab title \"" + title + "\"; text: " + (body.isEmpty() ? "(none - viewer/PDF)" : body), "PASS");
+                } else {
+                    step(page, "Screenshot of the report (full page, all data)", "Capture the report tab",
+                            "The report with all its data is captured", "Report screenshot could not be taken", "FAIL");
+                }
+                // Does the report show the item that was selected? (The report's address carries a fixed ID=1, so it may not.)
+                String pdfText = ift.reportPdfText();
+                String wanted = expectedItem.split(" \\| ")[0].replaceAll("[^A-Za-z0-9]", "").toLowerCase();
+                boolean pdfRead = !pdfText.isEmpty();
+                boolean matches = pdfRead && !wanted.isEmpty() && pdfText.replaceAll("[^A-Za-z0-9]", "").toLowerCase().contains(wanted);
+                step(page, "Verify the report shows the selected item", "Compare the report's content with the selected Item Fraction List row",
+                        "The report contains the item shown in Item Fraction Details (\"" + expectedItem.split(" \\| ")[0] + "\")",
+                        !pdfRead ? "The report text could not be read from " + ift.reportPage.url()
+                                 : (matches ? "PASSES: the report contains the selected item. Report text: " + pdfText.substring(0, Math.min(300, pdfText.length()))
+                                            : "FAILS: the selected item \"" + expectedItem.split(" \\| ")[0] + "\" (row \"" + rowText
+                                              + "\") is NOT in the report, which shows other data. Report address: " + ift.reportPage.url()
+                                              + ". Report text: " + pdfText.substring(0, Math.min(300, pdfText.length()))),
+                        matches ? "PASS" : "FAIL");
+                try { ift.reportPage.close(); } catch (Exception ignore) { }
+                page.bringToFront();
+            }
+        }
+
+
         boolean newOk = ift.clickNew();
         step(page, "Click New", "Click New (AddNewItemFactorization) to open the entry form",
                 "The Item Factorization entry form is shown",

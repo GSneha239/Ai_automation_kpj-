@@ -69,7 +69,10 @@ public class District extends DevHisBase {
                 "The District screen is shown",
                 rendered ? "Opened " + page.url()
                            + (ds.lastRoute.isEmpty() ? "" : " (menu route " + ds.lastRoute + ")")
-                         : "Did NOT reach the screen (" + page.url() + ") — see the General submenu dump",
+                         : "Did NOT reach the screen (" + page.url() + ") — see the General submenu dump"
+                           + (ds.httpErrors.isEmpty() ? ""
+                              : ". The menu click was answered by a server error, so the app stayed on the dashboard: "
+                                + String.join("; ", ds.httpErrors)),
                 rendered ? "PASS" : "FAIL");
         if (!rendered) { addSummary("Result", "FAILED — screen not reached"); return; }
 

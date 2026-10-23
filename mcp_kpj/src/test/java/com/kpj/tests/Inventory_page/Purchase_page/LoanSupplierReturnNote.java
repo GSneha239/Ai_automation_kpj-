@@ -92,6 +92,14 @@ public class LoanSupplierReturnNote extends DevHisBase {
 
         addSummary("Form controls", lsrn.describeControls());
 
+        // 2b) Store — the Supplier list and the item search depend on it.
+        String store = lsrn.selectStore();
+        boolean storeOk = lsrn.storeSelected();
+        step(page, "Select Store", "Select the Store",
+                "A Store is selected",
+                storeOk ? "PASSES: Store = " + store : "FAILS: " + store,
+                storeOk ? "PASS" : "FAIL");
+
         // 3) Select Supplier
         String supplier = lsrn.selectSupplier();
         boolean supplierOk = lsrn.supplierSelected();

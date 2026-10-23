@@ -87,13 +87,18 @@ public class MultipleAppointmentBookingTest extends DevHisBase {
         java.time.LocalDate tomorrow = java.time.LocalDate.now().plusDays(1);
         bookingPage.setAppointmentDate(tomorrow.format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy")));
 
-        // 10-12) Select and book 3 appointment slots
-        bookingPage.selectAppointmentSlots(3);
+        // 10-12) Select and book 3 appointment slots. Report what ACTUALLY happened per appointment —
+        // this used to report "Appt N booked" / PASS unconditionally, so a run where every appointment
+        // found no available slot (0 of 3 real clicks) still showed three green steps, with the only sign
+        // of trouble being Save rejecting with "Please Enter From Time !" two steps later.
+        boolean[] slotSelected = bookingPage.selectAppointmentSlotsReporting();
         for (int i = 0; i < 3; i++) {
+            boolean ok = slotSelected[i];
             step("Appt " + (i + 1) + " - Dept + Slot",
                     "Book appointment " + (i + 1),
                     "Slot selected for Appt " + (i + 1),
-                    "Appt " + (i + 1) + " booked", "PASS");
+                    ok ? "Appt " + (i + 1) + " booked" : "No available slot found for Appt " + (i + 1),
+                    ok ? "PASS" : "FAIL");
         }
 
         // 11) Save — click Save, accept dialog, extract toast.

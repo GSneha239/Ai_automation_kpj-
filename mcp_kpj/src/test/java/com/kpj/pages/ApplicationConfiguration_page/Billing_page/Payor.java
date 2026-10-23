@@ -43,8 +43,11 @@ public class Payor extends BasePage {
         page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
                 + " const a=[...document.querySelectorAll('a')].find(x=>/application\\s*config/i.test(norm(x.textContent)) && x.offsetParent!==null); if(a) a.click(); }");
         waitForAngular(900);
+        // "Billing" is ALSO a top-level module in the sidebar, listed before Application Configuration: an unscoped lookup clicks
+        // that one, which collapses the Application Configuration menu again. Look only inside the Application Configuration entry.
         page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                + " const a=[...document.querySelectorAll('a')].find(x=>/^\\s*billing\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null); if(a) a.click(); }");
+                + " const top=[...document.querySelectorAll('a')].find(x=>/application\\s*config/i.test(norm(x.textContent)) && x.offsetParent!==null); const scope=(top&&top.closest('li'))||document;"
+                + " const a=[...scope.querySelectorAll('a')].find(x=>/^\\s*billing\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null); if(a) a.click(); }");
         waitForAngular(800);
         // The Payor master link — href is exactly #/receivableMaster (NOT associatereceivableMaster).
         Object href = page.evaluate("() => { const a=[...document.querySelectorAll('a[href]')].find(x=>{ const h=x.getAttribute('href')||''; return /(^|[^e])receivableMaster/i.test(h) && !/associate/i.test(h); }); if(!a) return ''; a.id='__payorMenu'; return a.getAttribute('href')||'link'; }");
@@ -114,9 +117,41 @@ public class Payor extends BasePage {
         String ph = fillText("receivable.PrimaryPhoneNo", "0123456789");
         String em = fillText("receivable.EmailID", "auto" + code.toLowerCase() + "@test.com");
         String cp = fillText("receivable.PrimaryContactPerson", "Auto Contact Person");
+        // Payor Status is a mandatory (*) dropdown on the Details tab. Left at "--Select--" Submit saves nothing and shows no toast.
+        String status = selectByLabel("payor\\s*status");
         waitForAngular(400);
         return "PayorType=" + payorType + " | PayableCode=" + pc + " | Payor=" + pn
-                + " | PrimaryPhoneNo=" + ph + " | Email=" + em + " | PrimaryContactPerson=" + cp;
+                + " | PrimaryPhoneNo=" + ph + " | Email=" + em + " | PrimaryContactPerson=" + cp + " | PayorStatus=" + status;
+    }
+
+    /**
+     * Choose a real option (preferring "Active") in the select that belongs to the label matching {@code labelRegex}. The select is
+     * found through its label rather than a guessed ng-model, and set in the page with change events fired through Angular and jQuery.
+     * The list can load a moment after the form opens, so it is polled.
+     *
+     * @return the chosen text plus its ng-model, or {@code (no-label)} / {@code (no-select)} / {@code (no-option)}
+     */
+    private String selectByLabel(String labelRegex) {
+        String r = "(no-option)";
+        for (int i = 0; i < 12 && r.startsWith("(no-option)"); i++) {
+            if (i > 0) waitForAngular(500);
+            Object o = page.evaluate("(rx) => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                    + " const lab=[...document.querySelectorAll('label')].find(l=>new RegExp(rx,'i').test(norm(l.textContent)) && l.offsetParent!==null);"
+                    + " if(!lab) return '(no-label)';"
+                    + " let sel=null; const f=lab.getAttribute('for'); if(f) sel=document.getElementById(f);"
+                    + " for(let c=lab.parentElement, n=0; !sel && c && n<4; c=c.parentElement, n++) sel=c.querySelector('select');"
+                    + " if(!sel) return '(no-select)';"
+                    + " const real=x=>x.value && norm(x.textContent) && !/^-*\\s*select/i.test(norm(x.textContent));"
+                    + " const opts=[...sel.options]; let k=opts.findIndex(x=>real(x) && /^active$/i.test(norm(x.textContent))); if(k<0) k=opts.findIndex(real);"
+                    + " if(k<0) return '(no-option)';"
+                    + " sel.selectedIndex=k; sel.dispatchEvent(new Event('change',{bubbles:true}));"
+                    + " try{ window.angular.element(sel).triggerHandler('change'); }catch(e){}"
+                    + " if(window.jQuery){ try{ window.jQuery(sel).trigger('change'); }catch(e){} }"
+                    + " return norm(sel.options[k].textContent)+' ['+(sel.getAttribute('ng-model')||'?')+']'; }", labelRegex);
+            r = o == null ? "(no-option)" : o.toString();
+        }
+        waitForAngular(300);
+        return r;
     }
 
     /** Real Playwright fill of the (first visible) input bound to {@code ng-model}. Returns the value, or "(no)". */

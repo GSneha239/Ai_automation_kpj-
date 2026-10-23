@@ -129,10 +129,21 @@ public class SupplierReturnNoteApproval extends DevHisBase {
         // 7) Click Print; verify report generation
         String reportResult = srna.clickPrintAndVerifyReportGeneration();
         boolean printClickedOk = srna.printClicked();
-        step(page, "Click Print; verify report generation", "Click Print",
-                "The Print action fires and a report is generated",
-                printClickedOk ? "PASSES: " + reportResult : "FAILS: " + reportResult,
-                printClickedOk ? "PASS" : "FAIL");
+        // Judge the report itself, not just "a tab opened": its PDF is fetched and rendered, so the report shows in this
+        // step (Chrome's PDF viewer screenshots blank).
+        com.kpj.pages.PdfReport.Result pdf = printClickedOk ? com.kpj.pages.PdfReport.capture(page, srna.pagesBeforePrint, 10000) : null;
+        boolean tabOpened = pdf != null && !pdf.url.isEmpty();
+        boolean reportOk = printClickedOk && (!tabOpened || !pdf.blank);
+        String reportActual = (reportOk ? "PASSES: " : "FAILS: ") + reportResult
+                + (tabOpened ? "  ||  " + pdf.diagnostics
+                        + (pdf.png != null ? " The screenshot is the PDF's first page rendered from the file itself." : "") : "");
+        if (pdf != null && pdf.png != null && pdf.png.length > 0) {
+            step(pdf.png, "Click Print; verify report generation", "Click Print",
+                    "The Print action fires and a report is generated", reportActual, reportOk ? "PASS" : "FAIL");
+        } else {
+            step(page, "Click Print; verify report generation", "Click Print",
+                    "The Print action fires and a report is generated", reportActual, reportOk ? "PASS" : "FAIL");
+        }
 
         addSummary("Row selected", srna.lastRowClick);
         addSummary("Result", printClickedOk ? reportResult : "FAILED — the Print button was not found");

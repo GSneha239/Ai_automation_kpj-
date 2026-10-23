@@ -45,6 +45,15 @@ public class Unreservation extends BasePage {
     /** Enter the reserved MRN ({@code UnReservation.MRNO}) and click <b>Search</b> ({@code fnSearch()}). Returns the
      *  number of rows in the <b>List of Reserved Beds</b> table after the search. */
     public int enterMrnAndSearch(String mrn) {
+        // The screen defaults From = To = today, but a reservation is listed by its valid-until date (usually tomorrow+),
+        // so widen the range (-30d .. +60d) — otherwise freshly reserved beds are never listed.
+        Object dm = page.evaluate("() => { const A=window.angular; const fmt=d=>String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear();"
+                + " const ins=[...document.querySelectorAll('input')].filter(i=>i.offsetParent!==null && /date/i.test((i.getAttribute('ng-model')||'')+(i.id||'')+(i.name||'')));"
+                + " const day=n=>{const d=new Date(); d.setDate(d.getDate()+n); return fmt(d);};"
+                + " const set=(e,v)=>{ const c=A.element(e).controller('ngModel'); e.value=v; if(c){c.$setViewValue(v);c.$render();} e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true})); };"
+                + " if(ins.length>=2){ set(ins[0],day(-30)); set(ins[1],day(60)); }"
+                + " return ins.map(i=>i.getAttribute('ng-model')).join(','); }");
+        System.out.println("Unreservation date inputs widened => " + dm);
         page.evaluate("(mrn)=>{ const e=document.querySelector('#mrn') || [...document.querySelectorAll(\"input[ng-model='UnReservation.MRNO']\")][0]; if(e){ const c=angular.element(e).controller('ngModel'); e.value=mrn; if(c){c.$setViewValue(mrn);c.$render();} e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true})); } const b=[...document.querySelectorAll('button')].find(x=>/fnSearch/.test(x.getAttribute('ng-click')||'') && x.offsetParent!==null) || [...document.querySelectorAll('button')].find(x=>/^\\s*search\\s*$/i.test((x.textContent||'').trim()) && x.offsetParent!==null); if(b) b.click(); }", mrn);
         page.waitForTimeout(3000);
         return reservedRowCount();

@@ -69,7 +69,7 @@ public class InsuranceAgent extends DevHisBase {
                 "The Insurance Agent screen is shown",
                 rendered ? "Opened " + page.url()
                            + (tor.lastRoute.isEmpty() ? "" : " (menu route " + tor.lastRoute + ")")
-                         : "Did NOT reach the screen (" + page.url() + ") — see the General submenu dump",
+                         : "Did NOT reach the screen (" + page.url() + ") — see the Equipment submenu dump",
                 rendered ? "PASS" : "FAIL");
         if (!rendered) { addSummary("Result", "FAILED — screen not reached"); return; }
 

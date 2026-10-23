@@ -4,6 +4,7 @@ REM  Core dispatcher for the per-MODULE, per-ENVIRONMENT runners.
 REM  Do NOT double-click this one - double-click a run-<module>-<env>.bat instead:
 REM
 REM      run-op-devhis.bat            run-op-klg.bat            run-op-dsh.bat
+REM      run-appointment-devhis.bat   run-appointment-klg.bat   run-appointment-dsh.bat
 REM      run-ip-devhis.bat            run-ip-klg.bat            run-ip-dsh.bat
 REM      run-emergency-devhis.bat     run-emergency-klg.bat     run-emergency-dsh.bat
 REM      run-sysconfig-devhis.bat     run-sysconfig-klg.bat     run-sysconfig-dsh.bat
@@ -14,12 +15,16 @@ REM      run-appconfig-devhis.bat     run-appconfig-klg.bat     run-appconfig-ds
 REM      run-ancillary-devhis.bat     run-ancillary-klg.bat     run-ancillary-dsh.bat
 REM      run-inventory-devhis.bat     run-inventory-klg.bat     run-inventory-dsh.bat
 REM      run-investigation-devhis.bat run-investigation-klg.bat run-investigation-dsh.bat
+REM      run-ot-devhis.bat            run-ot-klg.bat            run-ot-dsh.bat
 REM
 REM  Runs EVERY flow in the module's package, into its own folder:
 REM      test-output-<module>-<env>\reports\<Page>.html
 REM      test-output-<module>-<env>\FAILED_STEPS.html
 REM
-REM  Usage:  module-runner.bat <devhis|klg|dsh> <module-key>
+REM  Every module also has a run-<module>-nhistest.bat for the NHIS Test environment
+REM  (https://nhistest.sancyberhad.com).
+REM
+REM  Usage:  module-runner.bat <devhis|klg|dsh|nhistest> <module-key>
 REM  Exit code: 0 = all steps passed, 1 = one or more steps FAILED.
 REM ============================================================================
 setlocal
@@ -29,7 +34,7 @@ set "ENVKEY=%~1"
 set "MODKEY=%~2"
 
 if "%MODKEY%"=="" (
-  echo [ERROR] Usage: module-runner.bat ^<devhis^|klg^|dsh^> ^<module-key^>
+  echo [ERROR] Usage: module-runner.bat ^<devhis^|klg^|dsh^|nhistest^> ^<module-key^>
   echo         Double-click a run-^<module^>-^<env^>.bat file instead.
   pause
   exit /b 1
@@ -40,9 +45,9 @@ REM     an IIS error page, the app never loads, and every flow fails on a blank 
 set "ENVLABEL="
 if /i "%ENVKEY%"=="devhis" (
   REM The jar's own built-in default login (farisha) has been failing intermittently, so devhis now
-  REM defaults to the tieba account instead. Password reset 2026-09-10 (was User@123).
-  set "DEVHIS_OPTS=-Ddevhis.user=tieba -Ddevhis.pass=Tieba@123"
-  set "ENVLABEL=devhis - default URL, tieba credentials"
+  REM defaults to the Sarannya account instead (the framework's own default login, User@123).
+  set "DEVHIS_OPTS=-Ddevhis.user=Sarannya -Ddevhis.pass=User@123"
+  set "ENVLABEL=devhis - default URL, Sarannya credentials"
 )
 if /i "%ENVKEY%"=="klg" (
   set "DEVHIS_OPTS=-Ddevhis.url=https://klg-nhisqa.kpjhealth.com.my -Ddevhis.user=Poovin -Ddevhis.pass=Nhis@123"
@@ -52,8 +57,12 @@ if /i "%ENVKEY%"=="dsh" (
   set "DEVHIS_OPTS=-Ddevhis.url=https://dsh-nhisqa.kpjhealth.com.my -Ddevhis.user=Poovin -Ddevhis.pass=Nhis@123"
   set "ENVLABEL=DSH QA - https://dsh-nhisqa.kpjhealth.com.my"
 )
+if /i "%ENVKEY%"=="nhistest" (
+  set "DEVHIS_OPTS=-Ddevhis.url=https://nhistest.sancyberhad.com -Ddevhis.user=Tieba -Ddevhis.pass=User@123"
+  set "ENVLABEL=NHIS Test - https://nhistest.sancyberhad.com (admin Tieba)"
+)
 if not defined ENVLABEL (
-  echo [ERROR] Unknown environment "%ENVKEY%" - use devhis, klg or dsh.
+  echo [ERROR] Unknown environment "%ENVKEY%" - use devhis, klg, dsh or nhistest.
   pause
   exit /b 1
 )
@@ -61,6 +70,7 @@ if not defined ENVLABEL (
 REM --- Modules: one line per module. Add a module ONCE here and all 3 environments follow.
 set "PKG="
 if /i "%MODKEY%"=="op"           ( set "PKG=com.kpj.tests.Op_Page"                     & set "MODULE=OP" )
+if /i "%MODKEY%"=="appointment"  ( set "PKG=com.kpj.tests.Op_Page.Appointment"         & set "MODULE=OP - Appointment" )
 if /i "%MODKEY%"=="ip"           ( set "PKG=com.kpj.tests.Ip"                          & set "MODULE=IP" )
 if /i "%MODKEY%"=="emergency"    ( set "PKG=com.kpj.tests.Emergency_page"              & set "MODULE=Emergency" )
 if /i "%MODKEY%"=="sysconfig"    ( set "PKG=com.kpj.tests.SystemConfiguration_page"    & set "MODULE=System Configuration" )
@@ -71,9 +81,11 @@ if /i "%MODKEY%"=="appconfig"    ( set "PKG=com.kpj.tests.ApplicationConfigurati
 if /i "%MODKEY%"=="ancillary"    ( set "PKG=com.kpj.tests.AncillaryServices_page"        & set "MODULE=Ancillary Services" )
 if /i "%MODKEY%"=="inventory"    ( set "PKG=com.kpj.tests.Inventory_page"                & set "MODULE=Inventory" )
 if /i "%MODKEY%"=="investigation" ( set "PKG=com.kpj.tests.Investigation_page"           & set "MODULE=Investigation" )
+if /i "%MODKEY%"=="ot"            ( set "PKG=com.kpj.tests.OT_page"                       & set "MODULE=OT" )
+if /i "%MODKEY%"=="flow"          ( set "PKG=com.kpj.tests.Flow_page"                     & set "MODULE=Flow (Billing OP end-to-end)" )
 if not defined PKG (
   echo [ERROR] Unknown module "%MODKEY%".
-  echo         Use: op, ip, emergency, sysconfig, billing, nursing, telemedicine, appconfig, ancillary, inventory, investigation.
+  echo         Use: op, appointment, ip, emergency, sysconfig, billing, nursing, telemedicine, appconfig, ancillary, inventory, investigation, ot, flow.
   pause
   exit /b 1
 )

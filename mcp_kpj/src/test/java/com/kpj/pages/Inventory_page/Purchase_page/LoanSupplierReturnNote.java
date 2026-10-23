@@ -201,18 +201,25 @@ public class LoanSupplierReturnNote extends BasePage {
 
     /** Select the <b>Supplier</b> — the first real option in whatever select carries "supplier". */
     public String selectSupplier() {
+        // The Supplier list is filled by the app after the form shows (and may depend on the Store): wait for it.
+        try {
+            page.waitForFunction("() => { const e=[...document.querySelectorAll('select')].find(x=>(x.offsetWidth||x.offsetHeight||x.getClientRects().length)"
+                    + " && /supplier/i.test(x.getAttribute('ng-model')||'')); return !!e && [...e.options].some((o,i)=>i>0 && o.value); }",
+                    null, new Page.WaitForFunctionOptions().setTimeout(15000));
+        } catch (Exception ignore) { /* reported below from what is really there */ }
         Object plain = page.evaluate("() => {" + JS
                 + " document.querySelectorAll('#__lsrnSupplier').forEach(e=>e.removeAttribute('id'));"
                 + " const e=[...document.querySelectorAll('select')].filter(vis)"
                 + "   .find(x=>/supplier/i.test(tail(x)+' '+labelOf(x)));"
-                + " if(!e) return '';"
+                + " if(!e) return '(no Supplier select found)';"
                 + " e.id='__lsrnSupplier';"
                 + " const reals=[...e.options].map((o,i)=>({o,i}))"
                 + "   .filter(x=>x.i>0 && !/^-*\\s*select\\s*-*$/i.test(norm(x.o.text)));"
-                + " return reals.length? JSON.stringify({index:reals[0].i, count:reals.length}) : ''; }");
+                + " return reals.length? JSON.stringify({index:reals[0].i, count:reals.length})"
+                + "   : '(the Supplier list ['+(e.getAttribute('ng-model')||'?')+'] is empty even after waiting: '+e.options.length+' option(s), none selectable)'; }");
         String plainInfo = plain == null ? "" : plain.toString();
-        if (plainInfo.isEmpty()) {
-            lastSupplier = "(no Supplier select found)";
+        if (plainInfo.isEmpty() || plainInfo.startsWith("(")) {
+            lastSupplier = plainInfo.isEmpty() ? "(no Supplier select found)" : plainInfo;
             System.out.println("LoanSupplierReturnNote: supplier -> " + lastSupplier);
             return lastSupplier;
         }
@@ -232,6 +239,52 @@ public class LoanSupplierReturnNote extends BasePage {
         System.out.println("LoanSupplierReturnNote: supplier -> " + lastSupplier);
         return lastSupplier;
     }
+
+    /** What {@link #selectStore()} chose, or why it could not. */
+    public String lastStore = "";
+
+    /**
+     * Select the <b>Store</b> ({@code GoodsReturnNote.SearchStoreID}) — the first real option, waiting up to 20s for the
+     * app to fill the list. The Supplier list and the item search both hang off it.
+     */
+    public String selectStore() {
+        final String css = "select[ng-model='GoodsReturnNote.SearchStoreID']";
+        try {
+            page.waitForFunction("(s) => { const e=[...document.querySelectorAll(s)]"
+                    + ".find(x=>x.offsetWidth||x.offsetHeight||x.getClientRects().length);"
+                    + " return !!e && [...e.options].some(o=>o.value && !/^-*\\s*select/i.test((o.text||'').trim())); }",
+                    css, new Page.WaitForFunctionOptions().setTimeout(20000));
+        } catch (Exception ignore) { /* reported below from what is really there */ }
+        // Prefer a pharmacy store (stock-bearing), else the first real option. Selected by index with the dropdown's own
+        // change handling and read back — writing the model by hand put it back on "-Select-" while reporting a pass.
+        Object r = page.evaluate("(s) => {" + JS
+                + " const e=[...document.querySelectorAll(s)].find(vis);"
+                + " if(!e) return '(no Store dropdown on the form)';"
+                + " const reals=[...e.options].map((o,i)=>({o,i})).filter(x=>x.o.value && !/^-*\\s*select/i.test(norm(x.o.text)));"
+                + " if(!reals.length) return '(the Store list is empty: '+e.options.length+' option(s), none selectable)';"
+                + " const pick=reals.find(x=>norm(x.o.text)==='Pharmacy (Central)')"
+                + "   || reals.find(x=>/^pharmacy/i.test(norm(x.o.text))) || reals[0];"
+                + " e.selectedIndex=pick.i;"
+                + " e.dispatchEvent(new Event('change',{bubbles:true}));"
+                + " try{ angular.element(e).triggerHandler('change'); }catch(x){}"
+                + " return 'ok|'+reals.length; }", css);
+        waitForAngular(900);
+        String res = r == null ? "" : r.toString();
+        if (!res.startsWith("ok|")) {
+            lastStore = res;
+        } else {
+            Object shown = page.evaluate("(s) => { const e=[...document.querySelectorAll(s)].find(x=>x.offsetWidth||x.offsetHeight||x.getClientRects().length);"
+                    + " return e ? ((e.options[e.selectedIndex]||{}).text||'').replace(/\\s+/g,' ').trim() : ''; }", css);
+            String text = shown == null ? "" : shown.toString();
+            lastStore = (text.isEmpty() || text.matches("^-*\\s*[Ss]elect.*"))
+                    ? "(the Store did not stay selected: shows \"" + text + "\")"
+                    : text + " (of " + res.substring(3) + " store(s))";
+        }
+        System.out.println("LoanSupplierReturnNote: Store = " + lastStore);
+        return lastStore;
+    }
+
+    public boolean storeSelected() { return lastStore != null && !lastStore.isEmpty() && !lastStore.startsWith("("); }
 
     public boolean supplierSelected() {
         return lastSupplier != null && !lastSupplier.isEmpty() && !lastSupplier.startsWith("(");
@@ -314,7 +367,21 @@ public class LoanSupplierReturnNote extends BasePage {
         waitForAngular(500);
         Object back = page.evaluate("(i) => { const e=document.getElementById(i);"
                 + " return e? (e.value||'') : '(gone)'; }", id);
-        return back == null ? "" : back.toString();
+        String got = back == null ? "" : back.toString();
+        if (!value.equals(got)) {
+            // A pre-filled picker box (class txtDate, inputmode=none, maxlength 10): typed keystrokes are discarded and the
+            // box ends up empty. Set the value through the box's own model instead, as the other screens here do.
+            Object set = page.evaluate("(a) => { const e=document.getElementById(a.id); if(!e) return '(gone)';"
+                    + " e.value=a.v;"
+                    + " try{ const c=angular.element(e).controller('ngModel'); if(c){ c.$setViewValue(a.v); c.$render(); } }catch(x){}"
+                    + " e.dispatchEvent(new Event('input',{bubbles:true}));"
+                    + " e.dispatchEvent(new Event('change',{bubbles:true}));"
+                    + " e.dispatchEvent(new Event('blur',{bubbles:true}));"
+                    + " return e.value||''; }", java.util.Map.of("id", id, "v", value));
+            waitForAngular(500);
+            got = set == null ? "" : set.toString();
+        }
+        return got;
     }
 
     public boolean dialogDatesEntered(String from, String to) {

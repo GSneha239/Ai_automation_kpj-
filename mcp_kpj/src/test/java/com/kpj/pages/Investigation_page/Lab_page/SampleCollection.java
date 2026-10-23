@@ -130,7 +130,22 @@ public class SampleCollection extends BasePage {
         waitForAngular(600);
         Object back = page.evaluate("(m) => { const e=document.querySelector(\"input[ng-model='\"+m+\"']\");"
                 + " return e? (e.value||'') : '(gone)'; }", model);
-        return back == null ? "" : back.toString();
+        String got = back == null ? "" : back.toString();
+        if (!value.equals(got)) {
+            // A pre-filled picker box (class txtDate, inputmode=none, maxlength 10): typed keystrokes are discarded and the
+            // box ends up empty. Set the value through the box's own model instead, as the other screens here do.
+            Object set = page.evaluate("(a) => { const e=document.querySelector(\"input[ng-model='\"+a.m+\"']\"); if(!e) return '(gone)';"
+                    + " e.value=a.v;"
+                    + " try{ const c=angular.element(e).controller('ngModel'); if(c){ c.$setViewValue(a.v); c.$render(); } }catch(x){}"
+                    + " e.dispatchEvent(new Event('input',{bubbles:true}));"
+                    + " e.dispatchEvent(new Event('change',{bubbles:true}));"
+                    + " e.dispatchEvent(new Event('blur',{bubbles:true}));"
+                    + " return e.value||''; }", java.util.Map.of("m", model, "v", value));
+            waitForAngular(500);
+            got = set == null ? "" : set.toString();
+        }
+        dismissDatePicker();   // close the calendar the date entry left open
+        return got;
     }
 
     public boolean datesEntered(String from, String to) {
@@ -387,6 +402,9 @@ public class SampleCollection extends BasePage {
      * <p>If saving did not open one, the screen's own <b>Print Barcode</b> is used — the report is a PDF
      * either way, so it is judged as a file rather than screenshotted.</p>
      */
+    /** First page of the generated barcode PDF as an image (or a page screenshot when it could not be rendered). */
+    public byte[] barcodePng;
+
     public String captureBarcode(int tabsBefore) {
         com.kpj.pages.PdfReport.Result r = com.kpj.pages.PdfReport.capture(page, tabsBefore, 9000);
         String how = "the save opened it";
@@ -401,6 +419,11 @@ public class SampleCollection extends BasePage {
             how = "the save opened nothing, so the screen's own Print Barcode was used";
         }
         barcodeBlank = r.blank;
+        // The barcode step shows the first page of the PDF itself — a screenshot of Chrome's PDF viewer is blank.
+        barcodePng = r.png;
+        if (barcodePng == null || barcodePng.length == 0) {
+            try { barcodePng = page.screenshot(new Page.ScreenshotOptions().setTimeout(10000)); } catch (Exception ignore) { }
+        }
         lastBarcode = how + " — " + r.diagnostics;
         System.out.println("SampleCollection: barcode -> " + lastBarcode);
         return lastBarcode;

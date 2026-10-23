@@ -111,6 +111,14 @@ public class Quotation extends DevHisBase {
                 supplierOk ? "PASSES: " + supplier : "FAILS: " + supplier,
                 supplierOk ? "PASS" : "FAIL");
 
+        // 3b) Store — Save answers "Please Select Store!" without one, and the item picker's Search needs it too.
+        String store = qt.selectStore();
+        boolean storeOk = qt.storeSelected();
+        step(page, "Select the Store", "Select the Store from the dropdown",
+                "A Store is selected",
+                storeOk ? "PASSES: Store = " + store : "FAILS: " + store,
+                storeOk ? "PASS" : "FAIL");
+
         // 4) Item Name
         boolean touchField = !itemName.isEmpty();
         String itemNameResult = touchField ? qt.enterItemName(itemName)
@@ -182,6 +190,14 @@ public class Quotation extends DevHisBase {
 
         if (pickerOpen) {
             addSummary("[Get Items] Item picker controls", qt.describeControls());
+
+            // The dialog's own Store — its Search refuses to run (0 rows) while none is chosen.
+            String pickerStore = qt.selectPickerStore();
+            boolean pickerStoreOk = qt.pickerStoreSelected();
+            step(page, "[Get Items] In the dialog, select the Store", "Select the Store from the dialog's Store dropdown",
+                    "A Store is selected in the dialog",
+                    pickerStoreOk ? "PASSES: Store = " + pickerStore : "FAILS: " + pickerStore,
+                    pickerStoreOk ? "PASS" : "FAIL");
 
             String pickerSearch = qt.clickSearchInPicker();
             int pickerRows = qt.pickerRowCount();

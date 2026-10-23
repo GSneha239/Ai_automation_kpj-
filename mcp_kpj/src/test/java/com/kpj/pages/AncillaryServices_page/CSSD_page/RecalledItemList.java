@@ -151,21 +151,67 @@ public class RecalledItemList extends BasePage {
         return Boolean.TRUE.equals(r);
     }
 
+    /**
+     * Diagnostics only: print every visible button / link-with-ng-click / input / select / grid header on the
+     * current screen, so a changed layout (v2026.10.13.228 dropped the New link) can be read from the log.
+     */
+    public void describeControls() {
+        Object r = page.evaluate("() => {" + JS
+                + " const out=[];"
+                + " [...document.querySelectorAll('button,a[ng-click],a[href]:not([href^=\"#/\"]),input,select,textarea')].filter(vis)"
+                + "   .filter(e=>!(e.tagName==='A' && /^(\\d+|\\u2039|\\u203a|\\d{4})$/.test(norm(e.textContent)) )).forEach(e=>{"
+                + "   const t=e.tagName+(e.type?'['+e.type+']':'');"
+                + "   const nm=e.getAttribute('ng-model')||'';"
+                + "   const ck=e.getAttribute('ng-click')||'';"
+                + "   const lbl=norm(e.textContent||e.value||e.placeholder||e.title||'').slice(0,40);"
+                + "   out.push(t+' \"'+lbl+'\"'+(e.id?' #'+e.id:'')+(nm?' [ng-model='+nm+']':'')+(ck?' [ng-click='+ck+']':'')); });"
+                + " const grids=[...document.querySelectorAll('tr[ng-repeat]')].map(r=>r.getAttribute('ng-repeat')).filter((v,i,a)=>a.indexOf(v)===i);"
+                + " const heads=[...document.querySelectorAll('th')].filter(vis).map(h=>norm(h.getAttribute('title')||h.textContent)).filter(Boolean);"
+                + " return out.join(' || ')+' ## ng-repeat rows: '+grids.join(', ')+' ## headers: '+heads.join(' | '); }");
+        System.out.println("CSSD.RecalledItemList controls: " + r);
+    }
+
     // ---- New -> Recall form ------------------------------------------------
 
     /** Click <b>New</b> ({@code fnAddRecalledItem()}) and wait for the Recall form. */
     public boolean clickNew() {
+        // The New link sits BELOW the results grid (ng-click="fnAddRecalledItem()"), so match it by that handler
+        // first; the plain "New" text is only a fallback. It is an <a>, and on v2026.10.13.228 a plain click ended
+        // on the Patient Dashboard instead of #/add-RecalledItem, so the link's own default action is blocked
+        // (preventDefault does not stop ng-click) and the handler is called directly if the click alone is not enough.
         Object tagged = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                + " const a=[...document.querySelectorAll('a')].find(x=>norm(x.textContent)==='New' && x.offsetParent!==null); if(!a) return false; a.id='__ril_new'; return true; }");
-        if (!Boolean.TRUE.equals(tagged)) { System.out.println("CSSD.RecalledItemList.clickNew: New link not found"); return false; }
+                + " const all=[...document.querySelectorAll('a')];"
+                + " const a=all.find(x=>/fnAddRecalledItem/.test(x.getAttribute('ng-click')||''))"
+                + "   || all.find(x=>norm(x.textContent)==='New' && x.offsetParent!==null);"
+                + " if(!a) return ''; a.id='__ril_new';"
+                + " a.addEventListener('click', ev=>ev.preventDefault(), {once:true});"
+                + " return a.outerHTML; }");
+        if (tagged == null || tagged.toString().isEmpty()) { System.out.println("CSSD.RecalledItemList.clickNew: New link not found"); return false; }
+        System.out.println("CSSD.RecalledItemList.clickNew: link = " + tagged);
         try { page.locator("#__ril_new").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000)); }
         catch (Exception e) { System.out.println("CSSD.RecalledItemList.clickNew: click failed - " + e.getMessage()); }
+        boolean opened = waitForRecallForm("click", 8);
+        if (!opened && onListScreen()) {
+            System.out.println("CSSD.RecalledItemList.clickNew: click did not open the form - calling fnAddRecalledItem() directly");
+            page.evaluate("() => { const a=document.getElementById('__ril_new'); if(!a) return;"
+                    + " const s=angular.element(a).scope(); if(s && s.fnAddRecalledItem) s.$apply(()=>s.fnAddRecalledItem()); }");
+            opened = waitForRecallForm("fnAddRecalledItem()", 8);
+        }
         page.evaluate("() => { const e=document.getElementById('__ril_new'); if(e) e.removeAttribute('id'); }");
-        try {
-            page.waitForURL("**/add-RecalledItem", new Page.WaitForURLOptions().setTimeout(15000));
-        } catch (Exception ignore) { System.out.println("CSSD.RecalledItemList.clickNew: URL never reached #/add-RecalledItem"); }
-        waitForAngular(600);
-        return onRecallForm();
+        return opened;
+    }
+
+    /** Poll up to {@code seconds} for the add-Recall form, logging the URL so a bounce to another route shows in the run log. */
+    private boolean waitForRecallForm(String how, int seconds) {
+        String last = "";
+        for (int i = 0; i < seconds * 2; i++) {
+            if (onRecallForm()) { waitForAngular(600); return true; }
+            String u = page.url();
+            if (!u.equals(last)) { System.out.println("CSSD.RecalledItemList.clickNew[" + how + "]: url -> " + u); last = u; }
+            page.waitForTimeout(500);
+        }
+        System.out.println("CSSD.RecalledItemList.clickNew[" + how + "]: form not open after " + seconds + "s (" + page.url() + ")");
+        return false;
     }
 
     // ---- date range + Search -----------------------------------------------

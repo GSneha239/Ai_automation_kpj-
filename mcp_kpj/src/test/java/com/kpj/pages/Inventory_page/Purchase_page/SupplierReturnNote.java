@@ -84,17 +84,28 @@ public class SupplierReturnNote extends BasePage {
     // ---- navigation ------------------------------------------------------
 
     /** Application menu &rarr; Inventory &rarr; Purchase &rarr; Supplier Return Note. */
+    /** Server errors (HTTP 400+) seen while opening the screen — named in the report when the view never loads. */
+    public final java.util.List<String> httpErrors = new java.util.concurrent.CopyOnWriteArrayList<>();
+    /** True once the page's header no longer says PATIENT DASHBOARD, i.e. the screen's own view replaced the dashboard. */
+    public boolean viewSwitched = false;
+
     public boolean navigateViaMenu(String baseUrl) {
         try { page.waitForFunction("() => window.angular", null,
                 new Page.WaitForFunctionOptions().setTimeout(20000)); } catch (Exception ignore) { }
+        page.onResponse(r -> {
+            try { if (r.status() >= 400) httpErrors.add("HTTP " + r.status() + " " + r.request().method() + " " + r.url()); }
+            catch (Exception ignore) { }
+        });
 
         Object href = null;
         for (int attempt = 1; attempt <= 3; attempt++) {
-            clickMenu("^\\s*inventory\\s*$");
-            clickMenu("^\\s*purchase\\s*$");
+            // Open each level only if it is not already open: a click on an open entry CLOSES it, and this loop used to
+            // click again on every retry, shutting the menu it had just opened. Purchase is looked up INSIDE Inventory only.
+            expandMenuEntry(null, "^\\s*inventory\\s*$");
+            expandMenuEntry("^\\s*inventory\\s*$", "^\\s*purchase\\s*$");
             lastMenu = describeMenu();
             href = page.evaluate("() => {" + JS
-                    + " const a=[...document.querySelectorAll('a[href]')]"
+                    + " const a=[...document.querySelectorAll('a[href]')].filter(vis)"
                     + "   .find(x=>/^\\s*supplier\\s*return\\s*note\\s*$/i.test(norm(x.textContent)));"
                     + " if(!a) return ''; a.id='__srnMenu'; return a.getAttribute('href')||''; }");
             if (href != null && !href.toString().isEmpty()) break;
@@ -113,10 +124,23 @@ public class SupplierReturnNote extends BasePage {
             catch (Exception ignore) { }
             waitForAngular(3500);
         }
+        // The route changing is not the screen loading: the dashboard stays on screen until the screen's view arrives.
+        viewSwitched = false;
+        if (onScreen()) {
+            try {
+                page.waitForFunction("() => !/patient\\s*dashboard/i.test(((document.body && document.body.innerText) || '').slice(0,300))",
+                        null, new Page.WaitForFunctionOptions().setTimeout(25000));
+                viewSwitched = true;
+            } catch (Exception e) {
+                System.out.println("SupplierReturnNote.nav: the URL changed but the page still shows the PATIENT DASHBOARD after 25s"
+                        + (httpErrors.isEmpty() ? "" : " — server errors: " + httpErrors));
+            }
+            waitForAngular(600);
+        }
         Object body = page.evaluate("() => (document.body? document.body.innerText : '')"
                 + ".replace(/\\s+/g,' ').trim().slice(0,300)");
         lastBodyText = body == null ? "" : body.toString();
-        return onScreen() && !lastBodyText.isEmpty();
+        return onScreen() && viewSwitched && !lastBodyText.isEmpty();
     }
 
     private void clickMenu(String textRegex) {
@@ -264,12 +288,74 @@ public class SupplierReturnNote extends BasePage {
         waitForAngular(500);
         Object back = page.evaluate("(i) => { const e=document.getElementById(i);"
                 + " return e? (e.value||'') : '(gone)'; }", id);
-        return back == null ? "" : back.toString();
+        String got = back == null ? "" : back.toString();
+        if (!value.equals(got)) {
+            // A pre-filled picker box (class txtDate, inputmode=none, maxlength 10): typed keystrokes are discarded and the
+            // box ends up empty. Set the value through the box's own model instead, as other screens here do.
+            Object set = page.evaluate("(a) => { const e=document.getElementById(a.id); if(!e) return '(gone)';"
+                    + " e.value=a.v;"
+                    + " try{ const c=angular.element(e).controller('ngModel'); if(c){ c.$setViewValue(a.v); c.$render(); } }catch(x){}"
+                    + " e.dispatchEvent(new Event('input',{bubbles:true}));"
+                    + " e.dispatchEvent(new Event('change',{bubbles:true}));"
+                    + " e.dispatchEvent(new Event('blur',{bubbles:true}));"
+                    + " return e.value||''; }", java.util.Map.of("id", id, "v", value));
+            waitForAngular(500);
+            got = set == null ? "" : set.toString();
+        }
+        dismissDatePicker();   // close the calendar the date entry left open
+        return got;
     }
 
     public boolean dialogDatesEntered(String from, String to) {
         return lastDialogDates != null && lastDialogDates.contains("FromDate=" + from) && lastDialogDates.contains("ToDate=" + to);
     }
+
+    /** What {@link #selectStore()} chose, or why it could not. */
+    public String lastStore = "";
+
+    /**
+     * Select the main form's <b>Store</b> ({@code GoodsReturnNote.SearchStoreID}). The note is saved against that store, and
+     * with it left on "-Select-" the server builds an EMPTY transaction number: Save then fails with HTTP 500 "Violation of
+     * UNIQUE KEY constraint 'fintransheader_tranno' … The duplicate key value is ()". Chosen before any item is added (a store
+     * change can clear the item grid); a pharmacy store is preferred, matching the stock the transactions were received into.
+     */
+    public String selectStore() {
+        final String css = "select[ng-model='GoodsReturnNote.SearchStoreID']";
+        try {
+            page.waitForFunction("(s) => { const e=[...document.querySelectorAll(s)]"
+                    + ".find(x=>x.offsetWidth||x.offsetHeight||x.getClientRects().length);"
+                    + " return !!e && [...e.options].some(o=>o.value && !/^-*\\s*select/i.test((o.text||'').trim())); }",
+                    css, new Page.WaitForFunctionOptions().setTimeout(20000));
+        } catch (Exception ignore) { /* reported below from what is really there */ }
+        Object r = page.evaluate("(s) => {" + JS
+                + " const e=[...document.querySelectorAll(s)].find(vis);"
+                + " if(!e) return '(no Store dropdown on the form)';"
+                + " const reals=[...e.options].map((o,i)=>({o,i})).filter(x=>x.o.value && !/^-*\\s*select/i.test(norm(x.o.text)));"
+                + " if(!reals.length) return '(the Store list is empty: '+e.options.length+' option(s), none selectable)';"
+                + " const pick=reals.find(x=>norm(x.o.text)==='Pharmacy (Central)')"
+                + "   || reals.find(x=>/^pharmacy/i.test(norm(x.o.text))) || reals[0];"
+                + " e.selectedIndex=pick.i;"
+                + " e.dispatchEvent(new Event('change',{bubbles:true}));"
+                + " try{ angular.element(e).triggerHandler('change'); }catch(x){}"
+                + " return 'ok|'+reals.length; }", css);
+        waitForAngular(900);
+        String res = r == null ? "" : r.toString();
+        if (!res.startsWith("ok|")) {
+            lastStore = res;
+        } else {
+            // Read the choice back off the control, so a selection that did not bind cannot pass.
+            Object shown = page.evaluate("(s) => { const e=[...document.querySelectorAll(s)].find(x=>x.offsetWidth||x.offsetHeight||x.getClientRects().length);"
+                    + " return e ? ((e.options[e.selectedIndex]||{}).text||'').replace(/\\s+/g,' ').trim() : ''; }", css);
+            String text = shown == null ? "" : shown.toString();
+            lastStore = (text.isEmpty() || text.matches("^-*\\s*[Ss]elect.*"))
+                    ? "(the Store did not stay selected: shows \"" + text + "\")"
+                    : text + " (of " + res.substring(3) + " store(s))";
+        }
+        System.out.println("SupplierReturnNote: Store = " + lastStore);
+        return lastStore;
+    }
+
+    public boolean storeSelected() { return lastStore != null && !lastStore.isEmpty() && !lastStore.startsWith("("); }
 
     /** Ensure the dialog's own Store filter carries a real value before searching — confirmed live on
      *  a differently-configured environment (this same class, run against a project whose default login
@@ -532,8 +618,29 @@ public class SupplierReturnNote extends BasePage {
      *  toast here — confirmed live on a sibling screen ({@code StoreIndent}) that clearing before Save
      *  can wipe out a toast that was already showing by the time the clear ran, since Save itself can be
      *  fast enough for that. */
+    /** What the server answered to the last Save (status, path, start of the body) — names the cause behind a bare "Error!". */
+    public String lastSaveHttp = "";
+    private final java.util.List<String> saveHttp = new java.util.concurrent.CopyOnWriteArrayList<>();
+    private java.util.function.Consumer<com.microsoft.playwright.Response> onSaveResp;
+
     public int clickSave() {
         int pagesBefore = page.context().pages().size();
+        saveHttp.clear();
+        if (onSaveResp != null) page.offResponse(onSaveResp);
+        onSaveResp = r -> {
+            try {
+                String m = r.request().method();
+                if (r.url().toLowerCase().contains("/api/") && r.request().resourceType().matches("xhr|fetch")
+                        && ("POST".equals(m) || "PUT".equals(m) || "DELETE".equals(m))
+                        && !r.url().contains("getInternalmsgCountOnly")) {
+                    String body = r.text();
+                    body = body == null ? "" : body.replaceAll("\\s+", " ");
+                    saveHttp.add(r.status() + " " + m + " " + r.url().replaceFirst("^https?://[^/]+", "")
+                            + " -> " + body.substring(0, Math.min(260, body.length())));
+                }
+            } catch (Exception ignore) { }
+        };
+        page.onResponse(onSaveResp);
         Object clicked = page.evaluate("() => {" + JS
                 + " const b=[...document.querySelectorAll('button,a,input[type=submit],input[type=button]')]"
                 + "   .filter(vis).find(x=>/^\\s*save\\s*$/i.test(norm(x.textContent)||x.value||'')"
@@ -569,6 +676,8 @@ public class SupplierReturnNote extends BasePage {
             if (toast.isEmpty()) page.waitForTimeout(150);
         }
         lastSave = toast;
+        if (onSaveResp != null) { page.offResponse(onSaveResp); onSaveResp = null; }
+        lastSaveHttp = String.join(" | ", saveHttp);
         lastSaveDiagnostics = lastSaveDiagnostics + (toast.isEmpty() ? "; no message within 15s" : "");
         System.out.println("SupplierReturnNote: save toast=\"" + toast + "\"");
         return toast;

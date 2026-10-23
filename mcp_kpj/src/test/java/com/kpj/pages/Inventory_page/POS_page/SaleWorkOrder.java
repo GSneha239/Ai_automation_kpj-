@@ -73,11 +73,13 @@ public class SaleWorkOrder extends BasePage {
 
         Object href = null;
         for (int attempt = 1; attempt <= 3; attempt++) {
-            clickMenu("^\\s*inventory\\s*$");
-            clickMenu("^\\s*pos\\s*$");
+            // Open each level only if it is not already open: a click on an open entry CLOSES it, and this loop used to
+            // click again on every retry, shutting the menu it had just opened. POS is looked up INSIDE Inventory only.
+            expandMenuEntry(null, "^\\s*inventory\\s*$");
+            expandMenuEntry("^\\s*inventory\\s*$", "^\\s*pos\\s*$");
             lastMenu = describeMenu();
             href = page.evaluate("() => {" + JS
-                    + " const a=[...document.querySelectorAll('a[href]')]"
+                    + " const a=[...document.querySelectorAll('a[href]')].filter(vis)"
                     + "   .find(x=>/^\\s*sale\\s*work\\s*order\\s*$/i.test(norm(x.textContent)));"
                     + " if(!a) return ''; a.id='__swoMenu'; return a.getAttribute('href')||''; }");
             if (href != null && !href.toString().isEmpty()) break;
@@ -207,7 +209,22 @@ public class SaleWorkOrder extends BasePage {
         waitForAngular(500);
         Object back = page.evaluate("(i) => { const e=document.getElementById(i);"
                 + " return e? (e.value||'') : '(gone)'; }", id);
-        return back == null ? "" : back.toString();
+        String got = back == null ? "" : back.toString();
+        if (!value.equals(got)) {
+            // A pre-filled picker box (class txtDate, inputmode=none, maxlength 10): typed keystrokes are discarded and the
+            // box ends up empty. Set the value through the box's own model instead, as other screens here do.
+            Object set = page.evaluate("(a) => { const e=document.getElementById(a.id); if(!e) return '(gone)';"
+                    + " e.value=a.v;"
+                    + " try{ const c=angular.element(e).controller('ngModel'); if(c){ c.$setViewValue(a.v); c.$render(); } }catch(x){}"
+                    + " e.dispatchEvent(new Event('input',{bubbles:true}));"
+                    + " e.dispatchEvent(new Event('change',{bubbles:true}));"
+                    + " e.dispatchEvent(new Event('blur',{bubbles:true}));"
+                    + " return e.value||''; }", java.util.Map.of("id", id, "v", value));
+            waitForAngular(500);
+            got = set == null ? "" : set.toString();
+        }
+        dismissDatePicker();   // close the calendar the date entry left open
+        return got;
     }
 
     public boolean datesEntered(String from, String to) {

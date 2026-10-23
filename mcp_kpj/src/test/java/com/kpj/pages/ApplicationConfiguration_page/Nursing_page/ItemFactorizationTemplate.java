@@ -130,6 +130,125 @@ public class ItemFactorizationTemplate extends BasePage {
         return onAddForm();
     }
 
+    // ---- list screen: dates, store, search, select a row, print ---------------------------------------------
+
+    /** The tab the Print button opened (null until {@link #clickPrintAndCaptureReport()} succeeds). */
+    public Page reportPage;
+    public String lastStore = "";
+    public int openedTabs = 0;
+
+    /** JS: rows of the table/grid that carries the header text {@code hdr} (visible rows with some text, no "no data" row). */
+    private static final String ROWS_OF =
+            " const rowsOf=hdr=>{ const th=[...document.querySelectorAll('th,.ui-grid-header-cell,.k-header')]"
+            + "   .find(x=>x.offsetParent!==null && new RegExp(hdr,'i').test((x.textContent||'').replace(/\\s+/g,' ').trim()));"
+            + "   if(!th) return null; const root=th.closest('table')||th.closest('.ui-grid,.k-grid,[ui-grid]')||document;"
+            + "   return [...root.querySelectorAll('tbody tr,.ui-grid-row,.k-grid-content tr')].filter(r=>r.offsetParent!==null"
+            + "     && (r.textContent||'').replace(/\\s+/g,' ').trim() && !/no (data|records)/i.test(r.textContent)); };";
+
+    /** Enter From Date and To Date (dd/MM/yyyy) on the list screen; returns what the boxes read back. */
+    public String setDateRange(String from, String to) {
+        String a = fillByNgModel("ItemFactorization.FromDate", from);
+        String b = fillByNgModel("ItemFactorization.ToDate", to);
+        waitForAngular(500);
+        Object r = page.evaluate("() => { const v=m=>{ const e=document.querySelector(\"[ng-model='\"+m+\"']\"); return e?e.value:'(none)'; };"
+                + " return 'From='+v('ItemFactorization.FromDate')+' | To='+v('ItemFactorization.ToDate'); }");
+        return a + "/" + b + " -> " + r;
+    }
+
+    /** Select the k-th real option (0 = first) of the Store dropdown; returns its name or a "(...)" message. */
+    public String selectStoreAt(int k) {
+        Object r = page.evaluate("(k) => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                + " const e=document.querySelector(\"select[ng-model='ItemFactorization.StoreID']\"); if(!e) return '(no Store dropdown)';"
+                + " const reals=[...e.options].map((o,i)=>({o,i})).filter(x=>x.o.value && !/^-*\\s*select/i.test(norm(x.o.text)));"
+                + " if(k>=reals.length) return '(no more stores: only '+reals.length+')';"
+                + " e.selectedIndex=reals[k].i; e.dispatchEvent(new Event('change',{bubbles:true}));"
+                + " try{ window.angular.element(e).triggerHandler('change'); }catch(x){}"
+                + " return norm(reals[k].o.text); }", k);
+        waitForAngular(600);
+        lastStore = r == null ? "" : r.toString();
+        return lastStore;
+    }
+
+    public boolean storeChosen() { return !lastStore.isEmpty() && !lastStore.startsWith("("); }
+
+    /** Click Search ({@code SearchIFT()}) and return how many template rows the list shows. */
+    public int clickSearchList() {
+        try {
+            page.locator("button[ng-click^='SearchIFT']").first().click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000));
+        } catch (Exception e) { System.out.println("ItemFactorizationTemplate.clickSearchList: " + e.getMessage().split("\n")[0]); }
+        waitForAngular(3000);
+        return listRowCount();
+    }
+
+    public int listRowCount() {
+        Object n = page.evaluate("() => {" + ROWS_OF + " const r=rowsOf('template\\\\s*name'); return r?r.length:0; }");
+        return n == null ? 0 : ((Number) n).intValue();
+    }
+
+    public int detailRowCount() {
+        Object n = page.evaluate("() => {" + ROWS_OF + " const r=rowsOf('^\\\\s*item\\\\s*name'); return r?r.length:0; }");
+        return n == null ? 0 : ((Number) n).intValue();
+    }
+
+    /** Click one row of the Item Factorization list (the 2nd by default; -DiftRow=N, 0-based, picks another); returns the row text (or a "(...)" message). */
+    public String selectFirstListRow() {
+        Object r = page.evaluate("() => {" + ROWS_OF
+                + " const rows=rowsOf('template\\\\s*name'); if(!rows||!rows.length) return '(no rows in the list)';"
+                + " const row=rows[Math.min(" + Integer.getInteger("iftRow", 1) + ",rows.length-1)]; const t=(row.textContent||'').replace(/\\s+/g,' ').trim();"
+                + " const cell=[...row.querySelectorAll('td,.ui-grid-cell')].find(x=>(x.textContent||'').trim())||row;"
+                + " cell.click(); row.click(); return t.slice(0,160); }");
+        waitForAngular(2500);
+        return r == null ? "" : r.toString();
+    }
+
+    /** Text of the rows in the Item Fraction Details table. */
+    public String detailRowsText() {
+        Object r = page.evaluate("() => {" + ROWS_OF + " const r=rowsOf('^\\\\s*item\\\\s*name'); return r?r.map(x=>(x.textContent||'').replace(/\\s+/g,' ').trim()).join(' || ').slice(0,300):''; }");
+        return r == null ? "" : r.toString();
+    }
+
+    /** First cell (item code) and second cell (item name) of the first Item Fraction Details row, joined by " | "; "" if none. */
+    public String firstDetailItem() {
+        Object r = page.evaluate("() => {" + ROWS_OF + " const rows=rowsOf('^\\\\s*item\\\\s*name'); if(!rows||!rows.length) return '';"
+                + " const c=[...rows[0].querySelectorAll('td,.ui-grid-cell')].map(x=>(x.textContent||'').replace(/\\s+/g,' ').trim());"
+                + " return c.slice(0,2).join(' | '); }");
+        return r == null ? "" : r.toString();
+    }
+
+    /** Text of the report PDF behind the report tab's URL ("" when it can't be fetched or read). */
+    public String reportPdfText() {
+        if (reportPage == null) return "";
+        try {
+            byte[] pdf = reportPage.context().request().get(reportPage.url(),
+                    com.microsoft.playwright.options.RequestOptions.create().setIgnoreHTTPSErrors(true)).body();
+            try (org.apache.pdfbox.pdmodel.PDDocument doc = org.apache.pdfbox.pdmodel.PDDocument.load(pdf)) {
+                return new org.apache.pdfbox.text.PDFTextStripper().getText(doc).replaceAll("\\s+", " ").trim();
+            }
+        } catch (Exception e) {
+            System.out.println("ItemFactorizationTemplate.reportPdfText: " + String.valueOf(e.getMessage()).replaceAll("\\s+", " "));
+            return "";
+        }
+    }
+
+    /** Click Print ({@code printReport()}); the report should open in a NEW tab. Returns that tab's URL, or "" if none opened. */
+    public String clickPrintAndCaptureReport() {
+        int before = page.context().pages().size();
+        try {
+            reportPage = page.context().waitForPage(new com.microsoft.playwright.BrowserContext.WaitForPageOptions().setTimeout(20000),
+                    () -> page.locator("button[ng-click^='printReport']").first()
+                            .click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000)));
+        } catch (Exception e) {
+            System.out.println("ItemFactorizationTemplate.print: no new tab - " + e.getMessage().split("\n")[0]);
+            reportPage = null;
+            return "";
+        }
+        try { reportPage.waitForLoadState(com.microsoft.playwright.options.LoadState.LOAD, new Page.WaitForLoadStateOptions().setTimeout(30000)); }
+        catch (Exception ignore) { }
+        reportPage.waitForTimeout(4000);   // let the report body (a viewer or ajax-filled HTML) render
+        openedTabs = page.context().pages().size() - before;
+        return reportPage.url();
+    }
+
     // ---- form --------------------------------------------------------------
 
     private String fillByNgModel(String ngModel, String value) {

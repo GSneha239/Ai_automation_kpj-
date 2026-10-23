@@ -57,11 +57,12 @@ public class DiscountReason extends BasePage {
                 page.waitForFunction("() => [...document.querySelectorAll('a')].some(a=>/application\\s*config/i.test((a.textContent||'')) && a.offsetParent!==null)",
                         null, new Page.WaitForFunctionOptions().setTimeout(15000));
             } catch (Exception ignore) { }
-            page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const a=[...document.querySelectorAll('a')].find(x=>/application\\s*config/i.test(norm(x.textContent)) && x.offsetParent!==null); if(a) a.click(); }");
-            waitForAngular(1200);
-            // EXACT "Billing" — a prefix match can expand a different (similarly named) menu.
-            page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const a=[...document.querySelectorAll('a')].find(x=>/^\\s*billing\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null); if(a) a.click(); }");
-            waitForAngular(1000);
+            // Expand each level only if it is not already open, and look "Billing" up INSIDE the Application Configuration entry:
+            // "Billing" is also a top-level module in the sidebar (listed before Application Configuration), so an unscoped
+            // lookup expands that one instead and leaves the Discount Reason link hidden.
+            expandMenuEntry(null, "^\\s*application\\s*config(uration)?\\s*$");
+            expandMenuEntry("^\\s*application\\s*config(uration)?\\s*$", "^\\s*billing\\s*$");
+            waitForAngular(800);
             // EXACT text match ONLY — a bare href-contains fallback previously picked a DIFFERENT, similarly
             // spelled menu item on this same submenu (see CancellationReason.nav's "Receipt Cancellation" trap).
             Object href = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
@@ -134,9 +135,13 @@ public class DiscountReason extends BasePage {
      * "already exists" toast submits genuinely different details.
      */
     public String fillDetails(int attempt) {
-        String code = "DR" + String.format("%05d", Math.abs((System.nanoTime() + attempt * 7919L) % 100000));
+        // The Code is always unique: 8 digits from the clock (a 5-digit random one repeats, and the shared environment already
+        // holds many), shifted per attempt. The screen also refuses a Remark that is already taken, and a fixed list of six
+        // names was used up (every attempt answered "already exists"), so the Remark carries the same unique stamp.
+        String stamp = String.format("%08d", Math.abs((System.currentTimeMillis() + attempt * 7919L) % 100000000L));
+        String code = "DR" + stamp;
         lastCode = code;
-        lastRemark = REMARKS[(int) (Math.abs(System.nanoTime() / 1000 + attempt) % REMARKS.length)];
+        lastRemark = REMARKS[(int) (Math.abs(System.nanoTime() / 1000 + attempt) % REMARKS.length)] + " " + stamp;
         Object r = page.evaluate("(a) => { const A=window.angular;" + FIND_FIELDS
                 + " const set=(e,v)=>{ if(!e) return '(no field)'; const c=A.element(e).controller('ngModel'); e.value=v; if(c){c.$setViewValue(v);c.$render();} e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true})); return v; };"
                 + " const cd=set(codeEl, a.code); const rm=set(remEl, a.remark);"

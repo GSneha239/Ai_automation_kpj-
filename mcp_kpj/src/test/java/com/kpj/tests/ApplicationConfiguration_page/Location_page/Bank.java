@@ -92,9 +92,17 @@ public class Bank extends DevHisBase {
         String details = "", toast = "";
         boolean ok = false, exists = false;
         int used = 0;
+        byte[] filledPng = null;
         for (int attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
             details = rn.fillDetails(attempt);
             used++;
+            // Screenshot the FILLED form here — before Submit. Taken after Submit it shows the success toast and
+            // the cleared Code / Remark boxes, so the entered values never appeared in the report.
+            try {
+                page.evaluate("() => { window.scrollTo(0,0); const e=[...document.querySelectorAll('input')].find(x=>x.offsetParent!==null && /code$/i.test(x.getAttribute('ng-model')||'')); if(e) e.scrollIntoView({block:'center'}); }");
+                page.waitForTimeout(400);
+                filledPng = page.screenshot(new com.microsoft.playwright.Page.ScreenshotOptions().setTimeout(8000));
+            } catch (Exception e) { System.out.println("Bank: filled-form screenshot failed - " + e.getMessage()); }
             toast = rn.submitAndGetToast();
             String tl = toast == null ? "" : toast.toLowerCase();
             // "succes" (one s) is deliberate — sibling screens here return "Record added succesfully".
@@ -105,10 +113,14 @@ public class Bank extends DevHisBase {
         }
 
         boolean detOk = !details.contains("(no field)");
-        step(page, "Enter Code and Remark", "Enter Code* and Remark* in the same format as the existing rows",
-                "Code and Remark are entered and match the table's format",
-                details + (used > 1 ? "  [moved " + (used - 1) + "x along the sequence after 'already exists']" : ""),
-                detOk ? "PASS" : "FAIL");
+        String detActual = details + (used > 1 ? "  [moved " + (used - 1) + "x along the sequence after 'already exists']" : "");
+        if (filledPng != null && filledPng.length > 0) {
+            step(filledPng, "Enter Code and Remark", "Enter Code* and Remark* in the same format as the existing rows",
+                    "Code and Remark are entered and match the table's format", detActual, detOk ? "PASS" : "FAIL");
+        } else {
+            step(page, "Enter Code and Remark", "Enter Code* and Remark* in the same format as the existing rows",
+                    "Code and Remark are entered and match the table's format", detActual, detOk ? "PASS" : "FAIL");
+        }
 
         String actual = toast == null || toast.isEmpty() ? "No toast appeared\n" + rn.describeForm()
                 : (ok ? toast

@@ -86,19 +86,27 @@ public class ConsultantOnCall extends BasePage {
             System.out.println("ConsultantOnCall.nav: nav menu never appeared — is this session on an OPD counter?");
         }
 
-        page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                + " const a=[...document.querySelectorAll('a')].find(x=>/ancillary\\s*services?/i.test(norm(x.textContent)) && x.offsetParent!==null); if(a) a.click(); }");
-        waitForAngular(1000);
-        page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                + " const a=[...document.querySelectorAll('a')].find(x=>/^\\s*doctor\\s*roster\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null); if(a) a.click(); }");
-        waitForAngular(1000);
-
-        // The menu label is one word, "ConsultantOnCall" — allow optional spaces either way.
-        Object tagged = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                + " const links=[...document.querySelectorAll('a[href]')].filter(x=>x.offsetParent!==null);"
-                + " const a=links.find(x=>/^consultant\\s*on\\s*call$/i.test(norm(x.textContent)))"
-                + "   || links.find(x=>/#\\/ConsultantOnCall/i.test(x.getAttribute('href')||''));"
-                + " if(!a) return false; a.id='__cocMenu'; return true; }");
+        // Expand each level only if it is not already open: sidebar parents TOGGLE on click, so a blind click on an open
+        // entry closes it (and the children load lazily). Doctor Roster is looked up inside Ancillary Services only.
+        // The sidebar is built lazily after login, so a level can be missing on the first look: walk the whole path again
+        // (up to 3 times) until the ConsultantOnCall link is visible, and say which level failed.
+        final String anc = "^\\s*ancillary\\s*services?\\s*$";
+        Object tagged = Boolean.FALSE;
+        for (int attempt = 1; attempt <= 3 && !Boolean.TRUE.equals(tagged); attempt++) {
+            boolean ancOpen = expandMenuEntry(null, anc);
+            boolean rosterOpen = ancOpen && expandMenuEntry(anc, "^\\s*doctor\\s*roster\\s*$");
+            // The menu label is one word, "ConsultantOnCall" — allow optional spaces either way.
+            tagged = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                    + " const links=[...document.querySelectorAll('a[href]')].filter(x=>x.offsetParent!==null);"
+                    + " const a=links.find(x=>/^consultant\\s*on\\s*call$/i.test(norm(x.textContent)))"
+                    + "   || links.find(x=>/#\\/ConsultantOnCall/i.test(x.getAttribute('href')||''));"
+                    + " if(!a) return false; a.id='__cocMenu'; return true; }");
+            if (!Boolean.TRUE.equals(tagged)) {
+                System.out.println("ConsultantOnCall.nav: attempt " + attempt + " - Ancillary Services open=" + ancOpen
+                        + ", Doctor Roster open=" + rosterOpen + ", ConsultantOnCall link not visible");
+                waitForAngular(1500);
+            }
+        }
         if (Boolean.TRUE.equals(tagged)) {
             try { page.locator("#__cocMenu").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000)); }
             catch (Exception e) { System.out.println("ConsultantOnCall.nav: menu click failed - " + e.getMessage()); }
@@ -239,6 +247,14 @@ public class ConsultantOnCall extends BasePage {
      * @return the chosen text, or {@code (no-uiselect)} / {@code (no-choices)}
      */
     private String selectDuty() {
+        // Newer builds of the screen render Duty as a plain <select ng-model="form.DutyID"> like Doctor and Room —
+        // set it the same way; the ui-select path below is kept for builds that still use the widget.
+        Object plain = page.evaluate("() => new Promise(async resolve => {" + JS
+                + " resolve(await pick('form.DutyID')); })");
+        if (plain != null && isReal(plain.toString())) {
+            System.out.println("ConsultantOnCall: Duty = " + plain + " (native select)");
+            return plain.toString();
+        }
         // Open the ui-select — prefer the one labelled Duty, else the only one on the form. The toggle is
         // clicked via a real Playwright click (not el.click()) so Angular's focus/open handlers all run.
         Object opened = page.evaluate("() => {" + JS
@@ -379,7 +395,12 @@ public class ConsultantOnCall extends BasePage {
                 + "   .filter(e=>e.offsetParent!==null).map(e=>norm(e.textContent)).filter(t=>t);"
                 + " return d.length ? d[0].slice(0,200) : ''; }");
         lastPopup = popup == null ? "" : popup.toString();
-        if (!lastPopup.isEmpty()) System.out.println("ConsultantOnCall: popup -> " + lastPopup);
+        popupPng = null;
+        toastPng = null;
+        if (!lastPopup.isEmpty()) {
+            System.out.println("ConsultantOnCall: popup -> " + lastPopup);
+            popupPng = snap();   // while it is still on screen — accepting it removes it
+        }
 
         acceptSaveDialog();
         waitForAngular(500);
@@ -393,10 +414,20 @@ public class ConsultantOnCall extends BasePage {
                     + " const t=(el.textContent||'').replace(/\\s+/g,' ').trim();"
                     + " if(t && !(window.__cocToasts||[]).includes(t)) (window.__cocToasts=window.__cocToasts||[]).push(t); }); }");
         }
+        toastPng = snap();   // right now, while the toast is still visible (it fades within seconds)
         Object r = page.evaluate("() => { const a=window.__cocToasts||[];"
                 + " return a.find(x=>/(saved|added|updated)\\s*success|success/i.test(x)) || a.find(x=>x) || ''; }");
         waitForAngular(400);
         return r == null ? "" : r.toString().trim();
+    }
+
+    /** Screenshots taken at the moment the Save popup / success toast were on screen (null when not captured). */
+    public byte[] popupPng, toastPng;
+
+    /** A screenshot of the page as it is now; null if it cannot be taken. Never fails the flow. */
+    private byte[] snap() {
+        try { return page.screenshot(new Page.ScreenshotOptions().setTimeout(8000)); }
+        catch (Exception e) { System.out.println("ConsultantOnCall: screenshot failed - " + e.getMessage()); return null; }
     }
 
     // ---- roster calendar + print ------------------------------------------
@@ -406,6 +437,8 @@ public class ConsultantOnCall extends BasePage {
 
     /** Text of the popup raised by Print, and whether it closed after Cancel. */
     public String lastPrintPopup = "";
+    /** Screenshot of the print window itself (null when none was captured). */
+    public byte[] printPng;
 
     /** True on the roster calendar view ({@code #/calendar-ConsultantOnCall}). */
     public boolean onCalendar() {
@@ -503,25 +536,64 @@ public class ConsultantOnCall extends BasePage {
     }
 
     /**
+     * The extra browser window Print opened, or null. The calendar's {@code fnPrint()} does
+     * {@code window.open('', '_blank', ...)} and writes the report into it, so that window's URL stays
+     * {@code about:blank} — a blank URL only disqualifies a window that has no content.
+     */
+    private Page printWindow() {
+        for (Page p : page.context().pages()) {
+            if (p == page || p.isClosed()) continue;
+            try {
+                String u = p.url();
+                if (u != null && !u.isBlank() && !"about:blank".equals(u)) return p;
+                Object txt = p.evaluate("() => (document.body ? (document.body.innerText || '').trim().length : 0)");
+                if (txt instanceof Number && ((Number) txt).intValue() > 0) return p;
+            } catch (Exception ignore) { /* window closed or still loading */ }
+        }
+        return null;
+    }
+
+    /** One line naming the print window: its URL (or 'about:blank') and what it shows. */
+    private String describePrintWindow(Page w) {
+        String url = "", title = "", text = "";
+        try { url = w.url(); } catch (Exception ignore) { }
+        try { title = w.title(); } catch (Exception ignore) { }
+        try {
+            Object t = w.evaluate("() => ((document.body && document.body.innerText) || '').replace(/\\s+/g,' ').trim().slice(0,120)");
+            text = t == null ? "" : t.toString();
+        } catch (Exception ignore) { }
+        return "print window (" + (url == null || url.isBlank() ? "about:blank" : url) + ")"
+                + (title.isBlank() ? "" : " titled '" + title + "'") + (text.isBlank() ? "" : " showing: " + text);
+    }
+
+    /**
      * Capture whatever Print raised: an in-page modal, or a new tab (DevHIS opens its SQLReport
      * {@code .aspx} outputs in one).
      *
-     * <p>Note a NATIVE Chromium print dialog cannot be seen or dismissed by Playwright — it is browser
-     * chrome, not DOM. If nothing is found here, that is the likely explanation, and the browser is
-     * launched with {@code --kiosk-printing}, which suppresses that dialog anyway.</p>
+     * <p>On the Roster Calendar the print action is a real browser window ({@code window.open('', '_blank')}
+     * with the report written into it), so {@link #printWindow()} finds it even though its URL is
+     * {@code about:blank}. A NATIVE Chromium print dialog, by contrast, cannot be seen or dismissed by
+     * Playwright — it is browser chrome, not DOM — and the browser is launched with {@code --kiosk-printing},
+     * which suppresses that dialog anyway.</p>
      */
     public String capturePrintPopup() {
         for (int i = 0; i < 12; i++) {
-            // A new tab counts as the "print popup" — that is how DevHIS shows its reports.
-            for (Page p : page.context().pages()) {
-                if (p != page && !p.isClosed()) {
-                    String u = p.url();
-                    if (u != null && !u.isBlank() && !"about:blank".equals(u)) {
-                        lastPrintPopup = "new tab: " + u;
-                        System.out.println("ConsultantOnCall: print popup -> " + lastPrintPopup);
-                        return lastPrintPopup;
-                    }
+            // A new tab / window counts as the "print popup" — that is how DevHIS shows its reports.
+            Page w = printWindow();
+            if (w != null) {
+                // The print window is a separate browser window, so a screenshot of the main page never shows it —
+                // take one of the window itself (after a moment, so the calendar the page writes into it has rendered).
+                printPng = null;
+                try {
+                    w.bringToFront();
+                    page.waitForTimeout(1200);
+                    printPng = w.screenshot(new Page.ScreenshotOptions().setTimeout(8000));
+                } catch (Exception e) {
+                    System.out.println("ConsultantOnCall.capturePrintPopup: print window screenshot failed - " + e.getMessage());
                 }
+                lastPrintPopup = describePrintWindow(w);
+                System.out.println("ConsultantOnCall: print popup -> " + lastPrintPopup);
+                return lastPrintPopup;
             }
             Object modal = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
                     + " const d=[...document.querySelectorAll('.modal,.modal-dialog,.jAlert,[role=dialog],.sweet-alert,.ui-dialog,.print-preview')]"
@@ -541,16 +613,12 @@ public class ConsultantOnCall extends BasePage {
 
     /** Dismiss the print popup via its <b>Cancel</b> (closing the report tab if that is what opened). */
     public String cancelPrintPopup() {
-        // A report tab is "cancelled" by closing it.
-        for (Page p : page.context().pages()) {
-            if (p != page && !p.isClosed()) {
-                String u = p.url();
-                if (u != null && !u.isBlank() && !"about:blank".equals(u)) {
-                    try { p.close(); } catch (Exception ignore) { }
-                    waitForAngular(600);
-                    return "closed the report tab";
-                }
-            }
+        // A report tab / print window is "cancelled" by closing it.
+        Page w = printWindow();
+        if (w != null) {
+            try { w.close(); } catch (Exception ignore) { }
+            waitForAngular(600);
+            return "closed the print window";
         }
         Object clicked = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
                 + " const vis=e=>e && e.offsetParent!==null;"
@@ -567,12 +635,7 @@ public class ConsultantOnCall extends BasePage {
 
     /** True when no print popup remains: no extra report tab AND no visible modal. */
     public boolean printPopupClosed() {
-        for (Page p : page.context().pages()) {
-            if (p != page && !p.isClosed()) {
-                String u = p.url();
-                if (u != null && !u.isBlank() && !"about:blank".equals(u)) return false;
-            }
-        }
+        if (printWindow() != null) return false;
         Object modal = page.evaluate("() => [...document.querySelectorAll('.modal,.modal-dialog,.jAlert,[role=dialog],.sweet-alert,.ui-dialog,.print-preview')]"
                 + ".some(e=>e.offsetParent!==null && (e.textContent||'').trim())");
         return !Boolean.TRUE.equals(modal);

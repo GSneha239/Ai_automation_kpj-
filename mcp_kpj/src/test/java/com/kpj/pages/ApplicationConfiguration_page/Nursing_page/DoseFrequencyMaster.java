@@ -153,11 +153,17 @@ public class DoseFrequencyMaster extends BasePage {
      * after an "already exists" toast submits genuinely different details.
      */
     public String fillHeaderDetails(int attempt) {
-        String code = "DF" + String.format("%05d", Math.abs((System.nanoTime() + attempt * 7919L) % 100000));
+        // Code: a real random number (System.nanoTime() % 100000 only ticks in steps of 100 on Windows - about 1000 values).
+        String code = "DF" + String.format("%05d", java.util.concurrent.ThreadLocalRandom.current().nextInt(100000));
         lastCode = code;
         String[] pick = REMARK_ABBR[attempt % REMARK_ABBR.length];
-        lastRemark = pick[0] + (attempt >= REMARK_ABBR.length ? " " + (attempt / REMARK_ABBR.length + 1) : "");
-        lastAbbr = pick[1] + (attempt >= REMARK_ABBR.length ? (attempt / REMARK_ABBR.length + 1) : "");
+        // The Remark (description) must be UNIQUE: the server answers "Description Already Exist" for a repeated one, and the short list
+        // above is used up. A realistic name + the run time (+ the retry number) never repeats.
+        String stamp = java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyMMddHHmmss"));
+        lastRemark = pick[0] + " " + stamp + (attempt > 0 ? "-" + attempt : "");
+        // The Abbreviation must be UNIQUE too ("OD" itself was already taken, so a unique Remark alone still got "already exists", and each
+        // saved run uses one list entry up for good). Keep the clinical abbreviation and add two random digits: "OD47".
+        lastAbbr = pick[1] + String.format("%02d", java.util.concurrent.ThreadLocalRandom.current().nextInt(100));
         Object r = page.evaluate("(a) => { const A=window.angular;" + FIND_FIELDS
                 + " const set=(e,v)=>{ if(!e) return '(no field)'; const c=A.element(e).controller('ngModel'); e.value=v; if(c){c.$setViewValue(v);c.$render();} e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true})); return v; };"
                 + " const cd=set(codeEl, a.code); const rm=set(remEl, a.remark); const ab=set(abbrEl, a.abbr);"

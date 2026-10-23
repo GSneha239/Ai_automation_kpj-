@@ -59,7 +59,7 @@ public class AcceptRadiologyOrder extends DevHisBase {
 
         String counter = System.getProperty("counter", COUNTER_FOR_MENU);
         String stamp = String.format("%05d", Math.abs(System.nanoTime() % 100000));
-        String from = System.getProperty("from", "01/01/2020");
+        String from = System.getProperty("from", "01/01/2026");
         String to = System.getProperty("to", "31/12/2026");
 
         // Accept tab

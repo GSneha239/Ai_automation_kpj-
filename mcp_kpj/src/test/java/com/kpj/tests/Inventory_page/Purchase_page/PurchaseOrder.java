@@ -100,6 +100,14 @@ public class PurchaseOrder extends DevHisBase {
 
         addSummary("Form controls", po.describeControls());
 
+        // 2b) Store — the item picker's Search refuses to run without one ("Please Select Store Name !!!!").
+        String store = po.selectStore();
+        boolean storeOk = po.storeSelected();
+        step(page, "Select Store", "Select the Store",
+                "A Store is selected",
+                storeOk ? "PASSES: Store = " + store : "FAILS: " + store,
+                storeOk ? "PASS" : "FAIL");
+
         // 3) Select Supplier
         String supplier = po.selectSupplier();
         boolean supplierOk = po.supplierSelected();
@@ -126,6 +134,14 @@ public class PurchaseOrder extends DevHisBase {
         if (!pickerOpen) { addSummary("Result", "FAILED — the item picker never opened"); return; }
 
         addSummary("Item Search dialog controls", po.describeControls());
+
+        // 5b) The dialog's own Store — its Search refuses to run (0 rows, "Please Select Store Name !!!!") while none is chosen.
+        String pickerStore = po.selectPickerStore();
+        boolean pickerStoreOk = po.pickerStoreSelected();
+        step(page, "In dialog box - Item Search: select the Store", "Select the Store from the dialog's Store dropdown",
+                "A Store is selected in the dialog",
+                pickerStoreOk ? "PASSES: Store = " + pickerStore : "FAILS: " + pickerStore,
+                pickerStoreOk ? "PASS" : "FAIL");
 
         // 6) In the dialog: Search, tick checkbox, OK
         String rowsResult = po.clickSearchAndVerifyRows();
@@ -216,7 +232,8 @@ public class PurchaseOrder extends DevHisBase {
         boolean success = com.kpj.pages.Inventory_page.Purchase_page.PurchaseOrder.isSuccess(toast);
         String actual = toast == null || toast.isEmpty()
                 ? "No message appeared — " + po.lastSaveDiagnostics
-                : (success ? toast : "Save not confirmed — the screen answered: \"" + toast + "\"");
+                : (success ? toast : "Save not confirmed — the screen answered: \"" + toast + "\""
+                        + (po.lastSaveHttp.isEmpty() ? "" : "; the server answered: " + po.lastSaveHttp));
         step(page, "Click Save & verify success toast", "Click Save; wait for the success toast",
                 "'... saved successfully' toast", actual, success ? "PASS" : "FAIL");
 

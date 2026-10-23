@@ -80,7 +80,9 @@ public class Designation extends DevHisBase {
             step(page, attempt == 0 ? "Enter Code and Remark" : "Enter Code and Remark (retry " + attempt + ")",
                     "Enter the Code and the Remark", "Code and Remark are entered", fill, fillOk ? "PASS" : "FAIL");
             toast = dg.submitAndGetToast();
-            tl = toast == null ? "" : toast.toLowerCase();
+            // Drop the toast frame's close "×" and "KPJ Portal" title so the report shows just the message.
+            if (toast != null) toast = toast.replaceFirst("^[\\u00d7x\\s]*KPJ\\s*Portal\\s*", "").trim();
+            tl =toast == null ? "" : toast.toLowerCase();
             ok = tl.contains("saved") || tl.contains("success") || tl.contains("succes") || tl.contains("added");
             tries.append(attempt == 0 ? "" : " | ").append(dg.lastCode).append('/').append(dg.lastRemark)
                     .append(" -> \"").append(toast).append('"');

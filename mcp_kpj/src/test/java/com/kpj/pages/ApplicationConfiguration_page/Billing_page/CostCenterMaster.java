@@ -47,8 +47,11 @@ public class CostCenterMaster extends BasePage {
         page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
                 + " const a=[...document.querySelectorAll('a')].find(x=>/application\\s*config/i.test(norm(x.textContent)) && x.offsetParent!==null); if(a) a.click(); }");
         waitForAngular(900);
+        // "Billing" is ALSO a top-level module in the sidebar, listed before Application Configuration: an unscoped lookup clicks
+        // that one, which collapses the Application Configuration menu again. Look only inside the Application Configuration entry.
         page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                + " const a=[...document.querySelectorAll('a')].find(x=>/^\\s*billing\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null); if(a) a.click(); }");
+                + " const top=[...document.querySelectorAll('a')].find(x=>/application\\s*config/i.test(norm(x.textContent)) && x.offsetParent!==null); const scope=(top&&top.closest('li'))||document;"
+                + " const a=[...scope.querySelectorAll('a')].find(x=>/^\\s*billing\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null); if(a) a.click(); }");
         waitForAngular(800);
         Object href = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
                 + " const a=[...document.querySelectorAll('a[href]')].find(x=>/cost\\s*cent(er|re)/i.test(norm(x.textContent)) || /costcenter/i.test(x.getAttribute('href')||'')); if(!a) return ''; a.id='__ccMenu'; return a.getAttribute('href')||'link'; }");
@@ -106,7 +109,12 @@ public class CostCenterMaster extends BasePage {
                     null, new Page.WaitForFunctionOptions().setTimeout(10000));
             Object idx = page.evaluate("() => { const e=document.querySelector(\"select[ng-model='CostCenter.locationid']\"); return [...e.options].findIndex(o=>o.value && (o.textContent||'').trim() && !/^-*\\s*select/i.test((o.textContent||'').trim())); }");
             int i = idx instanceof Number ? ((Number) idx).intValue() : 1;
-            page.locator("select[ng-model='CostCenter.locationid']").first().selectOption(new com.microsoft.playwright.options.SelectOption().setIndex(i));
+            // The native <select> sits hidden behind a select2 widget (aria-hidden, not "visible"), so Playwright's selectOption
+            // waits 30 s and times out. Set the option in the page and fire the change through Angular and jQuery (select2).
+            page.evaluate("(i) => { const e=document.querySelector(\"select[ng-model='CostCenter.locationid']\"); e.selectedIndex=i;"
+                    + " e.dispatchEvent(new Event('change',{bubbles:true}));"
+                    + " try{ window.angular.element(e).triggerHandler('change'); }catch(x){}"
+                    + " if(window.jQuery){ try{ window.jQuery(e).trigger('change'); }catch(x){} } }", i);
             waitForAngular(400);
             loc = String.valueOf(page.evaluate("() => { const e=document.querySelector(\"select[ng-model='CostCenter.locationid']\"); return (e.options[e.selectedIndex]||{}).textContent||''; }")).trim();
         } catch (Exception e) { System.out.println("fillDetails: Location select failed - " + e.getMessage()); }

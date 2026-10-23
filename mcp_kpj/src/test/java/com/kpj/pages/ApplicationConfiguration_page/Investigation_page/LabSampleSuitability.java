@@ -69,11 +69,11 @@ public class LabSampleSuitability extends BasePage {
                 page.waitForFunction("() => [...document.querySelectorAll('a')].some(a=>/application\\s*config/i.test((a.textContent||'')) && a.offsetParent!==null)",
                         null, new Page.WaitForFunctionOptions().setTimeout(15000));
             } catch (Exception ignore) { }
-            page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const a=[...document.querySelectorAll('a')].find(x=>/application\\s*config/i.test(norm(x.textContent)) && x.offsetParent!==null); if(a) a.click(); }");
-            waitForAngular(1200);
-            // EXACT "Investigation" — a prefix match can expand a different (similarly named) menu.
-            page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const a=[...document.querySelectorAll('a')].find(x=>/^\\s*investigations?\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null && (x.getAttribute('href')||'')==='#'); if(a) a.click(); }");
-            waitForAngular(1500);
+            // Open Application Configuration, then the "Investigation" entry INSIDE it. An unscoped lookup finds the
+            // top-level Investigation module instead (same name), which leaves this submenu closed and its link hidden.
+            expandMenuEntry(null, "^\\s*application\\s*config(uration)?\\s*$");
+            expandMenuEntry("^\\s*application\\s*config(uration)?\\s*$", "^\\s*investigations?\\s*$");
+            waitForAngular(800);
             Object href = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const a=[...document.querySelectorAll('a[href]')].find(x=>/^\\s*lab\\s*sample\\s*suitability\\s*$/i.test(norm(x.textContent)) || /suitab/i.test(x.getAttribute('href')||'')); if(!a) return ''; a.id='__lsMenu'; return a.getAttribute('href')||'link'; }");
             if (href == null || href.toString().isEmpty()) { System.out.println("LabSampleSuitability.nav: menu link not found (attempt " + (attempt + 1) + ")"); continue; }
             if (href.toString().startsWith("#")) menuHref = href.toString();
@@ -135,8 +135,11 @@ public class LabSampleSuitability extends BasePage {
     public String fillDetails(int attempt) {
         String code = "LS" + String.format("%05d", Math.abs((System.nanoTime() + attempt * 7919L) % 100000));
         lastCode = code;
-        lastRemark = REMARKS[(int) (Math.abs(System.nanoTime() / 1000 + attempt) % REMARKS.length)];
-        lastRemark2 = REMARKS2[(int) (Math.abs(System.nanoTime() / 1000 + attempt) % REMARKS2.length)];
+        // The Remark is checked for duplicates, and a fixed pool of six was used up in the shared environment (every attempt
+        // answered "already exists"), so each Remark carries the unique stamp from the Code.
+        String stamp = code.substring(2);
+        lastRemark = REMARKS[(int) (Math.abs(System.nanoTime() / 1000 + attempt) % REMARKS.length)] + " " + stamp;
+        lastRemark2 = REMARKS2[(int) (Math.abs(System.nanoTime() / 1000 + attempt) % REMARKS2.length)] + " " + stamp;
         Object r = page.evaluate("(a) => { const A=window.angular;" + FIND_FIELDS
                 + " const set=(e,v)=>{ if(!e) return '(no field)'; const c=A.element(e).controller('ngModel'); e.value=v; if(c){c.$setViewValue(v);c.$render();} e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true})); return v; };"
                 + " const cd=set(codeEl, a.code); const rm=set(remEl, a.remark); const rm2=set(remEl2, a.remark2);"

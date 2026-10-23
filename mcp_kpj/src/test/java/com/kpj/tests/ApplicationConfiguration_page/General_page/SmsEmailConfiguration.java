@@ -115,7 +115,7 @@ public class SmsEmailConfiguration extends DevHisBase {
         // saves again rather than reporting a working screen as broken.
         String toast = se.saveAndGetToast();
         StringBuilder retries = new StringBuilder();
-        for (int attempt = 1; attempt <= 3
+        for (int attempt = 1; attempt <= 8
                 && toast != null && toast.toLowerCase().contains("already exist"); attempt++) {
             retries.append(retries.length() == 0 ? "" : "; ")
                    .append("\"").append(toast).append("\" for ").append(event);
@@ -144,7 +144,8 @@ public class SmsEmailConfiguration extends DevHisBase {
         // A message containing "undefined" FAILS the step, even though the save goes through: the record
         // identifier is never substituted into the template, so the user is told "undefined" was saved.
         boolean malformed = toast != null && toast.toLowerCase().contains("undefined");
-        step(page, "Click Save & success toast", "Click Save; wait for the success toast",
+        // The screenshot taken while the toast was on screen — a shot after the step would miss it.
+        step(se.toastPng != null ? se.toastPng : page.screenshot(), "Click Save & success toast", "Click Save; wait for the success toast",
                 "'... saved successfully' toast",
                 (ok ? "PASSES because the screen answered with a success message: " : "FAILS — ") + actual
                     + (malformed

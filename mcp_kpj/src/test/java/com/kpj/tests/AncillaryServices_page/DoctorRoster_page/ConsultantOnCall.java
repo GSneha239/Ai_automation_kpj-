@@ -92,7 +92,7 @@ public class ConsultantOnCall extends DevHisBase {
         String ddr = roster.selectDoctorDutyAndRoom();
         boolean ddrOk = roster.doctorDutyRoomSelected();
         step(page, "Select Doctor, Duty and Consultation Room",
-                "Select a Doctor, a Duty (ui-select) and a Consultation Room",
+                "Select a Doctor, a Duty and a Consultation Room",
                 "Doctor, Duty and Consultation Room are all selected", ddr, ddrOk ? "PASS" : "FAIL");
 
         // 5) Add the row
@@ -108,11 +108,22 @@ public class ConsultantOnCall extends DevHisBase {
         String popup = roster.lastPopup;
         String actual = (popup == null || popup.isEmpty() ? "No popup captured" : "Popup: \"" + popup + "\"")
                 + " -> " + (toast == null || toast.isEmpty() ? "No toast appeared" : toast);
-        step(page, "Click Save & verify popup + success toast",
-                "Click Save (fnSaveRoster); confirm the popup; wait for the success toast",
-                "A confirmation popup is shown and a '... saved successfully' toast follows",
-                ok ? actual : "Save not confirmed — " + actual,
-                ok ? "PASS" : "FAIL");
+        // Screenshots taken while the toast / popup were on screen — one taken here, after the fact, would miss them.
+        byte[] savePng = roster.toastPng != null && roster.toastPng.length > 0 ? roster.toastPng
+                : (roster.popupPng != null && roster.popupPng.length > 0 ? roster.popupPng : null);
+        if (savePng != null) {
+            step(savePng, "Click Save & verify popup + success toast",
+                    "Click Save (fnSaveRoster); confirm the popup; wait for the success toast",
+                    "A confirmation popup is shown and a '... saved successfully' toast follows",
+                    ok ? actual : "Save not confirmed — " + actual,
+                    ok ? "PASS" : "FAIL");
+        } else {
+            step(page, "Click Save & verify popup + success toast",
+                    "Click Save (fnSaveRoster); confirm the popup; wait for the success toast",
+                    "A confirmation popup is shown and a '... saved successfully' toast follows",
+                    ok ? actual : "Save not confirmed — " + actual,
+                    ok ? "PASS" : "FAIL");
+        }
 
         addSummary("From Date / To Date", fromDate + " -> " + toDate);
         addSummary("Department", roster.lastDepartment);

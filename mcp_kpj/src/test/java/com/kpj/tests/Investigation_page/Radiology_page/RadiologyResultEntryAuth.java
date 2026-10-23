@@ -137,7 +137,7 @@ public class RadiologyResultEntryAuth extends DevHisBase {
         String report = re.clickReportAndVerify();
         boolean reportOk = !re.reportBlank;
         addSummary("Result Entry Report", report);
-        step(page, "Click Result Entry Report and verify it is generated",
+        step(re.reportPng, "Click Result Entry Report and verify it is generated",
                 "Click Result Entry Report",
                 "A report is produced and carries content",
                 (reportOk

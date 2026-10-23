@@ -61,17 +61,28 @@ public class ItemSaleList extends BasePage {
     // ---- navigation ------------------------------------------------------
 
     /** Application menu &rarr; Inventory &rarr; POS &rarr; Item Sale List. */
+    /** Server errors (HTTP 400+) seen from the moment the menu was walked — named in the report when the view never loads. */
+    public final java.util.List<String> httpErrors = new java.util.concurrent.CopyOnWriteArrayList<>();
+    /** True once the page's header no longer says PATIENT DASHBOARD, i.e. the screen's own view replaced the dashboard. */
+    public boolean viewSwitched = false;
+
     public boolean navigateViaMenu(String baseUrl) {
         try { page.waitForFunction("() => window.angular", null,
                 new Page.WaitForFunctionOptions().setTimeout(20000)); } catch (Exception ignore) { }
+        page.onResponse(r -> {
+            try { if (r.status() >= 400) httpErrors.add("HTTP " + r.status() + " " + r.request().method() + " " + r.url()); }
+            catch (Exception ignore) { }
+        });
 
         Object href = null;
         for (int attempt = 1; attempt <= 3; attempt++) {
-            clickMenu("^\\s*inventory\\s*$");
-            clickMenu("^\\s*pos\\s*$");
+            // Open each level only if it is not already open: a click on an open entry CLOSES it, and this loop used to
+            // click again on every retry, shutting the menu it had just opened. POS is looked up INSIDE Inventory only.
+            expandMenuEntry(null, "^\\s*inventory\\s*$");
+            expandMenuEntry("^\\s*inventory\\s*$", "^\\s*pos\\s*$");
             lastMenu = describeMenu();
             href = page.evaluate("() => {" + JS
-                    + " const a=[...document.querySelectorAll('a[href]')]"
+                    + " const a=[...document.querySelectorAll('a[href]')].filter(vis)"
                     + "   .find(x=>/^\\s*item\\s*sale\\s*list\\s*$/i.test(norm(x.textContent)));"
                     + " if(!a) return ''; a.id='__islMenu'; return a.getAttribute('href')||''; }");
             if (href != null && !href.toString().isEmpty()) break;
@@ -90,10 +101,24 @@ public class ItemSaleList extends BasePage {
             catch (Exception ignore) { }
             waitForAngular(3500);
         }
+        // The route changing is not the screen loading: the dashboard stays on screen (with its own From/To date widgets,
+        // which the date step would then fill instead) until the screen's view arrives. Wait for the header to change.
+        viewSwitched = false;
+        if (onScreen()) {
+            try {
+                page.waitForFunction("() => !/patient\\s*dashboard/i.test(((document.body && document.body.innerText) || '').slice(0,300))",
+                        null, new Page.WaitForFunctionOptions().setTimeout(25000));
+                viewSwitched = true;
+            } catch (Exception e) {
+                System.out.println("ItemSaleList.nav: the URL changed but the page still shows the PATIENT DASHBOARD after 25s"
+                        + (httpErrors.isEmpty() ? "" : " — server errors: " + httpErrors));
+            }
+            waitForAngular(600);
+        }
         Object body = page.evaluate("() => (document.body? document.body.innerText : '')"
                 + ".replace(/\\s+/g,' ').trim().slice(0,300)");
         lastBodyText = body == null ? "" : body.toString();
-        return onScreen() && !lastBodyText.isEmpty();
+        return onScreen() && viewSwitched && !lastBodyText.isEmpty();
     }
 
     private void clickMenu(String textRegex) {
@@ -205,7 +230,22 @@ public class ItemSaleList extends BasePage {
         waitForAngular(500);
         Object back = page.evaluate("(i) => { const e=document.getElementById(i);"
                 + " return e? (e.value||'') : '(gone)'; }", id);
-        return back == null ? "" : back.toString();
+        String got = back == null ? "" : back.toString();
+        if (!value.equals(got)) {
+            // This is a pre-filled picker box (class txtDate, inputmode=none, maxlength 10): typed keystrokes are discarded
+            // and the box ends up empty. Set the value through the box's own model instead, as other screens here do.
+            Object set = page.evaluate("(a) => { const e=document.getElementById(a.id); if(!e) return '(gone)';"
+                    + " e.value=a.v;"
+                    + " try{ const c=angular.element(e).controller('ngModel'); if(c){ c.$setViewValue(a.v); c.$render(); } }catch(x){}"
+                    + " e.dispatchEvent(new Event('input',{bubbles:true}));"
+                    + " e.dispatchEvent(new Event('change',{bubbles:true}));"
+                    + " e.dispatchEvent(new Event('blur',{bubbles:true}));"
+                    + " return e.value||''; }", java.util.Map.of("id", id, "v", value));
+            waitForAngular(500);
+            got = set == null ? "" : set.toString();
+        }
+        dismissDatePicker();   // close the calendar the date entry left open
+        return got;
     }
 
     public boolean datesEntered(String from, String to) {

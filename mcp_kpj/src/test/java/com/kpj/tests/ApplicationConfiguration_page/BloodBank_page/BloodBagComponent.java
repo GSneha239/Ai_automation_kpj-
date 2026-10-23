@@ -63,6 +63,8 @@ public class BloodBagComponent extends DevHisBase {
             fill = bb.fillDetails(attempt);
             used++;
             toast = bb.submitAndGetToast();
+            // Drop the toast frame's close "×" and "KPJ Portal" title so the report shows just the message.
+            if (toast != null) toast = toast.replaceFirst("^[\\u00d7x\\s]*KPJ\\s*Portal\\s*", "").trim();
             String tl = toast == null ? "" : toast.toLowerCase();
             ok = tl.contains("saved") || tl.contains("success") || tl.contains("added") || tl.contains("updated");
             exists = tl.contains("exist") || tl.contains("already");
@@ -79,8 +81,11 @@ public class BloodBagComponent extends DevHisBase {
         String actual = toast == null || toast.isEmpty() ? "No toast appeared"
                 : (ok ? toast : (exists ? "Still 'already exists' after " + used + " attempt(s) with different details: \"" + toast + "\""
                                          : "Save not confirmed — server returned: \"" + toast + "\""));
-        String stepActual = (used > 1 && ok ? "(saved on attempt " + used + ") " : "") + actual;
-        step(page, "Click Submit & success toast", "Click Submit; on 'already exists' change the details and Submit again",
+        String stepActual = (used > 1 && ok ? "(saved on attempt " + used + ") " : "") + actual
+                + (bb.lastSaveHttp.isEmpty() ? "" : "  [server: " + bb.lastSaveHttp + "]");
+        // The screenshot is the one taken while the toast was visible — a page shot after the step would miss it.
+        step(bb.toastPng != null ? bb.toastPng : page.screenshot(), "Click Submit & success toast",
+                "Click Submit; on 'already exists' change the details and Submit again",
                 "'... saved successfully.' toast", stepActual, ok ? "PASS" : "FAIL");
 
         addSummary("Blood Bag Component Code", bb.lastCode);

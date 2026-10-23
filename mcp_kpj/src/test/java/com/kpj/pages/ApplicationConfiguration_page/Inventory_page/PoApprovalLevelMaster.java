@@ -55,8 +55,10 @@ public class PoApprovalLevelMaster extends BasePage {
         try { page.waitForFunction("() => window.angular", null,
                 new Page.WaitForFunctionOptions().setTimeout(20000)); } catch (Exception ignore) { }
 
-        clickMenu("^\\s*application\\s*configuration\\s*$");
-        clickMenu("^\\s*inventory\\s*$");
+        // Expand each level only if it is not already open: a click on an open entry CLOSES it, so a blind click can leave
+        // Application Configuration shut and the run on the dashboard. Inventory is looked up INSIDE Application Configuration.
+        expandMenuEntry(null, "^\\s*application\\s*config(uration)?\\s*$");
+        expandMenuEntry("^\\s*application\\s*config(uration)?\\s*$", "^\\s*inventory\\s*$");
         lastMenu = describeMenu();
 
         // Anchored to the WHOLE label, and hidden anchors are included on purpose: these menu links sit in
@@ -64,11 +66,13 @@ public class PoApprovalLevelMaster extends BasePage {
         // contains the words — the scaffolding trap that once ran an entire Compliance flow against
         // Complaint Type and reported PASS against the wrong screen's fields.
         Object href = page.evaluate("() => {" + JS
-                + " const a=[...document.querySelectorAll('a[href]')]"
+                + " const links=[...document.querySelectorAll('a[href]')];"
                 // PO, not PR — the two labels differ by one letter and sit next to each other in this
                 // submenu, so the match is anchored and the sibling is rejected outright below.
-                + "   .find(x=>/^\\s*po\\s*approval\\s*level\\s*master\\s*$/i.test(norm(x.textContent))"
-                + "        || /^\\s*po\\s*approval\\s*level\\s*$/i.test(norm(x.textContent)));"
+                + " const hit=x=>/^\\s*po\\s*approval\\s*level\\s*master\\s*$/i.test(norm(x.textContent))"
+                + "        || /^\\s*po\\s*approval\\s*level\\s*$/i.test(norm(x.textContent));"
+                // A visible link first; a hidden one only as the fallback (the route can still be read off it).
+                + " const a=links.filter(vis).find(hit) || links.find(hit);"
                 + " if(!a) return ''; a.id='__poMenu'; return a.getAttribute('href')||''; }");
         lastRoute = href == null ? "" : href.toString();
         if (!lastRoute.isEmpty()) {
@@ -123,8 +127,11 @@ public class PoApprovalLevelMaster extends BasePage {
     private void clickMenu(String textRegex) {
         page.evaluate("(re) => {" + JS
                 + " const rx=new RegExp(re,'i');"
-                + " const a=[...document.querySelectorAll('a,li>a,span')].filter(vis)"
-                + "   .find(x=>rx.test(norm(x.textContent)));"
+                + " const all=[...document.querySelectorAll('a,li>a,span')].filter(vis)"
+                + "   .filter(x=>rx.test(norm(x.textContent)));"
+                + " const ac=[...document.querySelectorAll('a')].find(x=>/^\s*application\s*configuration\s*$/i.test(norm(x.textContent)));"
+                + " const root=ac&&ac.closest('li'); const a=(root&&all.find(x=>x!==ac&&root.contains(x)))||all[0];"
+
                 + " if(a) a.click(); }", textRegex);
         waitForAngular(1200);
     }
@@ -234,7 +241,13 @@ public class PoApprovalLevelMaster extends BasePage {
      * <p>The list is waited for rather than sampled once — these dropdowns fill asynchronously, and one
      * early read reports "(no-option)" for a screen that is merely still loading.</p>
      */
-    public String selectLevel() {
+    public String selectLevel() { return selectLevel(0); }
+
+    /** Number of real options in the level dropdown (read by the last {@link #selectLevel(int)}). */
+    public int levelCount = 0;
+
+    /** Select the {@code which}-th real level (0 = first); clamps to the last one. */
+    public String selectLevel(int which) {
         long end = System.currentTimeMillis() + 12000;
         int n = 0;
         while (n == 0 && System.currentTimeMillis() < end) {
@@ -247,7 +260,7 @@ public class PoApprovalLevelMaster extends BasePage {
             if (n == 0) page.waitForTimeout(400);
         }
 
-        Object info = page.evaluate("() => {" + JS
+        Object info = page.evaluate("(w) => {" + JS
                 + " document.querySelectorAll('#__poSel').forEach(e=>e.removeAttribute('id'));"
                 + " const sels=[...document.querySelectorAll('select')].filter(vis)"
                 + "   .filter(s=>!/pagination|colFilter/i.test(ngOf(s)));"
@@ -257,11 +270,12 @@ public class PoApprovalLevelMaster extends BasePage {
                 + " if(!e) return null; e.id='__poSel';"
                 + " const reals=[...e.options].map((o,i)=>({o,i}))"
                 + "   .filter(x=>x.o.value && !/^-*\\s*select/i.test(norm(x.o.text)));"
-                + " return {index: reals.length? reals[0].i : -1, ng:(ngOf(e)||'?'), count:reals.length}; }");
+                + " return {index: reals.length? reals[Math.min(w, reals.length-1)].i : -1, ng:(ngOf(e)||'?'), count:reals.length}; }", which);
         if (info == null) { lastLevel = "(no dropdown on this screen)"; return lastLevel; }
         @SuppressWarnings("unchecked")
         java.util.Map<String, Object> m = (java.util.Map<String, Object>) info;
         int index = ((Number) m.get("index")).intValue();
+        levelCount = ((Number) m.get("count")).intValue();
         if (index < 0) { lastLevel = "(no-option) [" + m.get("ng") + "]"; return lastLevel; }
         try {
             page.locator("#__poSel").selectOption(
@@ -288,19 +302,29 @@ public class PoApprovalLevelMaster extends BasePage {
      * when Submit refuses, so the report can say whether the refusal was caused by the missing location
      * or is a fault of the save itself.</p>
      */
-    public String selectLocation() {
-        Object r = page.evaluate("() => {" + JS
+    public String selectLocation() { return selectLocation(0); }
+
+    /** Number of real (non --All--) locations in the Location dropdown. */
+    public int locationCount = 0;
+
+    /** Select the {@code which}-th real location (0 = first); clamps to the last one. */
+    public String selectLocation(int which) {
+        Object cnt = page.evaluate("() => {" + JS
+                + " const e=[...document.querySelectorAll('select')].filter(vis).find(s=>/locationid$/i.test(tail(s)));"
+                + " return e? [...e.options].filter(o=>o.value && !/^-*\\s*(all|select)/i.test(norm(o.text))).length : 0; }");
+        locationCount = cnt instanceof Number ? ((Number) cnt).intValue() : 0;
+        Object r = page.evaluate("(w) => {" + JS
                 + " const e=[...document.querySelectorAll('select')].filter(vis)"
                 + "   .find(s=>/locationid$/i.test(tail(s)));"
                 + " if(!e) return '(no location dropdown)';"
                 + " const reals=[...e.options].map((o,i)=>({o,i}))"
-                + "   .filter(x=>x.o.value && !/^-*\s*(all|select)/i.test(norm(x.o.text)));"
+                + "   .filter(x=>x.o.value && !/^-*\\s*(all|select)/i.test(norm(x.o.text)));"
                 + " if(!reals.length) return '(no real location option)';"
-                + " e.selectedIndex=reals[0].i;"
+                + " e.selectedIndex=reals[Math.min(w, reals.length-1)].i;"
                 + " try{ const c=angular.element(e).controller('ngModel');"
                 + "      if(c){ c.$setViewValue(e.value); c.$render(); } }catch(err){}"
                 + " e.dispatchEvent(new Event('change',{bubbles:true}));"
-                + " return norm((e.options[e.selectedIndex]||{}).text||'')+' ['+(ngOf(e)||'?')+']'; }");
+                + " return norm((e.options[e.selectedIndex]||{}).text||'')+' ['+(ngOf(e)||'?')+']'; }", which);
         lastLocation = r == null ? "" : r.toString();
         waitForAngular(1200);
         System.out.println("PoApprovalLevelMaster: location = " + lastLocation);
@@ -362,6 +386,9 @@ public class PoApprovalLevelMaster extends BasePage {
                 || t.contains("inserted") || t.contains("updated");
     }
 
+    /** What the server answered to the last Submit (status, path, start of the body); empty when nothing was seen. */
+    public String lastSaveHttp = "";
+
     /** Click <b>Submit</b> and return the toast. Toasts are cleared first so a repeat still reads. */
     public String submitAndGetToast() {
         try { page.waitForLoadState(com.microsoft.playwright.options.LoadState.DOMCONTENTLOADED); }
@@ -373,6 +400,21 @@ public class PoApprovalLevelMaster extends BasePage {
         } catch (Exception ignore) { }
         waitForAngular(400);
 
+        // Record what the server answers to the save itself (status + start of the body), so an "Error!" toast can be
+        // told apart: a refusal with a reason, or an HTTP failure.
+        final java.util.List<String> saveHttp = new java.util.concurrent.CopyOnWriteArrayList<>();
+        final java.util.function.Consumer<com.microsoft.playwright.Response> onResp = r -> {
+            try {
+                String m = r.request().method();
+                if (("POST".equals(m) || "PUT".equals(m) || "DELETE".equals(m)) && r.url().contains("/api/")) {
+                    String body = r.text();
+                    body = body == null ? "" : body.replaceAll("\\s+", " ");
+                    saveHttp.add(r.status() + " " + m + " " + r.url().replaceFirst("^https?://[^/]+", "") + " -> "
+                            + body.substring(0, Math.min(160, body.length())));
+                }
+            } catch (Exception ignore) { }
+        };
+        page.onResponse(onResp);
         Object clicked;
         try {
             clicked = page.evaluate("() => {" + JS
@@ -386,6 +428,7 @@ public class PoApprovalLevelMaster extends BasePage {
                     + " return 'clicked \"'+(norm(b.textContent)||b.value||'')+'\" [ng-click='"
                     + "   +(b.getAttribute('ng-click')||'-')+']'; }");
         } catch (Exception e) {
+            page.offResponse(onResp);
             lastSaveDiagnostics = "Submit click threw (the page navigated): " + e.getMessage().split("\\n")[0];
             return "";
         }
@@ -421,8 +464,11 @@ public class PoApprovalLevelMaster extends BasePage {
             } catch (Exception ignore) { }
         }
 
+        page.offResponse(onResp);
+        lastSaveHttp = String.join(" | ", saveHttp);
         lastSaveDiagnostics = (clicked == null ? "" : clicked.toString())
-                + (toast.isEmpty() ? "; no message within 20s" : "");
+                + (toast.isEmpty() ? "; no message within 20s" : "")
+                + (lastSaveHttp.isEmpty() ? "" : "; server: " + lastSaveHttp);
         lastToast = toast;
         System.out.println("PoApprovalLevelMaster: submit -> " + lastSaveDiagnostics + " toast=\"" + toast + "\"");
         return toast;

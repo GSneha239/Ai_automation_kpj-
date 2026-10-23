@@ -119,7 +119,10 @@ public class Ward extends BasePage {
     public String fillDetails(int attempt) {
         String code = "WD" + String.format("%06d", Math.abs((System.nanoTime() + attempt * 7919L) % 1000000));
         lastCode = code;
-        lastRemark = REMARKS[attempt % REMARKS.length] + (attempt >= REMARKS.length ? " " + (attempt / REMARKS.length + 1) : "");
+        // The Remark is UNIQUE per run: the shared QA environment keeps every saved Ward, so a bare pool name collides with earlier
+        // runs. A realistic name + the run time (+ the retry number) never repeats.
+        String stamp = java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyMMddHHmmss"));
+        lastRemark = REMARKS[attempt % REMARKS.length] + " " + stamp + (attempt > 0 ? "-" + attempt : "");
         try {
             page.waitForFunction("() => [...document.querySelectorAll('input[ng-model],textarea[ng-model],select[ng-model]')].some(e=>e.offsetParent!==null && /code|floor|ward|commonmaster|name/i.test(e.getAttribute('ng-model')||''))",
                     null, new Page.WaitForFunctionOptions().setTimeout(10000));
@@ -136,10 +139,13 @@ public class Ward extends BasePage {
                 + " const remF=labelField(['Remark','Remarks','Description']);"
                 + " const flF=labelField(['Floor','Floor No','Floor Number']);"
                 + " const cd=setInp(codeF, a.code); const rm=setInp(remF, a.remark);"
-                + " let fl; if(flF && flF.tagName==='SELECT') fl=await setSelPoll(flF); else fl=setInp(flF, '1');"
+                // Floor is now a select2 widget: what labelField finds is its inner search box (no ng-model). Typing "1" into that left the
+                // dropdown open and its overlay blocked the Submit click, so the widget is operated from Java instead (see below).
+                + " let fl; if(flF && flF.tagName==='SELECT') fl=await setSelPoll(flF); else if(flF && flF.closest('.select2-container, .select2-drop')) fl='(select2)'; else fl=setInp(flF, '1');"
                 + " resolve('Code='+cd+' | Remark='+rm+' | Floor='+fl+' | codeNg='+(codeF?codeF.getAttribute('ng-model'):'-')+' | remNg='+(remF?remF.getAttribute('ng-model'):'-')+' | floorNg='+(flF?flF.getAttribute('ng-model'):'-')+' | floorTag='+(flF?flF.tagName:'-')); })",
                 java.util.Map.of("code", code, "remark", lastRemark));
         String res = r == null ? "" : r.toString();
+        if (res.contains("Floor=(select2)")) res = res.replace("Floor=(select2)", "Floor=" + selectSelect2ByLabel("Floor"));
         java.util.regex.Matcher mc = java.util.regex.Pattern.compile("codeNg=([^|]+)").matcher(res);
         java.util.regex.Matcher mn = java.util.regex.Pattern.compile("remNg=([^|]+)").matcher(res);
         java.util.regex.Matcher mf = java.util.regex.Pattern.compile("floorNg=([^|]+)").matcher(res);
@@ -148,6 +154,44 @@ public class Ward extends BasePage {
         if (mf.find()) floorNg = mf.group(1).trim();
         waitForAngular(400);
         return res;
+    }
+
+    /**
+     * Choose the first real row of the select2 dropdown that belongs to the form label {@code label}: click the widget, wait for its
+     * list, click the first row that is not "--Select--". Any select2 left open earlier is closed first, because its
+     * "select2-drop-mask" overlay would otherwise intercept the click.
+     *
+     * @return the chosen text, or {@code (no-select2)} / {@code (no-choices)}
+     */
+    private String selectSelect2ByLabel(String label) {
+        Object tagged = page.evaluate("(lab) => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                + " const l=[...document.querySelectorAll('label,.control-label,span,th,td,b')].find(e=>e.offsetParent!==null && norm(e.textContent).replace(/\\*/g,'').trim().toLowerCase()===lab.toLowerCase());"
+                + " if(!l) return false; const g=l.closest('.form-group,.row,.col-sm-6,.col-md-6,.col-sm-4,td,tr,div'); const c=g&&g.querySelector('.select2-container');"
+                + " if(!c) return false; c.setAttribute('data-s2','pick'); return true; }", label);
+        if (!Boolean.TRUE.equals(tagged)) return "(no-select2)";
+        try {
+            if (Boolean.TRUE.equals(page.evaluate("() => !!document.querySelector('.select2-drop-mask, .select2-drop-active')"))) {
+                page.keyboard().press("Escape");
+                page.waitForTimeout(300);
+            }
+            page.locator("[data-s2='pick'] .select2-choice").first().click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000));
+            page.waitForFunction("() => document.querySelectorAll('.select2-drop-active .select2-results li.select2-result-selectable').length > 0",
+                    null, new Page.WaitForFunctionOptions().setTimeout(8000));
+            Object chosen = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                    + " const r=[...document.querySelectorAll('.select2-drop-active .select2-results li.select2-result-selectable')].find(x=>!/^\\s*-*\\s*select/i.test(x.textContent||''));"
+                    + " if(!r) return ''; r.setAttribute('data-s2row','1'); return norm(r.textContent); }");
+            String text = chosen == null ? "" : chosen.toString();
+            if (text.isEmpty()) return "(no-choices)";
+            page.locator("[data-s2row='1']").first().click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000));
+            return text;
+        } catch (Exception e) {
+            System.out.println("Ward.selectSelect2ByLabel " + label + " failed: " + e.getMessage());
+            return "(no-choices)";
+        } finally {
+            page.evaluate("() => { document.querySelectorAll('[data-s2]').forEach(e=>e.removeAttribute('data-s2'));"
+                    + " document.querySelectorAll('[data-s2row]').forEach(e=>e.removeAttribute('data-s2row')); }");
+            waitForAngular(400);
+        }
     }
 
     /** Click <b>Submit</b> (re-asserts Code + Remark first — guards the flaky "* mark fields") and return the toast. */

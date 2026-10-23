@@ -151,6 +151,14 @@ public class RegistrationPage extends BasePage {
      * master-data to finish loading. Returns true once the master-data has populated.
      */
     public boolean open(String baseUrl) {
+        // The nav menu is built a few seconds AFTER login lands on the dashboard. Clicking "OP" before it exists does
+        // nothing, the VisitScreen link is then not found either, and the hash fallback below trips the app's
+        // "Reload page" guard — so wait for the OP entry first (confirmed live 2026-10-20: 2 of 2 registration runs
+        // died on #txtFirstName for exactly this reason).
+        try {
+            page.waitForFunction("() => [...document.querySelectorAll('a')].some(x=>x.textContent.trim()==='OP')",
+                    null, new Page.WaitForFunctionOptions().setTimeout(30000));
+        } catch (Exception e) { System.out.println("open: the OP menu entry did not appear within 30s"); }
         // Guard the menu/link click evaluates: clicking a nav link makes the SPA route-change, and under the
         // flaky server that can trigger a full navigation (e.g. a session re-auth) that destroys the JS context
         // mid-evaluate ("Execution context was destroyed"). Swallow that — the #txtFirstName wait below (or the
@@ -1312,6 +1320,9 @@ public class RegistrationPage extends BasePage {
         // response (sub-department/department → doctors) lands AFTER the selection and resets it. So let the
         // lists settle, then re-check; if Visit Type (or Doctor) is empty, CHANGE THE DOCTOR and check again.
         settleAndRecheckVisit();
+        // Cash Counter* is mandatory, and nothing above sets it: Save answered "Please fill in all the mandatory fields!"
+        // with only Cash Counter flagged (OP Registration, 2026-10-16).
+        ensureCashCounterSelected();
         // Queue No. — a real typed value into the visible field (ng-model Visit.TokenNo), per request, rather
         // than writing the scope directly. A random 3-digit number, same spirit as the Login ID elsewhere: cheap
         // to make distinct without needing to know what queue numbers are already taken.
@@ -2036,6 +2047,39 @@ public class RegistrationPage extends BasePage {
     }
 
     /**
+     * Select a <b>Cash Counter</b> ({@code Visit.CashCounterID}) when the screen has the field and it is still empty.
+     *
+     * <p>The list is filled by the app from the chosen Department / Sub Department, so it is waited for (up to ~8s) before
+     * the first real option is taken. A no-op when the field is absent (other registration flows) or already holds a value.
+     * Visit Type is re-checked afterwards because that list can reload off the Cash Counter.</p>
+     */
+    private void ensureCashCounterSelected() {
+        String state = "";
+        for (int i = 0; i < 8; i++) {
+            Object r = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                    + " const e=[...document.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')==='Visit.CashCounterID');"
+                    + " if(!e) return 'absent';"
+                    + " const real=o=>o.value && !/^-*\\s*select\\s*-*$/i.test(norm(o.textContent));"
+                    + " const cur=e.options[e.selectedIndex];"
+                    + " if(cur && real(cur)) return 'already:'+norm(cur.textContent);"
+                    + " const first=[...e.options].find(real);"
+                    + " if(!first) return 'none:'+e.options.length;"
+                    + " e.selectedIndex=[...e.options].indexOf(first);"
+                    + " e.dispatchEvent(new Event('change',{bubbles:true}));"
+                    + " try{ angular.element(e).triggerHandler('change'); }catch(x){}"
+                    + " return 'selected:'+norm(first.textContent); }");
+            state = r == null ? "" : r.toString();
+            if (!state.startsWith("none:")) break;
+            page.waitForTimeout(1000);   // the list is still loading
+        }
+        System.out.println("fillVisitInformation: Cash Counter -> " + state);
+        if (state.startsWith("selected:")) {
+            waitForAngular(1200);          // Visit Type can reload off the Cash Counter
+            ensureVisitTypeIfPresent();
+        }
+    }
+
+    /**
      * Still no Visit Type after walking Doctors? Walk <b>Cash Counter</b> ({@code Visit.CashCounterID}) instead —
      * on the Appointment List → VisitScreen path the Visit Type list can be filtered by Cash Counter rather than
      * (or in addition to) Doctor, so a Cash Counter with none configured leaves Visit Type empty no matter which
@@ -2366,6 +2410,11 @@ public class RegistrationPage extends BasePage {
             kinRelActual = setSelLike("Registration.KinRelationID", kinRelCandidates);
             fillModel("Registration.KinMobileNo", p.kinMobile);
             fillModel("Registration.KinEmail", p.kinEmail);
+            // NOK / Guarantor TIN Number (Registration.KinTinNo): without it the kin row is refused on nhistest.
+            // Same "IG" + 8 digits shape as the patient's own TIN.
+            String kinTin = "IG" + (new java.util.Random().nextInt(90000000) + 10000000);
+            fillModel("Registration.KinTinNo", kinTin);
+            System.out.println("addNextOfKin: NOK TIN Number = " + kinTin);
             // Same environment-specific gap as Title: DSH's Occupation list has no "Education", so this used to
             // fall back to whatever was first ("ACCOUNT"). Try a handful of common, plausible occupations first.
             kinOccupationActual = setSelLike("Registration.KinOccupationID",
@@ -2687,6 +2736,68 @@ public class RegistrationPage extends BasePage {
      * appear after a successful save; the toast can fade on a slow site).
      */
     public SaveOutcome confirmSaveAndAwaitSuccess() {
+        // Watch the server's POST answers while the save runs: the new MRN is only ever shown to the user as a number
+        // inside a PDF label, so it is read from the save response (or, failing that, the form's model / the screen).
+        final java.util.List<com.microsoft.playwright.Response> apiAnswers = new java.util.concurrent.CopyOnWriteArrayList<>();
+        java.util.function.Consumer<com.microsoft.playwright.Response> mrnWatcher = r -> {
+            try {
+                if (r.url().toLowerCase().contains("/api/") && "POST".equalsIgnoreCase(r.request().method())) apiAnswers.add(r);
+            } catch (Exception ignore) { }
+        };
+        lastMrn = ""; lastMrnSource = ""; lastVisitId = "";
+        page.onResponse(mrnWatcher);
+        try {
+            return confirmSaveAndAwaitSuccessInner();
+        } finally {
+            page.offResponse(mrnWatcher);
+            try { captureNewMrn(apiAnswers); } catch (Exception e) { System.out.println("captureNewMrn failed - " + e.getMessage()); }
+        }
+    }
+
+    /** The MRN / visit the last successful save created ("" when none could be read), and where the MRN was read from. */
+    public String lastMrn = "", lastMrnSource = "", lastVisitId = "";
+
+    private static final java.util.regex.Pattern SAVE_OK = java.util.regex.Pattern.compile("\"ResultStatus\"\\s*:\\s*1\\b");
+    private static final java.util.regex.Pattern SAVE_MESSAGE = java.util.regex.Pattern.compile("\"Message\"\\s*:\\s*\"([A-Za-z0-9]{6,})\"");
+    private static final java.util.regex.Pattern SAVE_RESPONSE_ID = java.util.regex.Pattern.compile("\"ResponseId\"\\s*:\\s*([0-9]+)");
+    private static final java.util.regex.Pattern POSTED_MRNO = java.util.regex.Pattern.compile("\"MRNo\"\\s*:\\s*\"([A-Za-z0-9]{6,})\"");
+
+    /**
+     * Read the MRN a save just created, from the POST answers received during the save. Confirmed live (devhis build
+     * v2026.10.20.257): {@code patientregistration/IUD} answers {@code [{"ResultStatus":1,"Message":"<the new MRN>",
+     * "ResponseId":<visit id>,...}]} — a second IUD call answers {@code ResultStatus 2} with no message and is skipped.
+     * Failing that, the MRN the form then posts for the barcode ({@code GetBarcodeImage}) is used. The source is kept in
+     * {@link #lastMrnSource}. The MRN the USER would see is the one on the Outpatient Queue Management grid — callers use
+     * this as a cross-check of that one.
+     */
+    private void captureNewMrn(java.util.List<com.microsoft.playwright.Response> answers) {
+        for (int i = answers.size() - 1; i >= 0 && lastMrn.isEmpty(); i--) {
+            com.microsoft.playwright.Response r = answers.get(i);
+            String u = r.url().replaceAll("^.*/(?i:api)/", "");
+            if (!u.toLowerCase().equals("patientregistration/iud")) continue;
+            String body = "";
+            try { body = r.text(); } catch (Exception ignore) { }
+            if (!SAVE_OK.matcher(body).find()) continue;
+            java.util.regex.Matcher m = SAVE_MESSAGE.matcher(body);
+            if (m.find()) {
+                lastMrn = m.group(1); lastMrnSource = "save answer (patientregistration/IUD Message)";
+                java.util.regex.Matcher v = SAVE_RESPONSE_ID.matcher(body);
+                if (v.find()) lastVisitId = v.group(1);
+            }
+        }
+        for (int i = answers.size() - 1; i >= 0 && lastMrn.isEmpty(); i--) {
+            com.microsoft.playwright.Response r = answers.get(i);
+            if (!r.url().toLowerCase().contains("getbarcodeimage")) continue;
+            String post = "";
+            try { post = String.valueOf(r.request().postData()); } catch (Exception ignore) { }
+            java.util.regex.Matcher m = POSTED_MRNO.matcher(post);
+            if (m.find()) { lastMrn = m.group(1); lastMrnSource = "barcode request (GetBarcodeImage MRNo)"; }
+        }
+        System.out.println("RegistrationPage: MRN in the save answers = " + (lastMrn.isEmpty() ? "(not found)" : lastMrn)
+                + (lastMrnSource.isEmpty() ? "" : " [" + lastMrnSource + "]") + (lastVisitId.isEmpty() ? "" : ", visit id " + lastVisitId));
+    }
+
+    private SaveOutcome confirmSaveAndAwaitSuccessInner() {
         page.evaluate("() => { const box=[...document.querySelectorAll('.ng-confirm-box,.jconfirm,.modal')].find(m=>m.offsetParent!==null && /do you want to save/i.test(m.textContent||''));"
                 + " const sv=[...(box||document).querySelectorAll('button')].find(b=>/^save$/i.test((b.textContent||'').trim()) && b.offsetParent!==null); if(sv) sv.click(); }");
         SaveOutcome out = new SaveOutcome();

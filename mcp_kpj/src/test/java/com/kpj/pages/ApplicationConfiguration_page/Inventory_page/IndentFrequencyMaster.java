@@ -50,9 +50,27 @@ public class IndentFrequencyMaster extends BasePage {
      * module is a coin flip, and a wrong guess lands the run on the dashboard while still looking like a
      * navigation (the Shift screen is served from {@code #/AccountingShift}).</p>
      */
+    /** Server errors (HTTP 400+) seen from the moment the screen was opened — named in the report when a list comes up empty. */
+    public final java.util.List<String> httpErrors = new java.util.concurrent.CopyOnWriteArrayList<>();
+    /** The app's store-list requests and what they returned (status, path, first 150 chars of the body). */
+    public final java.util.List<String> storeCalls = new java.util.concurrent.CopyOnWriteArrayList<>();
+
     public boolean navigateViaMenu(String baseUrl) {
         try { page.waitForFunction("() => window.angular", null,
                 new Page.WaitForFunctionOptions().setTimeout(20000)); } catch (Exception ignore) { }
+        page.onResponse(r -> {
+            try { if (r.status() >= 400) httpErrors.add("HTTP " + r.status() + " " + r.request().method() + " " + r.url()); }
+            catch (Exception ignore) { }
+            // What the app's own store-list calls returned: an HTTP 200 with an empty body means "no stores for this login".
+            try {
+                String u = r.url();
+                if (u.toLowerCase().contains("store") && r.request().resourceType().matches("xhr|fetch")) {
+                    String body = r.text();
+                    storeCalls.add(r.status() + " " + r.request().method() + " " + u.replaceFirst("^https?://[^/]+", "")
+                            + " -> " + (body == null ? "" : body.replaceAll("\\s+", " ")).substring(0, Math.min(150, body == null ? 0 : body.replaceAll("\\s+", " ").length())));
+                }
+            } catch (Exception ignore) { }
+        });
 
         // The menu is opened up to three times. DevHIS reloads itself with a cache-buster (?_cb=) now and
         // then, and a reload part-way through collapses the menu — the run then sees only the top-level
@@ -126,8 +144,11 @@ public class IndentFrequencyMaster extends BasePage {
     private void clickMenu(String textRegex) {
         page.evaluate("(re) => {" + JS
                 + " const rx=new RegExp(re,'i');"
-                + " const a=[...document.querySelectorAll('a,li>a,span')].filter(vis)"
-                + "   .find(x=>rx.test(norm(x.textContent)));"
+                + " const all=[...document.querySelectorAll('a,li>a,span')].filter(vis)"
+                + "   .filter(x=>rx.test(norm(x.textContent)));"
+                + " const ac=[...document.querySelectorAll('a')].find(x=>/^\s*application\s*configuration\s*$/i.test(norm(x.textContent)));"
+                + " const root=ac&&ac.closest('li'); const a=(root&&all.find(x=>x!==ac&&root.contains(x)))||all[0];"
+
                 + " if(a) a.click(); }", textRegex);
         waitForAngular(1200);
     }
@@ -321,11 +342,22 @@ public class IndentFrequencyMaster extends BasePage {
      * would report a defect where the screen is behaving correctly.</p>
      */
     public String selectStores(int seed) {
+        // The two Store lists are filled by the app AFTER the form shows — wait for both to hold a real store before
+        // deciding they are empty (reading them straight away reported "empty" on a screen that was still loading).
+        try {
+            page.waitForFunction("() => ['dataObj.drpRequestingStore','dataObj.drpIssuingStore'].every(m=>{"
+                    + " const e=[...document.querySelectorAll(\"select[ng-model='\"+m+\"']\")].find(x=>x.offsetWidth||x.offsetHeight);"
+                    + " return !!e && [...e.options].some(o=>o.value && !/^-*\\s*select/i.test((o.text||'').trim())); })",
+                    null, new Page.WaitForFunctionOptions().setTimeout(20000));
+        } catch (Exception ignore) { /* fall through: realIndexes below reports what is really there */ }
         java.util.List<Integer> req = realIndexes("dataObj.drpRequestingStore");
         java.util.List<Integer> iss = realIndexes("dataObj.drpIssuingStore");
         if (req.isEmpty() || iss.isEmpty()) {
-            lastRequesting = "(the Requesting Store list is empty)";
-            lastIssuing = "(the Issuing Store list is empty)";
+            String why = (httpErrors.isEmpty() ? " even after waiting 20s"
+                    : " even after waiting 20s; the server answered: " + String.join("; ", httpErrors))
+                    + (storeCalls.isEmpty() ? "" : "; store-list calls: " + String.join(" | ", storeCalls));
+            lastRequesting = "(the Requesting Store list is empty" + why + ")";
+            lastIssuing = "(the Issuing Store list is empty" + why + ")";
             return lastRequesting + " | " + lastIssuing;
         }
         int a = Math.floorMod(seed, req.size());

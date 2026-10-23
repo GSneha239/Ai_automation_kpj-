@@ -157,18 +157,33 @@ public class BiohazardCategoryMaster extends BasePage {
      * typed into by its REAL id and never retagged (same trap as Cluster's {@code #txtDoctorName}).</p>
      */
     public String enterDiagnosisAndAdd() {
-        String dcode = "A0" + String.format("%02d", Math.abs(System.nanoTime() % 100));
-        String ddesc = new String[]{"Cholera", "Typhoid Fever", "Tuberculosis", "Dengue Fever", "Hepatitis B"}
-                [(int) (Math.abs(System.nanoTime()) % 5)];
-        lastDiagnosis = dcode + " - " + ddesc;
+        // The Diagnosis Description box is an AUTOCOMPLETE: a diagnosis only counts once it is CHOSEN from the suggestions, because
+        // choosing it is what gives the row its diagnosis id. Writing a made-up code / description straight into the model (as this
+        // used to) adds a row with NO id, and Submit then fails on the server with "Cannot insert the value NULL into column
+        // 'diagnosisid'" (HTTP 500, shown as a bare "Error!"). So type a real diagnosis name with real key presses and pick the first
+        // suggestion.
+        String term = new String[]{"Cholera", "Typhoid", "Tuberculosis", "Dengue", "Hepatitis B"}[(int) (Math.abs(System.nanoTime()) % 5)];
         int before = diagnosisRowCount();
-        Object r = page.evaluate("(a) => { const A=window.angular;"
-                + " const set=(ng,v)=>{ const e=[...document.querySelectorAll(\"input[ng-model='\"+ng+\"']\")].find(x=>x.offsetParent!==null); if(!e) return '(no)'; const c=A.element(e).controller('ngModel'); e.value=v; if(c){c.$setViewValue(v);c.$render();} e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true})); return v; };"
-                + " const dc=set('BiohazardCategoryMaster.DiagnosisCodeId', a.dcode);"
-                + " const dd=set('BiohazardCategoryMaster.DiagnosisDescriptionId', a.ddesc);"
-                + " return 'DiagnosisCode='+dc+' | DiagnosisDescription='+dd; }",
-                java.util.Map.of("dcode", dcode, "ddesc", ddesc));
+        String picked = "(no-suggestion)";
+        final String sugSel = "li.auto-complete-item, .ui-autocomplete li, ul.dropdown-menu li";
+        try {
+            com.microsoft.playwright.Locator box = page.locator("#txtDiagnosisName");
+            box.click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000));
+            box.fill("");
+            box.pressSequentially(term, new com.microsoft.playwright.Locator.PressSequentiallyOptions().setDelay(90));
+            page.waitForFunction("(sel) => [...document.querySelectorAll(sel)].some(e=>e.offsetParent!==null && (e.textContent||'').trim())",
+                    sugSel, new Page.WaitForFunctionOptions().setTimeout(10000));
+            Object t = page.evaluate("(sel) => { const li=[...document.querySelectorAll(sel)].find(e=>e.offsetParent!==null && (e.textContent||'').trim());"
+                    + " if(!li) return ''; li.setAttribute('data-bhsug','1'); return (li.textContent||'').replace(/\\s+/g,' ').trim(); }", sugSel);
+            picked = t == null ? "" : t.toString();
+            if (!picked.isEmpty()) page.locator("[data-bhsug='1']").first().click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000));
+            else picked = "(no-suggestion)";
+        } catch (Exception e) { System.out.println("enterDiagnosisAndAdd: choosing a suggestion failed - " + e.getMessage()); }
+        page.evaluate("() => document.querySelectorAll('[data-bhsug]').forEach(e=>e.removeAttribute('data-bhsug'))");
         waitForAngular(1200);
+        Object dcv = page.evaluate("() => { const e=[...document.querySelectorAll(\"input[ng-model='BiohazardCategoryMaster.DiagnosisCodeId']\")].find(x=>x.offsetParent!==null); return e?e.value:'(no)'; }");
+        lastDiagnosis = (dcv == null ? "" : dcv.toString()) + " - " + picked;
+        Object r = "DiagnosisCode=" + (dcv == null ? "" : dcv.toString()) + " | DiagnosisDescription=" + picked + " (typed \"" + term + "\")";
         Object tagged = page.evaluate("() => { const b=[...document.querySelectorAll('button,a,input[type=button]')].find(x=>/AddDiagnosis/i.test(x.getAttribute('ng-click')||'') && x.offsetParent!==null); if(!b) return false; b.id='__bhAddDiag'; return true; }");
         if (!Boolean.TRUE.equals(tagged)) { System.out.println("enterDiagnosisAndAdd: AddDiagnosis button not found"); return (r == null ? "" : r.toString()) + " | (no Add button)"; }
         try { page.locator("#__bhAddDiag").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000)); }

@@ -20,10 +20,10 @@ set "JARNAME=mcp-kpj-1.0.0-shaded.jar"
 if not defined OUTDIR set "OUTDIR=test-output"
 
 REM --- Default credentials for the plain devhis target. The jar's own built-in default (farisha) has been
-REM     failing login intermittently, so this run.bat now defaults to the tieba account instead. Still
+REM     failing login intermittently, so this run.bat now defaults to the Sarannya account instead. Still
 REM     overridable: set DEVHIS_OPTS yourself (e.g. from run-klg.bat/run-dsh.bat) before calling this script.
-REM     Password reset 2026-09-10 (was User@123).
-if not defined DEVHIS_OPTS set "DEVHIS_OPTS=-Ddevhis.user=tieba -Ddevhis.pass=Tieba@123"
+REM     (Sarannya is the framework's own default devhis login; password User@123.)
+if not defined DEVHIS_OPTS set "DEVHIS_OPTS=-Ddevhis.user=Sarannya -Ddevhis.pass=User@123"
 
 REM --- Java present? ---
 where java >nul 2>nul
@@ -105,6 +105,7 @@ if "%~1"=="" (
     com.kpj.tests.AncillaryServices_page
     com.kpj.tests.Inventory_page
     com.kpj.tests.Investigation_page
+    com.kpj.tests.OT_page
   ) do (
     echo.
     echo ---- module: %%M ----
@@ -136,7 +137,7 @@ if defined NOTESTS (
   echo  Packages: Op_Page, Ip, Emergency_page, SystemConfiguration_page,
   echo            Billing_page, NursingStation_page, Telemedicine_page,
   echo            ApplicationConfiguration_page, AncillaryServices_page,
-  echo            Inventory_page, Investigation_page
+  echo            Inventory_page, Investigation_page, OT_page
   echo ============================================================
   pause
   endlocal ^& exit /b 1

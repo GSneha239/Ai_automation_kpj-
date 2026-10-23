@@ -366,6 +366,9 @@ public class Transfer extends BasePage {
         } catch (Exception ignore) { }
         waitForAngular(300);
 
+        final java.util.List<String> unavHttp = new java.util.concurrent.CopyOnWriteArrayList<>();
+        final java.util.function.Consumer<com.microsoft.playwright.Response> onUnavResp = r -> recordApi(r, unavHttp);
+        page.onResponse(onUnavResp);
         Object clicked = page.evaluate("() => {" + JS
                 + " const b=[...document.querySelectorAll('button,a,input[type=submit],input[type=button]')]"
                 + "   .filter(vis).find(x=>/^\\s*mark\\s*unavailable\\s*$/i.test(norm(x.textContent)||x.value||''));"
@@ -392,11 +395,39 @@ public class Transfer extends BasePage {
             } catch (Exception ignore) { }
             if (toast.isEmpty()) page.waitForTimeout(400);
         }
+        page.offResponse(onUnavResp);
+        // The toast is short-lived and can be missed; the server's own answer to the same click is the evidence then.
+        String unavServer = serverMessage(unavHttp);
+        if (toast.isEmpty() && !unavServer.isEmpty()) toast = unavServer + " (the server's answer; the toast itself was not caught)";
         lastMarkUnavailable = clickedText;
-        lastSaveDiagnostics = clickedText + (toast.isEmpty() ? "; no message within 15s" : "");
+        lastSaveDiagnostics = clickedText + (toast.isEmpty() ? "; no message within 15s" : "")
+                + (unavHttp.isEmpty() ? "; no API request was seen after the click" : "; server: " + String.join(" | ", unavHttp));
         lastSave = toast;
         System.out.println("Transfer: mark unavailable -> " + lastSaveDiagnostics + " toast=\"" + toast + "\"");
         return toast;
+    }
+
+    /** Record one API answer (status, path, start of the body) for the action just clicked. */
+    private static void recordApi(com.microsoft.playwright.Response r, java.util.List<String> into) {
+        try {
+            if (r.url().toLowerCase().contains("/api/") && r.request().resourceType().matches("xhr|fetch")
+                    && !r.url().contains("getInternalmsgCountOnly")) {
+                String body = r.text();
+                body = body == null ? "" : body.replaceAll("\\s+", " ");
+                into.add(r.status() + " " + r.request().method() + " " + r.url().replaceFirst("^https?://[^/]+", "")
+                        + " -> " + body.substring(0, Math.min(140, body.length())));
+            }
+        } catch (Exception ignore) { }
+    }
+
+    /** The "Message" the server returned for the click (e.g. "store Indent Is Close update Successfully"), or "". */
+    private static String serverMessage(java.util.List<String> http) {
+        java.util.regex.Pattern p = java.util.regex.Pattern.compile("\"Message\":\"([^\"]+)\"");
+        for (String h : http) {
+            java.util.regex.Matcher m = p.matcher(h);
+            if (m.find()) return m.group(1);
+        }
+        return "";
     }
 
     public boolean markUnavailableClicked() {
@@ -436,6 +467,21 @@ public class Transfer extends BasePage {
         } catch (Exception ignore) { }
         waitForAngular(300);
 
+        // What the server answers to Mark Close (status, path, start of the body): the screen shows no message at all, so
+        // this says whether the request was even sent, rejected, or accepted without any toast.
+        final java.util.List<String> closeHttp = new java.util.concurrent.CopyOnWriteArrayList<>();
+        final java.util.function.Consumer<com.microsoft.playwright.Response> onCloseResp = r -> {
+            try {
+                if (r.url().toLowerCase().contains("/api/") && r.request().resourceType().matches("xhr|fetch")
+                        && !r.url().contains("getInternalmsgCountOnly")) {
+                    String body = r.text();
+                    body = body == null ? "" : body.replaceAll("\\s+", " ");
+                    closeHttp.add(r.status() + " " + r.request().method() + " " + r.url().replaceFirst("^https?://[^/]+", "")
+                            + " -> " + body.substring(0, Math.min(140, body.length())));
+                }
+            } catch (Exception ignore) { }
+        };
+        page.onResponse(onCloseResp);
         Object clicked = page.evaluate("() => {" + JS
                 + " const b=[...document.querySelectorAll('button,a,input[type=submit],input[type=button]')]"
                 + "   .filter(vis).find(x=>/^\\s*mark\\s*close\\s*$/i.test(norm(x.textContent)||x.value||''));"
@@ -462,8 +508,12 @@ public class Transfer extends BasePage {
             } catch (Exception ignore) { }
             if (toast.isEmpty()) page.waitForTimeout(400);
         }
+        page.offResponse(onCloseResp);
+        String closeServer = serverMessage(closeHttp);
+        if (toast.isEmpty() && !closeServer.isEmpty()) toast = closeServer + " (the server's answer; the toast itself was not caught)";
         lastMarkClose = clickedText;
-        lastSaveDiagnostics = clickedText + (toast.isEmpty() ? "; no message within 15s" : "");
+        lastSaveDiagnostics = clickedText + (toast.isEmpty() ? "; no message within 15s" : "")
+                + (closeHttp.isEmpty() ? "; no API request was seen after the click" : "; server: " + String.join(" | ", closeHttp));
         lastSave = toast;
         System.out.println("Transfer: mark close -> " + lastSaveDiagnostics + " toast=\"" + toast + "\"");
         return toast;
@@ -501,6 +551,7 @@ public class Transfer extends BasePage {
                 + " return e.id; }", re);
         String id = found == null ? "" : found.toString();
         if (id.isEmpty()) return "(no-field)";
+        String typingError = "";
         try {
             com.microsoft.playwright.Locator box = page.locator("#" + id).first();
             box.click();
@@ -511,11 +562,27 @@ public class Transfer extends BasePage {
             // overlay's Escape keydown can bubble up and close a surrounding dialog/section. A plain JS
             // blur dismisses the calendar without that risk.
             page.evaluate("() => { const e=document.activeElement; if(e && e.blur) e.blur(); }");
-        } catch (Exception e) { return "(typing failed: " + e.getMessage().split("\n")[0] + ")"; }
+        } catch (Exception e) { typingError = e.getMessage().split("\n")[0]; }
         waitForAngular(500);
         Object back = page.evaluate("(i) => { const e=document.getElementById(i);"
                 + " return e? (e.value||'') : '(gone)'; }", id);
-        return back == null ? "" : back.toString();
+        String got = back == null ? "" : back.toString();
+        if (!value.equals(got)) {
+            // A pre-filled picker box (class txtDate, inputmode=none, maxlength 10): typed keystrokes are discarded (or the
+            // typing itself fails) and the box ends up empty. Set the value through the box's own model instead.
+            Object set = page.evaluate("(a) => { const e=document.getElementById(a.id); if(!e) return '(gone)';"
+                    + " e.value=a.v;"
+                    + " try{ const c=angular.element(e).controller('ngModel'); if(c){ c.$setViewValue(a.v); c.$render(); } }catch(x){}"
+                    + " e.dispatchEvent(new Event('input',{bubbles:true}));"
+                    + " e.dispatchEvent(new Event('change',{bubbles:true}));"
+                    + " e.dispatchEvent(new Event('blur',{bubbles:true}));"
+                    + " return e.value||''; }", java.util.Map.of("id", id, "v", value));
+            waitForAngular(500);
+            got = set == null ? "" : set.toString();
+            if (!value.equals(got) && !typingError.isEmpty()) return "(typing failed: " + typingError + ")";
+        }
+        dismissDatePicker();   // close the calendar the date entry left open
+        return got;
     }
 
     public boolean listDatesEntered(String from, String to) {

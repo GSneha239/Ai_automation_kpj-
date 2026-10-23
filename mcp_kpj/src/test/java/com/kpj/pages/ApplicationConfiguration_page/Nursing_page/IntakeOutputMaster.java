@@ -127,9 +127,12 @@ public class IntakeOutputMaster extends BasePage {
      * real-clicked so its ng-change fires, else an "Intake" option is chosen in a select.
      */
     public String fillDetails() {
-        String code = "IO" + String.format("%05d", Math.abs(System.nanoTime() % 100000));
+        // The Code is always unique: 8 digits from the clock (a 5-digit random one repeats, and the shared environment already
+        // holds many). The Remark keeps its readable name but carries the same unique stamp, so it is never a repeat either.
+        String stamp = String.format("%08d", Math.abs(System.currentTimeMillis() % 100000000L));
+        String code = "IO" + stamp;
         lastCode = code;
-        lastRemark = REMARKS[(int) (Math.abs(System.nanoTime()) % REMARKS.length)];
+        lastRemark = REMARKS[(int) (Math.abs(System.nanoTime()) % REMARKS.length)] + " " + stamp;
         lastUnit = UNITS[(int) (Math.abs(System.nanoTime() / 7) % UNITS.length)];
         Object r = page.evaluate("(a) => { const A=window.angular; " + BY_LABEL
                 + " const fill=(e,v)=>{ if(!e) return '(no)'; const c=A.element(e).controller('ngModel'); e.value=v; if(c){c.$setViewValue(v);c.$render();} e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true})); return v+' [ng='+(e.getAttribute('ng-model')||'?')+']'; };"

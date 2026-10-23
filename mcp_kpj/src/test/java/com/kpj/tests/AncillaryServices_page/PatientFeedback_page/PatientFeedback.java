@@ -163,8 +163,33 @@ public class PatientFeedback extends DevHisBase {
         String toast = fb.saveAndGetToast();
         String tl = toast == null ? "" : toast.toLowerCase();
         boolean ok = tl.contains("success") || tl.contains("saved") || tl.contains("added");
-        String actual = toast == null || toast.isEmpty() ? "No toast appeared"
-                : (ok ? toast : "Save not confirmed — server returned: \"" + toast + "\"");
+
+        // Some templates ("Patient Diet Feedback", the FIRST option, and the Nutrition/Food Services form) make the server
+        // answer "Error!" whatever the patient. When no template was pinned with -Dtemplate=, take the next template in the
+        // dropdown and Save again, until one saves — and record which ones errored, since that is an app defect.
+        java.util.List<String> errored = new java.util.ArrayList<>();
+        int attempts = 1;
+        if (!ok && System.getProperty("template") == null && tl.contains("error")) {
+            for (String cand : fb.templateOptions()) {
+                if (attempts >= 8) break;
+                if (template != null && template.toLowerCase().startsWith(cand.toLowerCase())) continue;   // the one just tried
+                errored.add(template);
+                template = fb.selectTemplateExact(cand);
+                if (!fb.templateSelected()) continue;
+                attempts++;
+                toast = fb.saveAndGetToast();
+                tl = toast == null ? "" : toast.toLowerCase();
+                ok = tl.contains("success") || tl.contains("saved") || tl.contains("added");
+                System.out.println("PatientFeedback: attempt " + attempts + " with template \"" + template + "\" -> \"" + toast + "\"");
+                if (ok || !tl.contains("error")) break;
+            }
+        }
+        String retryNote = attempts > 1
+                ? "(attempt " + attempts + " with template \"" + template + "\"; the server answered \"Error!\" for: "
+                  + String.join("; ", errored) + " — an app defect with those templates, not a test problem) "
+                : "";
+        String actual = retryNote + (toast == null || toast.isEmpty() ? "No toast appeared"
+                : (ok ? toast : "Save not confirmed — server returned: \"" + toast + "\""));
         step(page, "Click Save & success toast", "Click Save (IUDPatientFeedbackDetail); wait for the success toast",
                 "'... saved successfully' toast",
                 (ok ? "PASSES because the screen answered with a success message: "

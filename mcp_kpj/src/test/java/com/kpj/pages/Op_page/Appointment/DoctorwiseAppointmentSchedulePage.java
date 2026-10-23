@@ -27,25 +27,39 @@ public class DoctorwiseAppointmentSchedulePage extends BasePage {
 
     /** Open the Doctorwise Appointment Schedule page and wait for the Department dropdown to load. */
     public void navigateTo(String baseUrl) {
-        // Use in-app hash navigation instead of page.goto() to avoid AngularJS SPA reloading issues
-        page.evaluate("() => { window.location.hash = '#/DoctorwiseAppointmentSchedule'; }");
-        waitForAngular(2000);
+        // Retry the whole navigate-and-wait sequence — confirmed live (2026-09-30) the devhis backend can be
+        // slow enough that a single 20s wait for the Department select isn't always enough (same class of
+        // slowness already hardened for in BookAppointmentPage.navigateTo() and LoginPage), so one timeout here
+        // should not fail the whole run when a second attempt would succeed.
+        boolean formUp = false;
+        for (int attempt = 0; attempt < 3 && !formUp; attempt++) {
+            // Use in-app hash navigation instead of page.goto() to avoid AngularJS SPA reloading issues
+            page.evaluate("() => { window.location.hash = '#/DoctorwiseAppointmentSchedule'; }");
+            waitForAngular(2000);
 
-        // Fallback: if not rendered, expand OP menu and click
-        boolean ready = Boolean.TRUE.equals(page.evaluate(
-                "() => !!document.querySelector(\"select[ng-model='DoctorwiseAppointmentSchedule.DepartmentID']\")"));
-        if (!ready) {
-            page.evaluate("() => { const op=[...document.querySelectorAll('a')].find(x=>x.textContent.trim()==='OP'); if(op) op.click(); }");
-            waitForAngular(1000);
-            page.evaluate("() => { const a=[...document.querySelectorAll('a')].find(x=>x.getAttribute('href')==='#/DoctorwiseAppointmentSchedule'); if(a) a.click(); }");
-            waitForAngular(1000);
+            // Fallback: if not rendered, expand OP menu and click
+            boolean ready = Boolean.TRUE.equals(page.evaluate(
+                    "() => !!document.querySelector(\"select[ng-model='DoctorwiseAppointmentSchedule.DepartmentID']\")"));
+            if (!ready) {
+                page.evaluate("() => { const op=[...document.querySelectorAll('a')].find(x=>x.textContent.trim()==='OP'); if(op) op.click(); }");
+                waitForAngular(1000);
+                page.evaluate("() => { const a=[...document.querySelectorAll('a')].find(x=>x.getAttribute('href')==='#/DoctorwiseAppointmentSchedule'); if(a) a.click(); }");
+                waitForAngular(1000);
+            }
+
+            try {
+                page.waitForSelector("select[ng-model='DoctorwiseAppointmentSchedule.DepartmentID']",
+                        new Page.WaitForSelectorOptions().setTimeout(30000));
+                formUp = true;
+            } catch (Exception e) {
+                System.out.println("DoctorwiseAppointmentSchedule.navigateTo: Department select not up (attempt " + (attempt + 1) + ") — retrying");
+            }
         }
-
         page.waitForSelector("select[ng-model='DoctorwiseAppointmentSchedule.DepartmentID']",
-                new Page.WaitForSelectorOptions().setTimeout(20000));
+                new Page.WaitForSelectorOptions().setTimeout(30000));
         page.waitForFunction(
                 "() => { const e=document.querySelector(\"select[ng-model='DoctorwiseAppointmentSchedule.DepartmentID']\"); return e && e.options.length > 1; }",
-                null, new Page.WaitForFunctionOptions().setTimeout(20000));
+                null, new Page.WaitForFunctionOptions().setTimeout(30000));
         waitForAngular(800);
         installHelpers();
         setMonthToCurrent(); // the slot grid stays EMPTY for every doctor until the Month is set
@@ -78,9 +92,19 @@ public class DoctorwiseAppointmentSchedulePage extends BasePage {
                 + "window.__alerts = window.__alerts || [];"
                 + "['JAlert','jAlert','alert'].forEach(n => { if (window[n] && !window['__o_'+n]) { window['__o_'+n]=window[n];"
                 + "  window[n]=function(m){ try{window.__alerts.push(String(m));}catch(e){} return window['__o_'+n].apply(this,arguments); }; } });"
+                // Punctuation-tolerant, word-boundary matching — confirmed live (2026-09-30, same devhis
+                // environment/master data as BookAppointmentPage) the Title dropdown has NO "Mr"/"Mr." at all
+                // (the plain-male entry is spelled "Mister"), and a naive includes() substring check can pick
+                // the WRONG option (e.g. "mr" matches inside "mrs"). See BookAppointmentPage.installHelpers()
+                // for the identical fix and full rationale.
+                + "window.__norm = function(s){ return (s||'').trim().replace(/\\.+$/,'').toLowerCase(); };"
                 + "window.__setSel = function(ng, text){ const e=[...document.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')===ng);"
-                + "  if(!e) return ng+':no-select'; let i=[...e.options].findIndex(o=>(o.text||'').trim().toLowerCase()===text.toLowerCase());"
-                + "  if(i<0) i=[...e.options].findIndex(o=>(o.text||'').toLowerCase().includes(text.toLowerCase())); if(i<0) return ng+':no-opt';"
+                + "  if(!e) return ng+':no-select'; const want=window.__norm(text);"
+                + "  let i=[...e.options].findIndex(o=>window.__norm(o.text)===want);"
+                + "  if(i<0){ const esc=want.replace(/[.*+?^${}()|[\\]\\\\]/g,'\\\\$&');"
+                + "    const re=new RegExp('(^|[^a-z0-9])'+esc+'($|[^a-z0-9])','i');"
+                + "    i=[...e.options].findIndex(o=>re.test(window.__norm(o.text))); }"
+                + "  if(i<0) return ng+':no-opt (options: '+[...e.options].map(o=>o.text.trim()).join('|')+')';"
                 + "  e.selectedIndex=i; e.dispatchEvent(new Event('change',{bubbles:true})); const $=window.jQuery||window.$; if($){try{$(e).trigger('change');}catch(err){}}"
                 + "  return ng+':'+e.options[e.selectedIndex].text.trim(); };"
                 + "window.__setInp = function(ng, val){ const e=[...document.querySelectorAll('input,textarea')].filter(x=>x.getAttribute('ng-model')===ng && x.offsetParent!==null)[0];"
@@ -208,12 +232,18 @@ public class DoctorwiseAppointmentSchedulePage extends BasePage {
                 + " if(pd){ s.$apply(function(){ pd.FirstName=v; }); const c=angular.element(e).controller('ngModel'); if(c) c.$render(); } }",
                 "AutoSched " + uniqueId());
         String suffix = uniqueId();
-        page.evaluate("(s) => {"
-                + "window.__setSel('PatientData.PrefixID','Mr.');"
-                + "window.__setSel('PatientData.GenderID','Male');"
-                + "window.__setSel('PatientData.NationalityID','Malaysian');"
-                + "window.__setSel('PatientData.receivabletypeid','Self');"
-                + "window.__setSel('PatientData.BookingTypeID','KPJ');"
+        // PrefixID: "Mister" (not "Mr."), NationalityID: "Malaysia" (not "Malaysian") — confirmed live
+        // (2026-09-30) against this same devhis Title/Nationality master data via BookAppointmentPage's
+        // dropdownResults diagnostic; see installHelpers() above for the matching-logic fix.
+        // Surface each dropdown's bind result — a field the app later rejects at Save is traceable back here
+        // instead of only showing up as a generic "Please Enter X" several steps later.
+        Object dropdownResults = page.evaluate("(s) => { const out=[ "
+                + "window.__setSel('PatientData.PrefixID','Mister'),"
+                + "window.__setSel('PatientData.GenderID','Male'),"
+                + "window.__setSel('PatientData.NationalityID','Malaysia'),"
+                + "window.__setSel('PatientData.receivabletypeid','Self'),"
+                + "window.__setSel('PatientData.BookingTypeID','KPJ')"
+                + "];"
                 + "window.__setInp('PatientData.NationalId','9004040' + (s+'00000').slice(0,5));"
                 + "window.__setInp('PatientData.DateOfBirth','04/04/1990');"
                 + "window.__setInp('PatientData.Email','autosched' + s + '@example.com');"
@@ -221,7 +251,8 @@ public class DoctorwiseAppointmentSchedulePage extends BasePage {
                 + "window.__setInp('PatientData.AgeYear','36');"
                 + "window.__setInp('PatientData.AgeMonth','0');"
                 + "window.__setInp('PatientData.AgeDays','0');"
-                + "}", suffix);
+                + "return out.join(' | '); }", suffix);
+        System.out.println("fillPatientDetails: " + dropdownResults);
         // Ensure Doctor + a valid future date are set (the schedule can leave Doctor unset / date=today)
         if (doctor != null) page.evaluate("(d) => window.__setSel('PatientData.DoctorModalityID', d)", doctor);
         // Keep the slot's OWN pre-filled appointment date whenever it is today-or-future (that date came from

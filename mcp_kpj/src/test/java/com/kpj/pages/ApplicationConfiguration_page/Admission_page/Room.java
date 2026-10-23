@@ -170,6 +170,13 @@ public class Room extends BasePage {
 
     /** Click <b>Submit</b> and return the toast (success or a server error). */
     public String submitAndGetToast() {
+        // Clear toasts already on screen first (e.g. a leftover "Error in getting record!" from loading the screen), so only
+        // the answer to THIS Submit is read.
+        try {
+            page.evaluate("() => { try{ if(window.toastr) toastr.clear(); }catch(e){}"
+                    + " document.querySelectorAll('#toast-container .toast,.toast-message,.toast,[id^=toast]').forEach(t=>t.remove()); }");
+        } catch (Exception ignore) { }
+        waitForAngular(400);
         Object tagged = page.evaluate("() => { window.__rmToasts=[]; if(window.__rmObs) window.__rmObs.disconnect();"
                 + " const grab=()=>{ document.querySelectorAll('.toast-message,.toast,[id^=toast]').forEach(el=>{ const t=(el.textContent||'').replace(/\\s+/g,' ').trim(); if(t && !window.__rmToasts.includes(t)) window.__rmToasts.push(t); }); };"
                 + " window.__rmObs=new MutationObserver(grab); window.__rmObs.observe(document.body,{childList:true,subtree:true}); grab();"

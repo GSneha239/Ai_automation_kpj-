@@ -168,8 +168,11 @@ public class FoodMaster extends BasePage {
     private String selectInSection(String sectionRe, String fieldRe, int index) {
         Object idx = page.evaluate("(a) => {" + RANGE_JS
                 + " const inRange=rangeFor(a.section); if(!inRange) return -3;"
-                + " const sels=[...document.querySelectorAll('select')].filter(e=>e.offsetParent!==null && inRange(e));"
-                + " const s=sels.find(e=>new RegExp(a.field,'i').test(labelOf(e))); if(!s) return -2; s.id='__fmSel';"
+                // A select behind a select2 widget (e.g. Service Name) is hidden itself, so visibility alone would drop it.
+                + " const sels=[...document.querySelectorAll('select')].filter(e=>(e.offsetParent!==null || !!(e.parentElement && e.parentElement.querySelector('.select2-container'))) && inRange(e));"
+                // Match on the label OR the control's ng-model: the Service Name select sits behind a select2 whose label is not a
+                // <label>/.control-label element, so labelOf() reads it as empty - but its model (Food.ServiceItemId) is unambiguous.
+                + " const s=sels.find(e=>{ const rx=new RegExp(a.field,'i'); return rx.test(labelOf(e)) || rx.test(e.getAttribute('ng-model')||''); }); if(!s) return -2; s.id='__fmSel';"
                 + " const real=[...s.options].map((o,i)=>({o,i})).filter(({o})=>o.value && !/^-*\\s*select|^\\s*$/i.test((o.textContent||'').trim()));"
                 + " if(!real.length) return -1; return real[Math.min(a.index, real.length-1)].i; }",
                 java.util.Map.of("section", sectionRe, "field", fieldRe, "index", index));
@@ -182,14 +185,24 @@ public class FoodMaster extends BasePage {
     }
 
     private String commitSelectById(String id, int i) {
-        try {
-            page.locator("#" + id).selectOption(new com.microsoft.playwright.options.SelectOption().setIndex(i),
-                    new com.microsoft.playwright.Locator.SelectOptionOptions().setTimeout(6000));
-        } catch (Exception e) {
-            System.out.println("commitSelectById(" + id + "): real select failed - " + e.getMessage());
+        // A select hidden behind a select2 widget is not "visible", so Playwright's selectOption would just wait out its timeout.
+        // Those are set in the page directly, firing the change through Angular and jQuery (which also refreshes the widget).
+        boolean visible = Boolean.TRUE.equals(page.evaluate("(id) => { const e=document.getElementById(id); return !!(e && e.offsetParent!==null); }", id));
+        boolean done = false;
+        if (visible) {
+            try {
+                page.locator("#" + id).selectOption(new com.microsoft.playwright.options.SelectOption().setIndex(i),
+                        new com.microsoft.playwright.Locator.SelectOptionOptions().setTimeout(6000));
+                done = true;
+            } catch (Exception e) {
+                System.out.println("commitSelectById(" + id + "): real select failed - " + e.getMessage());
+            }
+        }
+        if (!done) {
             page.evaluate("(a) => { const e=document.getElementById(a.id); if(!e) return; const A=window.angular;"
                     + " e.selectedIndex=a.i; e.dispatchEvent(new Event('change',{bubbles:true}));"
-                    + " try{ A.element(e).triggerHandler('change'); }catch(x){} }", java.util.Map.of("id", id, "i", i));
+                    + " try{ A.element(e).triggerHandler('change'); }catch(x){}"
+                    + " if(window.jQuery){ try{ window.jQuery(e).trigger('change'); }catch(x){} } }", java.util.Map.of("id", id, "i", i));
         }
         waitForAngular(500);
         Object t = page.evaluate("(id) => { const e=document.getElementById(id);"
@@ -206,10 +219,13 @@ public class FoodMaster extends BasePage {
     public String fillFoodBeverageDetails(int attempt) {
         String code = "FD" + String.format("%05d", Math.abs((System.nanoTime() + attempt * 7919L) % 100000));
         lastCode = code;
-        lastFoodName = FOOD_NAMES[attempt % FOOD_NAMES.length] + (attempt >= FOOD_NAMES.length ? " " + (attempt / FOOD_NAMES.length + 1) : "");
+        // The Food Name is UNIQUE per run: the shared QA environment keeps every saved food, so a bare pool name ("Steamed Rice")
+        // collides with earlier runs. A realistic name + the run time (+ the retry number) never repeats.
+        String stamp = java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyMMddHHmmss"));
+        lastFoodName = FOOD_NAMES[attempt % FOOD_NAMES.length] + " " + stamp + (attempt > 0 ? "-" + attempt : "");
         String codeR = fillTextInSection(SEC_FOODBEV, "^code\\*?$", code);
         String nameR = fillTextInSection(SEC_FOODBEV, "food\\s*name", lastFoodName);
-        String svc = selectInSection(SEC_FOODBEV, "service\\s*name", 0);
+        String svc = selectInSection(SEC_FOODBEV, "service\\s*(name|item)", 0);
         lastServiceName = svc;
         return "Code=" + codeR + " | FoodName=" + nameR + " | ServiceName=" + svc;
     }

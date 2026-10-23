@@ -28,7 +28,8 @@ public class RedCellSerologyMaster extends BasePage {
     private String menuHref = "";
     public byte[] toastPng;
 
-    private static final int TOAST_SHOT_WAIT_MS = 5000;
+    // The toast lasts only a few seconds, and a successful save also redraws the list — shoot at once, while it is still up.
+    private static final int TOAST_SHOT_WAIT_MS = 300;
 
     private void captureToastShot() {
         waitForAngular(TOAST_SHOT_WAIT_MS);
@@ -44,11 +45,11 @@ public class RedCellSerologyMaster extends BasePage {
                 page.waitForFunction("() => [...document.querySelectorAll('a')].some(a=>/application\\s*config/i.test((a.textContent||'')) && a.offsetParent!==null)",
                         null, new Page.WaitForFunctionOptions().setTimeout(15000));
             } catch (Exception ignore) { }
-            page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const a=[...document.querySelectorAll('a')].find(x=>/application\\s*config/i.test(norm(x.textContent)) && x.offsetParent!==null); if(a) a.click(); }");
-            waitForAngular(1200);
-            // EXACT "Blood Bank" — a prefix match can expand a different (similarly named) menu.
-            page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const a=[...document.querySelectorAll('a')].find(x=>/^\\s*blood\\s*bank\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null); if(a) a.click(); }");
-            waitForAngular(1000);
+            // Each level is expanded only if not already open (a click on an open entry closes it), and "Blood Bank" is
+            // looked up INSIDE Application Configuration — it is also a top-level module of the sidebar.
+            expandMenuEntry(null, "^\\s*application\\s*config(uration)?\\s*$");
+            expandMenuEntry("^\\s*application\\s*config(uration)?\\s*$", "^\\s*blood\\s*bank\\s*$");
+            waitForAngular(800);
             // EXACT text match ONLY, anchored so "Red Cell Serology Master" never matches the sibling
             // "Red Cell Serology Group" link (both live on the same Blood Bank submenu).
             Object href = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
@@ -120,16 +121,25 @@ public class RedCellSerologyMaster extends BasePage {
      * option, not resubmit the same one.
      */
     public String selectBloodGroup(int attempt) {
+        // Blood Group is a Select2 box over select[ng-model='bloodgroup.BloodGroupID'] — found by its model (a label
+        // lookup missed it) and given time to load its options before one is picked.
+        try {
+            page.waitForFunction("() => { const e=document.querySelector(\"select[ng-model='bloodgroup.BloodGroupID']\");"
+                    + " return !!e && [...e.options].some(o=>o.value && !/^-*\\s*select/i.test((o.textContent||'').trim())); }",
+                    null, new Page.WaitForFunctionOptions().setTimeout(15000));
+        } catch (Exception ignore) { }
         Object r = page.evaluate("(idx) => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
                 + " const labelOf=e=>{ if(e.id){ const l=document.querySelector('label[for=\"'+e.id+'\"]'); if(l) return norm(l.textContent); }"
                 + "   let p=e.closest('.form-group,.row,td,tr,div'); for(let hop=0; hop<4 && p; hop++){ const l=p.querySelector('label,.control-label'); if(l) return norm(l.textContent); p=p.parentElement; } return ''; };"
-                + " const sels=[...document.querySelectorAll('select')].filter(e=>e.offsetParent!==null);"
-                + " const e=sels.find(x=>/blood\\s*group/i.test(labelOf(x)));"
+                + " const e=document.querySelector(\"select[ng-model='bloodgroup.BloodGroupID']\")"
+                + "   || [...document.querySelectorAll('select')].filter(x=>x.offsetParent!==null).find(x=>/blood\\s*group/i.test(labelOf(x)));"
                 + " if(!e) return '(not found)';"
                 + " const real=[...e.options].map((o,i)=>({o,i})).filter(p=>p.o.value && !/^-*\\s*select/i.test(norm(p.o.textContent)));"
                 + " if(!real.length) return '(no-options)';"
                 + " const pick=real[idx % real.length];"
-                + " e.selectedIndex=pick.i; e.dispatchEvent(new Event('change',{bubbles:true})); const $=window.jQuery||window.$; if($){try{$(e).trigger('change');}catch(err){}}"
+                + " e.selectedIndex=pick.i; e.dispatchEvent(new Event('change',{bubbles:true}));"
+                + " const $=window.jQuery||window.$; if($){try{$(e).trigger('change');}catch(err){}}"
+                + " try{ window.angular.element(e).triggerHandler('change'); }catch(err){}"
                 + " return norm(pick.o.textContent); }", attempt);
         waitForAngular(400);
         lastBloodGroup = r == null ? "" : r.toString();
@@ -177,6 +187,12 @@ public class RedCellSerologyMaster extends BasePage {
         waitForAngular(200);
         String summary = r == null ? "" : r.toString();
         String addResult;
+        // The grid's row buttons (removeRowforCell / removeRowforSerum) count the lines held — compared before/after Add
+        // so a click that did nothing is not reported as "line added".
+        final String rowFrag = isCell ? "removeRowforCell" : "removeRowforSerum";
+        final String rowCount = "(f) => document.querySelectorAll('[ng-click*=\"'+f+'\"]').length";
+        int before = ((Number) page.evaluate(rowCount, rowFrag)).intValue();
+        int after = before;
         if (summary.contains("AddTag=yes")) {
             try {
                 page.locator("#__rcmSectionAdd").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000));
@@ -185,11 +201,13 @@ public class RedCellSerologyMaster extends BasePage {
                 addResult = "click failed - " + e.getMessage();
             }
             page.evaluate("() => { const e=document.getElementById('__rcmSectionAdd'); if(e) e.removeAttribute('id'); }");
+            waitForAngular(600);
+            after = ((Number) page.evaluate(rowCount, rowFrag)).intValue();
         } else {
             addResult = "(no Add button in section)";
         }
         waitForAngular(600);
-        return summary.replaceFirst("AddTag=\\w+", "Add=" + addResult);
+        return summary.replaceFirst("AddTag=\\w+", "Add=" + addResult) + " | Rows " + before + " -> " + after;
     }
 
     /**

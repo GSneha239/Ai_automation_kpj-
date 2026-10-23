@@ -178,7 +178,7 @@ public class SampleCollection extends DevHisBase {
         String barcode = sc.captureBarcode(tabsBefore);
         boolean barcodeOk = !sc.barcodeBlank;
         addSummary("Barcode", barcode);
-        step(page, "Verify the barcode is generated",
+        step(sc.barcodePng, "Verify the barcode is generated",
                 "Saving the collection should produce the sample barcode",
                 "A barcode document is produced and carries content",
                 (barcodeOk

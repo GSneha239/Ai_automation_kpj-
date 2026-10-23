@@ -56,20 +56,30 @@ public class ItemMaster extends BasePage {
         try { page.waitForFunction("() => window.angular", null,
                 new Page.WaitForFunctionOptions().setTimeout(20000)); } catch (Exception ignore) { }
 
-        clickMenu("^\\s*application\\s*configuration\\s*$");
-        clickMenu("^\\s*inventory\\s*$");
-        lastMenu = describeMenu();
+        // The Inventory submenu is filled lazily and a first click can be swallowed, so the link is sometimes
+        // missing on the first look (the run then stays on the dashboard). Reopen the menu and look again,
+        // up to 3 times, as Indent Frequency Master does.
+        Object href = null;
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            clickMenu("^\\s*application\\s*configuration\\s*$");
+            clickMenu("^\\s*inventory\\s*$");
+            lastMenu = describeMenu();
 
-        // Anchored to the WHOLE label, and hidden anchors are included on purpose: these menu links sit in
-        // the DOM before the submenu shows them. A loose match would take the first entry that merely
-        // contains the words — the scaffolding trap that once ran an entire Compliance flow against
-        // Complaint Type and reported PASS against the wrong screen's fields.
-        Object href = page.evaluate("() => {" + JS
-                + " const a=[...document.querySelectorAll('a[href]')]"
-                // Item MASTER, not Item Company / Item Class — all three sit in this submenu, so the
-                // match is anchored to the whole label and the siblings are rejected in onScreen().
-                + "   .find(x=>/^\\s*item\\s*master\\s*$/i.test(norm(x.textContent)));"
-                + " if(!a) return ''; a.id='__imMenu'; return a.getAttribute('href')||''; }");
+            // Anchored to the WHOLE label, and hidden anchors are included on purpose: these menu links sit in
+            // the DOM before the submenu shows them. A loose match would take the first entry that merely
+            // contains the words — the scaffolding trap that once ran an entire Compliance flow against
+            // Complaint Type and reported PASS against the wrong screen's fields.
+            href = page.evaluate("() => {" + JS
+                    + " const a=[...document.querySelectorAll('a[href]')]"
+                    // Item MASTER, not Item Company / Item Class — all three sit in this submenu, so the
+                    // match is anchored to the whole label and the siblings are rejected in onScreen().
+                    + "   .find(x=>/^\\s*item\\s*master\\s*$/i.test(norm(x.textContent)));"
+                    + " if(!a) return ''; a.id='__imMenu'; return a.getAttribute('href')||''; }");
+            if (href != null && !href.toString().isEmpty()) break;
+            System.out.println("ItemMaster.nav: the Item Master link was not in the menu on attempt "
+                    + attempt + " — reopening the menu");
+            page.waitForTimeout(1500);
+        }
         lastRoute = href == null ? "" : href.toString();
         if (!lastRoute.isEmpty()) {
             try { page.locator("#__imMenu").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000)); }
@@ -90,12 +100,14 @@ public class ItemMaster extends BasePage {
         // The route resolving is not the screen rendering. GENMST loads its view after the hash changes,
         // and until it does the DASHBOARD's controls are still in the DOM — a run that starts typing
         // straight away puts its values into dashboard widgets (LocationName took the remark once).
-        waitForScreenControls(15000);
+        // 45s, not 15s: under load the Item Master list took longer than 15s to render (a run found its 40 rows only
+        // afterwards), and the result is now honoured - a screen whose controls never rendered is not a screen reached.
+        boolean rendered = waitForScreenControls(45000);
 
         Object body = page.evaluate("() => (document.body? document.body.innerText : '')"
                 + ".replace(/\\s+/g,' ').trim().slice(0,300)");
         lastBodyText = body == null ? "" : body.toString();
-        return onScreen() && !lastBodyText.isEmpty();
+        return onScreen() && rendered && !lastBodyText.isEmpty();
     }
 
     /** Wait for this screen's OWN controls — a Code box, or its grid — rather than the dashboard's. */
@@ -121,8 +133,11 @@ public class ItemMaster extends BasePage {
     private void clickMenu(String textRegex) {
         page.evaluate("(re) => {" + JS
                 + " const rx=new RegExp(re,'i');"
-                + " const a=[...document.querySelectorAll('a,li>a,span')].filter(vis)"
-                + "   .find(x=>rx.test(norm(x.textContent)));"
+                + " const all=[...document.querySelectorAll('a,li>a,span')].filter(vis)"
+                + "   .filter(x=>rx.test(norm(x.textContent)));"
+                + " const ac=[...document.querySelectorAll('a')].find(x=>/^\s*application\s*configuration\s*$/i.test(norm(x.textContent)));"
+                + " const root=ac&&ac.closest('li'); const a=(root&&all.find(x=>x!==ac&&root.contains(x)))||all[0];"
+
                 + " if(a) a.click(); }", textRegex);
         waitForAngular(1200);
     }
@@ -200,18 +215,32 @@ public class ItemMaster extends BasePage {
      */
     public String openFormIfNeeded() {
         if (formOpen()) { lastAdd = "Not needed — the route opens the entry form directly."; return lastAdd; }
-        page.evaluate("() => {" + JS
+        // Wait for the Add button rather than clicking a button that is not there yet: the list can still be
+        // loading, and a click at a missing #__imAdd only timed out with the useless message "Error {".
+        String tagAdd = "() => {" + JS
                 + " const b=[...document.querySelectorAll('button,a,input[type=button]')].filter(vis)"
                 + "   .find(x=>/^\\s*add\\s*$/i.test(norm(x.textContent)||x.value||'')"
                 + "        || /add-?item|AddItemMaster|AddItem/i.test((x.getAttribute('href')||'')"
                 + "             +' '+(x.getAttribute('ng-click')||'')));"
-                + " if(b) b.id='__imAdd'; }");
+                + " if(b) b.id='__imAdd'; return !!b; }";
+        boolean found = false;
+        for (int i = 0; i < 60 && !found; i++) {
+            found = Boolean.TRUE.equals(page.evaluate(tagAdd));
+            if (!found) page.waitForTimeout(500);
+        }
+        if (!found) {
+            System.out.println("ItemMaster.openFormIfNeeded: no Add button appeared within 30s (url " + page.url() + ")");
+            lastAdd = "Add did not open a form — no Add button appeared within 30s.";
+            return lastAdd;
+        }
         try {
             page.locator("#__imAdd").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000));
         } catch (Exception e) {
-            System.out.println("ItemMaster.openFormIfNeeded: " + e.getMessage().split("\n")[0]);
+            String m = String.valueOf(e.getMessage()).replaceAll("\\s*\\n\\s*", " | ");
+            System.out.println("ItemMaster.openFormIfNeeded: click failed - " + (m.length() > 900 ? m.substring(0, 900) : m));
         }
         page.evaluate("() => { const e=document.getElementById('__imAdd'); if(e) e.removeAttribute('id'); }");
+        for (int i = 0; i < 30 && !formOpen(); i++) page.waitForTimeout(500);
         waitForAngular(1500);
         lastAdd = formOpen() ? "The form needed Add; it is now open." : "Add did not open a form.";
         return lastAdd;
@@ -453,6 +482,19 @@ public class ItemMaster extends BasePage {
         } catch (Exception ignore) { }
         waitForAngular(400);
 
+        // Record every toast node the page adds from here on. Polling every 500ms can miss a toast that is
+        // shown and removed between two polls; the observer cannot.
+        try {
+            page.evaluate("() => { window.__imToasts=[]; if(window.__imObs) window.__imObs.disconnect();"
+                    + " window.__imObs=new MutationObserver(ms=>{ for(const m of ms) for(const n of m.addedNodes){"
+                    + "   if(n.nodeType!==1) continue;"
+                    + "   const els=[n,...n.querySelectorAll('.toast-message,.toast,[id^=toast]')];"
+                    + "   for(const e of els){ if(!(e.matches && e.matches('.toast-message,.toast,[id^=toast]'))) continue;"
+                    + "     const t=(e.textContent||'').replace(/\\s+/g,' ').trim();"
+                    + "     if(t && t.length<=200) window.__imToasts.push(t); } } });"
+                    + " window.__imObs.observe(document.body,{childList:true,subtree:true}); }");
+        } catch (Exception ignore) { }
+
         Object clicked;
         try {
             clicked = page.evaluate("() => {" + JS
@@ -472,7 +514,7 @@ public class ItemMaster extends BasePage {
         try { acceptSaveDialog(); } catch (Exception ignore) { }
 
         String toast = "";
-        long deadline = System.currentTimeMillis() + 20000;
+        long deadline = System.currentTimeMillis() + 30000;
         while (System.currentTimeMillis() < deadline && toast.isEmpty()) {
             try {
                 Object now = page.evaluate("() => {" + JS + TOAST_ELS
@@ -485,6 +527,10 @@ public class ItemMaster extends BasePage {
                         // screen look like it answered with its own title.
                         if (!s.isEmpty() && s.length() <= 200) { toast = s; break; }
                     }
+                }
+                if (toast.isEmpty()) {
+                    Object seen = page.evaluate("() => (window.__imToasts||[])[0]||''");
+                    if (seen != null && !seen.toString().isEmpty()) toast = seen.toString();
                 }
             } catch (Exception ignore) { }
             if (toast.isEmpty()) page.waitForTimeout(500);
@@ -505,7 +551,7 @@ public class ItemMaster extends BasePage {
         }
 
         lastSaveDiagnostics = (clicked == null ? "" : clicked.toString())
-                + (toast.isEmpty() ? "; no message within 20s" : "");
+                + (toast.isEmpty() ? "; no message within 30s (a toast observer was watching from the click)" : "");
         lastToast = toast;
         System.out.println("ItemMaster: submit -> " + lastSaveDiagnostics + " toast=\"" + toast + "\"");
         return toast;
@@ -539,7 +585,15 @@ public class ItemMaster extends BasePage {
                     + "   .find(x=>/fngetServiceItemGrid/i.test(x.getAttribute('ng-click')||'')"
                     + "        || /^\s*search\s*$/i.test(norm(x.textContent)||x.value||''));"
                     + " if(b) b.click(); }");
-            waitForAngular(4000);
+            // A fixed 4s read the grid before it had filled whenever the server was slow ("rowsBeforeFilter=0"),
+            // which proves nothing about whether the item was saved. Wait for rows to appear (up to 45s).
+            for (int i = 0; i < 90; i++) {
+                Object n = page.evaluate("() => [...document.querySelectorAll('.ui-grid-row')]"
+                        + ".filter(e=>e.offsetWidth||e.offsetHeight||e.getClientRects().length).length");
+                if (n instanceof Number && ((Number) n).intValue() > 0) break;
+                page.waitForTimeout(500);
+            }
+            waitForAngular(1500);
         } catch (Exception ignore) { }
         try {
             Object where = page.evaluate("(c) => {" + JS

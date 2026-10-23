@@ -63,9 +63,20 @@ public class AutoCharges extends DevHisBase {
         boolean ok = false, exists = false;
         StringBuilder tried = new StringBuilder();
         int max = Math.min(total, 8);   // cap attempts
+        byte[] addedPng = null;
+        String addResult = "";
+        boolean addedOk = false;
         for (int i = 0; i < max; i++) {
             chosen = ac.selectServiceByIndex(i);
             if (chosen == null || chosen.isEmpty()) continue;
+            // Click Add (beside Services) — it puts the chosen service into the Services grid; Submit saves that grid.
+            addResult = ac.clickInnerAdd();
+            addedOk = ac.serviceAdded();
+            // Screenshot the form with Location + Service entered and added, BEFORE Submit (Submit leaves the form).
+            try { addedPng = page.screenshot(new com.microsoft.playwright.Page.ScreenshotOptions().setTimeout(8000)); }
+            catch (Exception e) { System.out.println("AutoCharges: filled-form screenshot failed - " + e.getMessage()); }
+            // Add silently does nothing for a service that already has an Auto Charge: choose a different one.
+            if (!addedOk && i < max - 1) { tried.append(chosen).append("(Add did not land→next) "); continue; }
             toast = ac.submitAndGetToast();
             String tl = toast == null ? "" : toast.toLowerCase();
             ok = tl.contains("saved") || tl.contains("success") || tl.contains("added") || tl.contains("updated");
@@ -75,14 +86,31 @@ public class AutoCharges extends DevHisBase {
             if (!exists) break;   // a non-duplicate failure won't be fixed by a different service
         }
 
-        step(page, "Select a service", "Select a Service; if it already exists, pick a different one",
-                total + " service option(s); tried: " + tried, chosen == null ? "no service selected" : "using: " + chosen,
+        step(page, "Select the Location and a Service", "Select the Location, then a Service; if it already exists, pick a different one",
+                "Location = " + (loc == null || loc.isEmpty() ? "(none)" : loc) + "; " + total + " service option(s); tried: " + tried,
+                chosen == null ? "no service selected" : "using: " + chosen,
                 (chosen != null && !chosen.isEmpty()) ? "PASS" : "FAIL");
 
+        if (addedPng != null && addedPng.length > 0) {
+            step(addedPng, "Click Add (adds the service to the Services list)", "Click Add beside the Services dropdown",
+                    "The chosen service is added to the Services grid", addResult, addedOk ? "PASS" : "FAIL");
+        } else {
+            step(page, "Click Add (adds the service to the Services list)", "Click Add beside the Services dropdown",
+                    "The chosen service is added to the Services grid", addResult, addedOk ? "PASS" : "FAIL");
+        }
+
         String actual = toast == null || toast.isEmpty() ? "No toast appeared"
-                : (ok ? toast : "Not saved — server returned: \"" + toast + "\"");
+                : (ok ? toast : "Not saved — server returned: \"" + toast + "\"" + (ac.lastSaveHttp.isEmpty() ? "" : "  ||  HTTP: " + ac.lastSaveHttp));
         step(page, "Click Submit & success toast", "Click Submit; wait for the success toast",
                 "'... saved successfully.' toast", actual, ok ? "PASS" : "FAIL");
+
+        // Verify the saved record in the list table (back on the list after a successful Submit).
+        if (ok) {
+            String verify = ac.verifyRecordInList(chosen);
+            step(page, "Verify the record in the list table", "Choose the Location, click Search, look for the saved service in the grid",
+                    "The saved service \"" + chosen + "\" is listed in the table",
+                    (ac.recordInList ? "PASSES: " : "FAILS: ") + verify, ac.recordInList ? "PASS" : "FAIL");
+        }
 
         addSummary("Service", chosen == null ? "-" : chosen);
         addSummary("Result", ok ? toast : "Not confirmed (\"" + toast + "\")");

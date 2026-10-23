@@ -344,7 +344,13 @@ public class SampleAcceptReject extends DevHisBase {
                     if (sar.lastReportFile != null && !sar.lastReportFile.isEmpty()) {
                         addSummary("[Reject] Rejection report image", sar.lastReportFile);
                     }
-                    step(page, "[Reject] Verify the sample rejection report is generated",
+                    // The PDF's own first page when it could be rendered (Chrome's PDF viewer screenshots blank), else the page.
+                    byte[] reportShot = sar.lastReportPng;
+                    if (reportShot == null || reportShot.length == 0) {
+                        try { reportShot = page.screenshot(new com.microsoft.playwright.Page.ScreenshotOptions().setTimeout(10000)); }
+                        catch (Exception ignore) { }
+                    }
+                    step(reportShot, "[Reject] Verify the sample rejection report is generated",
                             "Save should generate the sample rejection report",
                             "A report opens and carries content",
                             (reportOk

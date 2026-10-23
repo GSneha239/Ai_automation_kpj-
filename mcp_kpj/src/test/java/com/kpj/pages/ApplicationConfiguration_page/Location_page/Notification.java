@@ -203,12 +203,16 @@ public class Notification extends BasePage {
      */
     public String fillDetails(int attempt) {
         java.time.LocalDate d = java.time.LocalDate.now().plusDays(attempt);
+        // -DnotificationDate=yyyy-MM-dd pins the date (used to prove the save works for a day-of-month up to 12 while the
+        // default, today's date, keeps exposing the backend's day-first date parsing defect for days 13-31).
+        String pinned = System.getProperty("notificationDate", "").trim();
+        if (!pinned.isEmpty()) d = java.time.LocalDate.parse(pinned).plusDays(attempt);
         lastTargetDate = d;
         // The server rejects on "Description already exist" — on this shared, long-lived QA environment the
         // fixed REMARKS pool is already used up, so even attempt 0 needs a unique suffix, not just retries
-        // past REMARKS.length.
+        // past REMARKS.length. Stamped from the wall clock: nanoTime remainders end in "00" on this machine.
         lastRemark = REMARKS[attempt % REMARKS.length] + " "
-                + String.format("%06d", Math.abs((System.nanoTime() + attempt * 7919L) % 1000000));
+                + String.format("%06d", (System.currentTimeMillis() + attempt * 7919L) % 1000000);
 
         selectDateFromPicker(d);
         Object dv = page.evaluate("() => {" + FIND_FIELDS + " return dateEl?dateEl.value:''; }");

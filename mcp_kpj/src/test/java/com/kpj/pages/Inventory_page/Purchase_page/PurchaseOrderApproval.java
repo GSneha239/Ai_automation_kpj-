@@ -97,11 +97,13 @@ public class PurchaseOrderApproval extends BasePage {
 
         Object href = null;
         for (int attempt = 1; attempt <= 3; attempt++) {
-            clickMenu("^\\s*inventory\\s*$");
-            clickMenu("^\\s*purchase\\s*$");
+            // Open each level only if it is not already open: a click on an open entry CLOSES it, and this loop used to
+            // click again on every retry, shutting the menu it had just opened. Purchase is looked up INSIDE Inventory only.
+            expandMenuEntry(null, "^\\s*inventory\\s*$");
+            expandMenuEntry("^\\s*inventory\\s*$", "^\\s*purchase\\s*$");
             lastMenu = describeMenu();
             href = page.evaluate("() => {" + JS
-                    + " const a=[...document.querySelectorAll('a[href]')]"
+                    + " const a=[...document.querySelectorAll('a[href]')].filter(vis)"
                     + "   .find(x=>/^\\s*purchase\\s*order\\s*approval\\s*$/i.test(norm(x.textContent)));"
                     + " if(!a) return ''; a.id='__poaMenu'; return a.getAttribute('href')||''; }");
             if (href != null && !href.toString().isEmpty()) break;
@@ -217,7 +219,26 @@ public class PurchaseOrderApproval extends BasePage {
         waitForAngular(500);
         Object back = page.evaluate("(i) => { const e=document.getElementById(i);"
                 + " return e? (e.value||'') : '(gone)'; }", id);
-        return back == null ? "" : back.toString();
+        String got = back == null ? "" : back.toString();
+        String done = value.equals(got) ? got : setDateViaModel(id, value);
+        dismissDatePicker();   // close the calendar the date entry left open
+        return done;
+    }
+
+    /**
+     * The date boxes here are pre-filled pickers (class txtDate, inputmode=none, maxlength 10) that discard typed
+     * keystrokes and end up empty. Set the value through the box's own model instead, as other screens here do.
+     */
+    private String setDateViaModel(String id, String value) {
+        Object set = page.evaluate("(a) => { const e=document.getElementById(a.id); if(!e) return '(gone)';"
+                + " e.value=a.v;"
+                + " try{ const c=angular.element(e).controller('ngModel'); if(c){ c.$setViewValue(a.v); c.$render(); } }catch(x){}"
+                + " e.dispatchEvent(new Event('input',{bubbles:true}));"
+                + " e.dispatchEvent(new Event('change',{bubbles:true}));"
+                + " e.dispatchEvent(new Event('blur',{bubbles:true}));"
+                + " return e.value||''; }", java.util.Map.of("id", id, "v", value));
+        waitForAngular(500);
+        return set == null ? "" : set.toString();
     }
 
     public boolean datesEntered(String from, String to) {
@@ -226,13 +247,66 @@ public class PurchaseOrderApproval extends BasePage {
 
     /** Click the main <b>Search</b> button and report how many result rows came back. */
     public String clickSearch() {
+        // Record what the server answers to the search (status, path, start of the body) and any message the screen shows,
+        // so "0 rows" can be told apart: an empty result, a rejected request, or a missing search condition.
+        final java.util.List<String> seen = new java.util.concurrent.CopyOnWriteArrayList<>();
+        // Only note the API responses in the listener; bodies are read later (drain below). Reading r.text() inside the
+        // listener blocks Playwright's event thread and can hang forever on a body that never completes.
+        final java.util.List<com.microsoft.playwright.Response> got = new java.util.concurrent.CopyOnWriteArrayList<>();
+        final int[] drained = {0};
+        final Runnable drain = () -> {
+            while (drained[0] < got.size()) {
+                com.microsoft.playwright.Response r = got.get(drained[0]++);
+                try {
+                    String body = r.text();
+                    body = body == null ? "" : body.replaceAll("\\s+", " ");
+                    seen.add(r.status() + " " + r.request().method() + " " + r.url().replaceFirst("^https?://[^/]+", "")
+                            + " -> " + body.substring(0, Math.min(140, body.length())));
+                } catch (Exception ignore) { }
+            }
+        };
+        final java.util.function.Consumer<com.microsoft.playwright.Response> onResp = r -> {
+            try {
+                if (r.url().toLowerCase().contains("/api/") && r.request().resourceType().matches("xhr|fetch")
+                        && !r.url().contains("getInternalmsgCountOnly")) got.add(r);
+            } catch (Exception ignore) { }
+        };
+        page.onResponse(onResp);
         page.evaluate("() => {" + JS
                 + " const b=[...document.querySelectorAll('button,a')].filter(vis)"
                 + "   .find(x=>/^\\s*search\\s*$/i.test(norm(x.textContent))"
                 + "        || /^(fn)?search/i.test(x.getAttribute('ng-click')||''));"
                 + " if(b) b.click(); }");
-        waitForAngular(4000);
-        lastSearch = "clicked Search -> " + rowCount() + " row(s)";
+        String shown = "";
+        try {
+            page.waitForTimeout(700);
+            Object msg = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                    + " return [...document.querySelectorAll('.toast-message,.toast,.jAlert,.sweet-alert,.alert,[id^=toast]')]"
+                    + "   .filter(e=>e.offsetWidth||e.offsetHeight||e.getClientRects().length)"
+                    + "   .map(e=>norm(e.textContent).replace(/^\\S?\\s*KPJ Portal\\s*/i,'')).filter(t=>t)"
+                    + "   .filter((t,i,a)=>a.indexOf(t)===i).join(' | ').slice(0,200); }");
+            shown = msg == null ? "" : msg.toString();
+        } catch (Exception ignore) { }
+        waitForAngular(3500);
+        drain.run();
+        // The grid can fill AFTER the first count: a second Fetch answer carrying data was seen arriving late (the first one
+        // came back empty). While the grid is empty, give a late answer a few seconds to arrive, and once one carrying data has
+        // arrived give the grid time to render it — otherwise a store that does have purchase orders is passed over as empty.
+        int nowRows = rowCount();
+        long until = System.currentTimeMillis() + 4000;
+        while (nowRows == 0 && System.currentTimeMillis() < until) {
+            drain.run();
+            boolean dataSeen = seen.stream().anyMatch(x -> x.contains("-> [{"));
+            if (dataSeen) until = Math.max(until, System.currentTimeMillis() + 3000);
+            page.waitForTimeout(400);
+            nowRows = rowCount();
+            if (!dataSeen && System.currentTimeMillis() >= until) break;
+        }
+        page.offResponse(onResp);
+        drain.run();
+        lastSearch = "clicked Search -> " + rowCount() + " row(s)"
+                + (shown.isEmpty() ? "" : "; the screen said: '" + shown + "'")
+                + (seen.isEmpty() ? " (no API request was made by the search)" : "; server: " + String.join(" | ", seen));
         System.out.println("PurchaseOrderApproval: " + lastSearch);
         return lastSearch;
     }
@@ -402,6 +476,8 @@ public class PurchaseOrderApproval extends BasePage {
         Object back = page.evaluate("(i) => { const e=document.getElementById(i);"
                 + " return e? (e.value||'') : '(gone)'; }", id);
         lastPlannedDeliveryDate = back == null ? "" : back.toString();
+        if (!value.equals(lastPlannedDeliveryDate)) lastPlannedDeliveryDate = setDateViaModel(id, value);
+        dismissDatePicker();   // close the calendar the date entry left open
         System.out.println("PurchaseOrderApproval: planned delivery date -> " + lastPlannedDeliveryDate);
         return lastPlannedDeliveryDate;
     }
@@ -550,6 +626,60 @@ public class PurchaseOrderApproval extends BasePage {
      * per-row "is this one already decided" detection {@link PurchaseRequestApproval} needed. Best-effort
      * and non-fatal — reported plainly if this screen turns out not to have the filter.
      */
+    public String tickAllPoFilter() {
+        Object r = page.evaluate("() => {" + JS
+                + " const cb=pinnedLast('POAList.AllPO');"
+                + " if(!cb) return '(no All PO filter checkbox found)';"
+                + " if(!cb.checked) cb.click();"
+                + " try{ const c=angular.element(cb).controller('ngModel');"
+                + "      if(c){ c.$setViewValue(true); c.$render(); } }catch(err){}"
+                + " cb.dispatchEvent(new Event('change',{bubbles:true}));"
+                + " return cb.checked ? 'ticked the All PO filter'"
+                + "                   : '(the All PO filter would not stay checked)'; }");
+        waitForAngular(500);
+        String out = r == null ? "" : r.toString();
+        System.out.println("PurchaseOrderApproval: " + out);
+        return out;
+    }
+
+    /**
+     * Select the {@code k}-th real option (0 = first) of the <b>Store</b> filter ({@code POAList.StoreID}), waiting for the app
+     * to fill the list on the first call. For {@code k == 0} a stock-bearing "Pharmacy (Central)" is preferred when listed.
+     * Selected by index with the dropdown's own change handling and read back.
+     *
+     * @return the store's name, or a "(...)" text when there is no such store or it did not stay selected
+     */
+    public String selectSearchStoreAt(int k) {
+        final String sel = "select[ng-model='POAList.StoreID']";
+        if (k == 0) {
+            try {
+                page.waitForFunction("(s) => { const e=[...document.querySelectorAll(s)].find(x=>x.offsetWidth||x.offsetHeight||x.getClientRects().length);"
+                        + " return !!e && [...e.options].some(o=>o.value && !/^-*\\s*select/i.test((o.text||'').trim())); }",
+                        sel, new Page.WaitForFunctionOptions().setTimeout(15000));
+            } catch (Exception ignore) { /* reported below */ }
+        }
+        Object r = page.evaluate("([s, k]) => {" + JS
+                + " const e=[...document.querySelectorAll(s)].find(vis);"
+                + " if(!e) return '(no Store dropdown on the screen)';"
+                + " const reals=[...e.options].map((o,i)=>({o,i})).filter(x=>x.o.value && !/^-*\\s*select/i.test(norm(x.o.text)));"
+                + " if(!reals.length) return '(the Store list is empty: '+e.options.length+' option(s), none selectable)';"
+                + " if(k>=reals.length) return '(no more stores: only '+reals.length+')';"
+                + " let pick=reals[k];"
+                + " if(k===0){ const p=reals.find(x=>norm(x.o.text)==='Pharmacy (Central)'); if(p) pick=p; }"
+                + " e.selectedIndex=pick.i; e.dispatchEvent(new Event('change',{bubbles:true}));"
+                + " try{ angular.element(e).triggerHandler('change'); }catch(x){}"
+                + " return 'ok'; }", java.util.Arrays.asList(sel, k));
+        waitForAngular(900);
+        String res = r == null ? "" : r.toString();
+        if (!"ok".equals(res)) { System.out.println("PurchaseOrderApproval: Store #" + (k + 1) + " -> " + res); return res; }
+        Object shown = page.evaluate("(s) => { const e=[...document.querySelectorAll(s)].find(x=>x.offsetWidth||x.offsetHeight||x.getClientRects().length);"
+                + " return e ? ((e.options[e.selectedIndex]||{}).text||'').replace(/\\s+/g,' ').trim() : ''; }", sel);
+        String text = shown == null ? "" : shown.toString();
+        if (text.isEmpty() || text.matches("^-*\\s*[Ss]elect.*")) text = "(the Store did not stay selected: shows \"" + text + "\")";
+        System.out.println("PurchaseOrderApproval: Store #" + (k + 1) + " -> " + text);
+        return text;
+    }
+
     public String tickPendingPoFilter() {
         Object r = page.evaluate("() => {" + JS
                 + " const cb=pinnedLast('POAList.PendingPO');"

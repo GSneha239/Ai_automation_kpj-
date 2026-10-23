@@ -59,9 +59,11 @@ public class OpeningBalance extends DevHisBase {
         String itemName = System.getProperty("itemName", "");
         String barcode = System.getProperty("barcode", "BC" + stamp);
         String batchCode = System.getProperty("batchCode", "BATCH" + stamp);
+        // The row's Expiry Date box (txtExpiryDate, maxlength 5) takes month/year, e.g. 10/28 — a full dd/MM/yyyy is cut to
+        // five characters and rejected on blur, which left the box empty and made Save do nothing.
         String expiryDate = System.getProperty("expiryDate",
                 java.time.LocalDate.now().plusYears(2).format(
-                        java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy")));
+                        java.time.format.DateTimeFormatter.ofPattern("MM/yy")));
         String looseQty = System.getProperty("looseQty", "10");
         String packCost = System.getProperty("packCost", "5.00");
         String packMrp = System.getProperty("packMrp", "8.00");
@@ -104,6 +106,14 @@ public class OpeningBalance extends DevHisBase {
         if (!pickerOpen) { addSummary("Result", "FAILED — the item picker never opened"); return; }
 
         addSummary("Item picker controls", ob.describeDialogControls());
+
+        // 3b) The dialog's own Store (this screen's only Store control) — its Search lists nothing while none is chosen.
+        String pickerStore = ob.selectPickerStore();
+        boolean pickerStoreOk = ob.pickerStoreSelected();
+        step(page, "In the dialog, select the Store", "Select the Store from the dialog's Store dropdown",
+                "A Store is selected in the dialog",
+                pickerStoreOk ? "PASSES: Store = " + pickerStore : "FAILS: " + pickerStore,
+                pickerStoreOk ? "PASS" : "FAIL");
 
         // 4) Item Code + Item Name — SKIPPED when neither is pinned. Setting a field to "" still fires
         // Angular's change handlers (setEl dispatches input/change/blur), which may reset whatever
@@ -195,7 +205,8 @@ public class OpeningBalance extends DevHisBase {
         boolean success = com.kpj.pages.Inventory_page.OpeningBalance.isSuccess(toast);
         String actual = toast == null || toast.isEmpty()
                 ? "No message appeared — " + ob.lastSaveDiagnostics
-                : (success ? toast : "Save not confirmed — the screen answered: \"" + toast + "\"");
+                : (success ? toast : "Save not confirmed — the screen answered: \"" + toast + "\""
+                        + (ob.lastSaveHttp.isEmpty() ? "" : "; the server answered: " + ob.lastSaveHttp));
         step(page, "Click Save & verify success toast", "Click Save; wait for the success toast",
                 "'... saved successfully' toast", actual, success ? "PASS" : "FAIL");
 

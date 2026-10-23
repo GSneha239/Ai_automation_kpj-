@@ -14,6 +14,7 @@ import com.kpj.pages.LoginPage;
  *   <li>Click <b>Add</b>.</li>
  *   <li>Enter the <b>Code</b>, <b>Remark</b>, <b>From Time</b> and <b>To Time</b>.</li>
  *   <li>Select the <b>Cell Colour</b>.</li>
+ *   <li>Select <b>Applicable for</b> (Nurse / Medical Officer).</li>
  *   <li>Click <b>Submit</b> → verify the success toast.</li>
  * </ol>
  *
@@ -51,6 +52,8 @@ public class Shift extends DevHisBase {
         String from = System.getProperty("from", "08:00 AM");
         String to = System.getProperty("to", "04:00 PM");
         String colour = System.getProperty("colour", "#3b7dd8");
+        // "Applicable for" is a Nurse / Medical Officer radio pair; Submit refuses a shift without one. Pin with -Dapplicable=.
+        String applicable = System.getProperty("applicable", "Nurse");
 
         new LoginPage(page).login(BASE, USER, PASS, counter);
         step("Login", USER + " login (counter " + counter + ")",
@@ -114,7 +117,17 @@ public class Shift extends DevHisBase {
                     : "FAILS because no cell colour could be set: " + col),
                 colourOk ? "PASS" : "FAIL");
 
-        // 6) Submit -> toast
+        // 6) Applicable for (Nurse / Medical Officer) — Submit refuses a shift without one.
+        String app = sh.selectApplicableFor(applicable);
+        boolean appOk = sh.applicableSelected();
+        step(page, "Select Applicable for", "Select Applicable for (Nurse / Medical Officer): " + applicable,
+                "One of Nurse / Medical Officer is selected",
+                (appOk
+                    ? "PASSES because the radio is checked and the shift's model holds it: " + app
+                    : "FAILS because Applicable for could not be selected: " + app),
+                appOk ? "PASS" : "FAIL");
+
+        // 7) Submit -> toast
         String toast = sh.submitAndGetToast();
         boolean ok = com.kpj.pages.ApplicationConfiguration_page.General_page.Shift.isSuccess(toast);
 
@@ -159,6 +172,7 @@ public class Shift extends DevHisBase {
         addSummary("Code / Remark", code + " / " + remark);
         addSummary("From / To", from + " - " + to);
         addSummary("Cell Colour", sh.lastColour);
+        addSummary("Applicable for", sh.lastApplicable);
         addSummary("Result", ok ? toast : "Not confirmed (\"" + toast + "\")");
     }
 }

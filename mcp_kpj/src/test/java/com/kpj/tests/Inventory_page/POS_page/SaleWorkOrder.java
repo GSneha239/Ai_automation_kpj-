@@ -147,8 +147,16 @@ public class SaleWorkOrder extends DevHisBase {
         if (!printClickedOk) { addSummary("Result", "FAILED — the Print button was not found"); return; }
 
         PdfReport.Result pdf = PdfReport.capture(page, tabsBefore, 15000);
-        step(page, "[Print] Verify pdf generation", "Wait for the report to open",
-                "A non-blank PDF is generated", pdf.diagnostics, pdf.blank ? "FAIL" : "PASS");
+        if (pdf.png != null && pdf.png.length > 0) {
+            // Chrome's PDF viewer screenshots blank, so the screenshot is the PDF's first page rendered from the file.
+            step(pdf.png, "[Print] Verify pdf generation", "Wait for the report to open",
+                    "A non-blank PDF is generated",
+                    pdf.diagnostics + " The screenshot is the PDF's first page rendered from the file itself.",
+                    pdf.blank ? "FAIL" : "PASS");
+        } else {
+            step(page, "[Print] Verify pdf generation", "Wait for the report to open",
+                    "A non-blank PDF is generated", pdf.diagnostics, pdf.blank ? "FAIL" : "PASS");
+        }
 
         addSummary("Row selected", swo.lastRowTick);
         addSummary("Drug Details ticks", swo.lastDrugTick);
@@ -170,9 +178,16 @@ public class SaleWorkOrder extends DevHisBase {
         if (!printDrugLabelClickedOk) { addSummary("Result", "FAILED — the Print Drug Label button was not found"); return; }
 
         PdfReport.Result drugLabelPdf = PdfReport.capture(page, tabsBeforeDrugLabel, 15000);
-        step(page, "[Print Drug Label] Verify pdf generated of drug label", "Wait for the drug label PDF to open",
-                "A non-blank PDF drug label is generated", drugLabelPdf.diagnostics,
-                drugLabelPdf.blank ? "FAIL" : "PASS");
+        if (drugLabelPdf.png != null && drugLabelPdf.png.length > 0) {
+            step(drugLabelPdf.png, "[Print Drug Label] Verify pdf generated of drug label", "Wait for the drug label PDF to open",
+                    "A non-blank PDF drug label is generated",
+                    drugLabelPdf.diagnostics + " The screenshot is the PDF's first page rendered from the file itself.",
+                    drugLabelPdf.blank ? "FAIL" : "PASS");
+        } else {
+            step(page, "[Print Drug Label] Verify pdf generated of drug label", "Wait for the drug label PDF to open",
+                    "A non-blank PDF drug label is generated", drugLabelPdf.diagnostics,
+                    drugLabelPdf.blank ? "FAIL" : "PASS");
+        }
 
         addSummary("Print Drug Label PDF result", drugLabelPdf.diagnostics);
     }

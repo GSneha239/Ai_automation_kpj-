@@ -39,6 +39,12 @@ public class RedCellSerologyMaster extends DevHisBase {
     @org.junit.jupiter.api.Test
     void execute() { try { run(); } finally { stop(); } }
 
+    /** True when the section summary ends in "Rows a -> b" with b greater than a (the grid really gained a line). */
+    private static boolean lineAdded(String summary) {
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("Rows (\\d+) -> (\\d+)").matcher(summary);
+        return m.find() && Integer.parseInt(m.group(2)) > Integer.parseInt(m.group(1));
+    }
+
     @Override
     protected void body() {
         meta("Application Configuration - Blood Bank - Red Cell Serology Master",
@@ -88,6 +94,8 @@ public class RedCellSerologyMaster extends DevHisBase {
                 catch (Exception e) { System.out.println("RedCellSerologyMaster: serum grouping screenshot failed - " + e.getMessage()); }
             }
             toast = rcm.submitAndGetToast();
+            // Drop the toast frame's close "×" and "KPJ Portal" title so the report shows just the message.
+            if (toast != null) toast = toast.replaceFirst("^[\\u00d7x\\s]*KPJ\\s*Portal\\s*", "").trim();
             String tl = toast == null ? "" : toast.toLowerCase();
             ok = tl.contains("saved") || tl.contains("success") || tl.contains("added") || tl.contains("updated");
             exists = tl.contains("exist") || tl.contains("already");
@@ -100,7 +108,8 @@ public class RedCellSerologyMaster extends DevHisBase {
         step(page, "Select Blood Group", "Select the Blood Group dropdown", "A Blood Group is selected",
                 bgActual + (bgOk ? "" : "\n" + rcm.describeForm()), bgOk ? "PASS" : "FAIL");
 
-        boolean cellOk = cell.contains("Add=clicked") && !cell.contains("(not found)") && !cell.contains("(no-options)") && !cell.contains("not found)");
+        boolean cellOk = cell.contains("Add=clicked") && !cell.contains("(not found)") && !cell.contains("(no-options)") && !cell.contains("not found)")
+                && lineAdded(cell);
         if (cellPng != null && cellPng.length > 0) {
             step(cellPng, "Select Red Cell Serology Group + Result for Cell Grouping, click Add",
                     "Select Group and Result within the Cell Grouping section; click that section's Add",
@@ -111,7 +120,8 @@ public class RedCellSerologyMaster extends DevHisBase {
                     "The Cell Grouping line is added", cell + (cellOk ? "" : "\n" + rcm.describeForm()), cellOk ? "PASS" : "FAIL");
         }
 
-        boolean serumOk = serum.contains("Add=clicked") && !serum.contains("(not found)") && !serum.contains("(no-options)") && !serum.contains("not found)");
+        boolean serumOk = serum.contains("Add=clicked") && !serum.contains("(not found)") && !serum.contains("(no-options)") && !serum.contains("not found)")
+                && lineAdded(serum);
         if (serumPng != null && serumPng.length > 0) {
             step(serumPng, "Select Red Cell Serology Group + Result for Serum Grouping, click Add",
                     "Select Group and Result within the Serum Grouping section; click that section's Add",

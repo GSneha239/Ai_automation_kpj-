@@ -45,7 +45,9 @@ public class LoginPage extends BasePage {
      *  and reused throughout this suite — this never guesses a password, it only rotates between known-good
      *  accounts. Override/extend with {@code -Ddevhis.cred.fallbacks=user1:pass1,user2:pass2}. */
     private static final String[][] DEFAULT_CRED_FALLBACKS = {
-            {"tieba", "Tieba@123"},   // password reset 2026-09-10 (was User@123)
+            {"Sarannya", "User@123"},  // user-mandated primary devhis login (always use Sarannya)
+            {"SANCY4696", "User@123"},
+            {"tieba", "User@123"},    // tieba uses User@123 (2026-10-07; was Tieba@123 after the 2026-09-10 reset)
             {"farisha", "Tcare@123"},
             {"sandhya", "User@123"},
             {"Tieba", "User@123"},    // added 2026-09-24 — confirmed live: authenticates (Location/Counter load, lands on dashboard)
@@ -53,17 +55,31 @@ public class LoginPage extends BasePage {
 
     public void login(String baseUrl, String username, String password, String counter) {
         java.util.LinkedHashMap<String, String> candidates = new java.util.LinkedHashMap<>();
-        candidates.put(username, password); // primary — always tried first, regardless of the fallback list
+        // primary — always tried first, regardless of the fallback list (skip with -Ddevhis.login.fallbacksOnly=true when the
+        // default account is known to be rejected, so the saved list is tried straight away)
+        if (!Boolean.getBoolean("devhis.login.fallbacksOnly")) candidates.put(username, password);
         for (String[] fb : resolveCredFallbacks()) candidates.putIfAbsent(fb[0], fb[1]);
 
         String lastError = "";
         int attempt = 0;
+        boolean reload = false;      // set after an attempt THREW (e.g. a 30s fill timeout): start the next one from a fresh login page
         for (java.util.Map.Entry<String, String> cred : candidates.entrySet()) {
             attempt++;
             boolean isPrimary = attempt == 1;
             if (!isPrimary) System.out.println("login: '" + lastError + "' for a prior account — trying fallback credentials (" + cred.getKey() + ")");
 
-            AttemptResult result = attemptLogin(baseUrl, cred.getKey(), cred.getValue(), counter, isPrimary);
+            AttemptResult result;
+            try {
+                result = attemptLogin(baseUrl, cred.getKey(), cred.getValue(), counter, isPrimary || reload);
+                reload = false;
+            } catch (RuntimeException e) {
+                // A Playwright timeout in ONE attempt must not abort the remaining accounts.
+                String m = String.valueOf(e.getMessage()).replaceAll("\\s+", " ");
+                lastError = "attempt threw: " + m.substring(0, Math.min(120, m.length()));
+                System.out.println("login: attempt for '" + cred.getKey() + "' threw - " + lastError + " — continuing with the next account");
+                reload = true;
+                continue;
+            }
             if (result.success) return;
 
             // Confirmed live: the app doesn't always surface a readable toast for a genuine rejection (a
@@ -145,6 +161,21 @@ public class LoginPage extends BasePage {
         } catch (Exception ignore) { System.out.println("login: Location (getLocations) did not populate in time — proceeding"); }
         waitForAngular(600);
 
+        // Newer login builds (devhis v2026.10.09.204) wipe the form when the blur-time getLocations() refresh finishes: the
+        // credentials verified above are gone by the time Login is pressed ("Password is Required"). Re-check right before
+        // submitting and fill again if either field was cleared.
+        try {
+            boolean userGone = page.locator(loginNameInput()).inputValue().isEmpty();
+            boolean passGone = page.locator(passwordInput()).inputValue().isEmpty();
+            if (userGone || passGone) {
+                System.out.println("login: form was cleared after the blur refresh (user " + (userGone ? "empty" : "kept") + ", password "
+                        + (passGone ? "empty" : "kept") + ") — filling again before Login");
+                if (userGone) fillAndVerify(loginNameInput(), username);
+                if (passGone) fillAndVerify(passwordInput(), password);
+                waitForAngular(300);
+            }
+        } catch (Exception e) { System.out.println("login: pre-submit check skipped - " + e.getMessage().split("\\n")[0]); }
+
         // Step 3 — click the Login button
         clickLoginButton();
         waitForAngular(2000);
@@ -158,9 +189,16 @@ public class LoginPage extends BasePage {
             clickLoginButton();
         }
 
-        try { page.waitForURL("**/PatientDashboard", new Page.WaitForURLOptions().setTimeout(15000)); } catch (Exception ignore) {}
+        // Confirmed live (2026-09-30): the devhis backend can be genuinely slow to authenticate — a manual
+        // login with these exact credentials succeeded but "must wait a bit" (screenshot evidence: sandhya
+        // AND Tieba both work). The previous fixed 15s URL wait + 3s Angular settle was too short for that
+        // slowness, so the attempt was abandoned while authentication was still in flight, and the run then
+        // misreported the always-present "Passwords are case-sensitive." password-field hint text (see
+        // readLoginErrorText()) as if it were the rejection reason. Poll for the form to actually disappear —
+        // exits as soon as it does, so a fast response still returns quickly — rather than a single timeout.
+        try { page.waitForURL("**/PatientDashboard", new Page.WaitForURLOptions().setTimeout(30000)); } catch (Exception ignore) {}
         page.waitForLoadState(com.microsoft.playwright.options.LoadState.DOMCONTENTLOADED);
-        waitForAngular(3000);
+        for (int i = 0; i < 30 && isLoginFormVisible(); i++) page.waitForTimeout(1000);
 
         if (!isLoginFormVisible()) return new AttemptResult(true, "");
         String errorText = readLoginErrorText();
@@ -172,8 +210,33 @@ public class LoginPage extends BasePage {
      *  right after dismissing a rejected-login toast can silently not stick the first time. */
     private void fillAndVerify(String selector, String value) {
         for (int attempt = 0; attempt < 3; attempt++) {
-            page.locator(selector).fill("");
-            page.locator(selector).fill(value);
+            try {
+                // Generous: the login form fires a SYNCHRONOUS request (GetLoginLoc, async:false) when the user-name box loses focus, which
+                // freezes the whole page until the server answers — on a slow server a 30s fill timed out although nothing was wrong.
+                page.locator(selector).fill("", new com.microsoft.playwright.Locator.FillOptions().setTimeout(120000));
+            } catch (RuntimeException e) {
+                // The field never became editable: say WHY (disabled / readonly / aria-disabled / hidden / what covers it),
+                // so a login that "times out filling the password" is not a mystery in the log.
+                Object why = page.evaluate("(sel) => { const e=document.querySelector(sel); if(!e) return 'no element for '+sel;"
+                        + " const r=e.getBoundingClientRect(); const cs=getComputedStyle(e);"
+                        + " const dis=e.closest('[disabled],[aria-disabled=true],fieldset:disabled');"
+                        + " const top=document.elementFromPoint(r.left+r.width/2, r.top+r.height/2);"
+                        + " return JSON.stringify({disabled:e.disabled, readOnly:e.readOnly, ariaDisabled:e.getAttribute('aria-disabled'),"
+                        + "  disabledAncestor: dis? dis.tagName+'#'+(dis.id||'')+'.'+(dis.className||'') : null, visibility:cs.visibility,"
+                        + "  display:cs.display, w:Math.round(r.width), h:Math.round(r.height), connected:e.isConnected,"
+                        + "  coveredBy: top && top!==e ? top.tagName+'#'+(top.id||'')+'.'+String(top.className||'').slice(0,60) : null,"
+                        + "  url:location.href, bodyText:(document.body.innerText||'').replace(/\\s+/g,' ').slice(0,160)}); }", selector);
+                System.out.println("login: '" + selector + "' did not become editable — " + why);
+                throw e;
+            }
+            if (selector.equals(passwordInput())) {
+                // Newer login builds (devhis v2026.10.09.204) keep their own password state and only accept real key presses: a
+                // programmatic fill() shows the text but the app still answers "Password is Required". Type it key by key.
+                page.locator(selector).click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(120000));
+                page.locator(selector).pressSequentially(value, new com.microsoft.playwright.Locator.PressSequentiallyOptions().setDelay(60).setTimeout(120000));
+            } else {
+                page.locator(selector).fill(value, new com.microsoft.playwright.Locator.FillOptions().setTimeout(120000));
+            }
             String actual = page.locator(selector).inputValue();
             if (value.equals(actual)) return;
             System.out.println("login: fill of '" + selector + "' did not stick (got \"" + actual + "\") — retrying");
@@ -182,12 +245,18 @@ public class LoginPage extends BasePage {
     }
 
     /** Any visible toast/alert/inline-validation text on the login form — whatever the app said about why
-     *  the attempt was rejected (account locked, invalid password, etc.), for the fallback-decision above. */
+     *  the attempt was rejected (account locked, invalid password, etc.), for the fallback-decision above.
+     *
+     *  <p>Confirmed live (2026-09-30, screenshot evidence) that "Passwords are case-sensitive." is a STATIC
+     *  hint under the password field — it is shown as soon as that field is touched, regardless of whether
+     *  the login succeeds or fails (manually confirmed working credentials still show it). It is filtered out
+     *  here so a genuinely slow-but-successful backend never gets misreported as a credential rejection.</p> */
     private String readLoginErrorText() {
         Object r = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
                 + " const sels = '.toast-message,.toast,[id^=toast],.alert,.jconfirm,.ng-confirm-box,.sweet-alert,[class*=validation],.help-block,.error,.text-danger';"
                 + " const els=[...document.querySelectorAll(sels)].filter(e=>e.offsetParent!==null);"
-                + " return els.map(e=>norm(e.textContent)).filter(Boolean).join(' | '); }");
+                + " return els.map(e=>norm(e.textContent)).filter(Boolean)"
+                + "   .filter(t=>!/^passwords are case-sensitive\\.?$/i.test(t)).join(' | '); }");
         return r == null ? "" : r.toString();
     }
 
@@ -241,10 +310,10 @@ public class LoginPage extends BasePage {
     }
 
     /**
-     * Convenience overload using default DevHIS credentials (sandhya / User@123 / OPD-B-01).
+     * Convenience overload using default DevHIS credentials (Sarannya / User@123).
      */
     public void loginWithDefaults(String baseUrl) {
-        login(baseUrl, "tieba", "Tieba@123", null);
+        login(baseUrl, "Sarannya", "User@123", null);
     }
 
     /**

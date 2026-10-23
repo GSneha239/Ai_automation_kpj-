@@ -98,13 +98,16 @@ public class NursingStationDefinition extends BasePage {
         lastCode = code;
         setNg("NursingStationDefination.code", code);
         setNg("NursingStationDefination.description", "Auto nursing station " + code);
+        // "Number of Patient per nurse per day*" is mandatory — Save answers "... is mandatory!" while it is empty.
+        String patientsPerNurse = System.getProperty("patientsPerNurse", "5");
+        setNg("NursingStationDefination.patientpernurseperday", patientsPerNurse);
         realSelectFirst("NursingStationDefination.unitid", 8000);   // Location*
         waitForAngular(800);
         lastFloor = realSelectFirst("NursingStationDefination.floorid", 8000);   // Floor*
         waitForAngular(1200);
         lastWard = realSelectFirst("NursingStationDefination.wardid", 8000);     // Ward* (cascade)
         waitForAngular(800);
-        return "Code=" + code + " | Floor=" + lastFloor + " | Ward=" + lastWard;
+        return "Code=" + code + " | Patients per nurse per day=" + patientsPerNurse + " | Floor=" + lastFloor + " | Ward=" + lastWard;
     }
 
     // ---- section (Room List / Bed List) detection by DOM-order heading ---

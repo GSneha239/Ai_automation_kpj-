@@ -186,6 +186,7 @@ public class StaffSchedule extends BasePage {
     /** Select the {@code index}-th <b>Department</b>. */
     public String selectDepartment(int index) {
         lastDepartment = selectByLabel("^department\\*?$", index);
+        waitForAngular(1500);   // the Payable list is filled from the server once a Department is chosen
         return lastDepartment;
     }
 

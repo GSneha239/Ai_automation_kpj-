@@ -55,15 +55,21 @@ public class PurchaseExpense extends BasePage {
         try { page.waitForFunction("() => window.angular", null,
                 new Page.WaitForFunctionOptions().setTimeout(20000)); } catch (Exception ignore) { }
 
-        clickMenu("^\\s*application\\s*configuration\\s*$");
-        clickMenu("^\\s*inventory\\s*$");
+        // "Inventory" is ALSO a top-level sidebar module: an unscoped click collapses Application Configuration and the app
+        // stays on the Patient Dashboard. Expand each level idempotently, and look for the leaf INSIDE Application Configuration.
+        final String appCfg = "^\\s*application\\s*configuration\\s*$";
+        boolean appOpen = expandMenuEntry(null, appCfg);
+        boolean invOpen = appOpen && expandMenuEntry(appCfg, "^\\s*inventory\\s*$");
+        if (!invOpen) System.out.println("PurchaseExpense.nav: Application Configuration open=" + appOpen + ", Inventory open=" + invOpen);
         lastMenu = describeMenu();
 
         // Anchored to the whole label. A loose match on "generic" would take the first menu entry that
         // merely contains the word — the scaffolding trap that once ran an entire Compliance flow
         // against Complaint Type and reported PASS against the wrong screen's fields.
         Object href = page.evaluate("() => {" + JS
-                + " const a=[...document.querySelectorAll('a[href]')]"
+                + " const top=[...document.querySelectorAll('a')].find(x=>/^\\s*application\\s*configuration\\s*$/i.test(norm(x.textContent)) && vis(x));"
+                + " const scope=(top&&top.closest('li'))||document;"
+                + " const a=[...scope.querySelectorAll('a[href]')]"
                 + "   .find(x=>/^\\s*purchase\\s*expense\\s*$/i.test(norm(x.textContent)));"
                 + " if(!a) return ''; a.id='__pexMenu'; return a.getAttribute('href')||''; }");
         lastRoute = href == null ? "" : href.toString();
@@ -117,8 +123,11 @@ public class PurchaseExpense extends BasePage {
     private void clickMenu(String textRegex) {
         page.evaluate("(re) => {" + JS
                 + " const rx=new RegExp(re,'i');"
-                + " const a=[...document.querySelectorAll('a,li>a,span')].filter(vis)"
-                + "   .find(x=>rx.test(norm(x.textContent)));"
+                + " const all=[...document.querySelectorAll('a,li>a,span')].filter(vis)"
+                + "   .filter(x=>rx.test(norm(x.textContent)));"
+                + " const ac=[...document.querySelectorAll('a')].find(x=>/^\s*application\s*configuration\s*$/i.test(norm(x.textContent)));"
+                + " const root=ac&&ac.closest('li'); const a=(root&&all.find(x=>x!==ac&&root.contains(x)))||all[0];"
+
                 + " if(a) a.click(); }", textRegex);
         waitForAngular(1200);
     }

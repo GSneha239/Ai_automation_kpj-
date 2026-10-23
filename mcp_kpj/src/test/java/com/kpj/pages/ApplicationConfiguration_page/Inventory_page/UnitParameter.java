@@ -64,7 +64,7 @@ public class UnitParameter extends BasePage {
         // against Complaint Type and reported PASS against the wrong screen's fields.
         Object href = page.evaluate("() => {" + JS
                 + " const a=[...document.querySelectorAll('a[href]')]"
-                + "   .find(x=>/^\\s*unit\\s*parameter\\s*$/i.test(norm(x.textContent)));"
+                + "   .find(x=>/^\\s*unit\\s*(?:parameter|master)\\s*$/i.test(norm(x.textContent)));"
                 + " if(!a) return ''; a.id='__upMenu'; return a.getAttribute('href')||''; }");
         lastRoute = href == null ? "" : href.toString();
         if (!lastRoute.isEmpty()) {
@@ -117,8 +117,11 @@ public class UnitParameter extends BasePage {
     private void clickMenu(String textRegex) {
         page.evaluate("(re) => {" + JS
                 + " const rx=new RegExp(re,'i');"
-                + " const a=[...document.querySelectorAll('a,li>a,span')].filter(vis)"
-                + "   .find(x=>rx.test(norm(x.textContent)));"
+                + " const all=[...document.querySelectorAll('a,li>a,span')].filter(vis)"
+                + "   .filter(x=>rx.test(norm(x.textContent)));"
+                + " const ac=[...document.querySelectorAll('a')].find(x=>/^\s*application\s*configuration\s*$/i.test(norm(x.textContent)));"
+                + " const root=ac&&ac.closest('li'); const a=(root&&all.find(x=>x!==ac&&root.contains(x)))||all[0];"
+
                 + " if(a) a.click(); }", textRegex);
         waitForAngular(1200);
     }
@@ -145,7 +148,7 @@ public class UnitParameter extends BasePage {
         int h = u.indexOf('#');
         String route = h < 0 ? "" : u.substring(h);
         if (route.contains("patientdashboard") || route.equals("#") || route.isEmpty()) return false;
-        if (route.contains("unitparameter") || route.contains("unitparam")
+        if (route.contains("unitparameter") || route.contains("unitparam") || route.contains("unitmaster")
                 || route.contains("genmst")) return true;
         String menuRoute = lastRoute == null ? "" : lastRoute.toLowerCase().replace("#", "").trim();
         return !menuRoute.isEmpty() && route.contains(menuRoute);

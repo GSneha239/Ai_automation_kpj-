@@ -100,11 +100,13 @@ public class PurchaseRequestApproval extends BasePage {
 
         Object href = null;
         for (int attempt = 1; attempt <= 3; attempt++) {
-            clickMenu("^\\s*inventory\\s*$");
-            clickMenu("^\\s*purchase\\s*$");
+            // Open each level only if it is not already open: a click on an open entry CLOSES it, and this loop used to
+            // click again on every retry, shutting the menu it had just opened. Purchase is looked up INSIDE Inventory only.
+            expandMenuEntry(null, "^\\s*inventory\\s*$");
+            expandMenuEntry("^\\s*inventory\\s*$", "^\\s*purchase\\s*$");
             lastMenu = describeMenu();
             href = page.evaluate("() => {" + JS
-                    + " const a=[...document.querySelectorAll('a[href]')]"
+                    + " const a=[...document.querySelectorAll('a[href]')].filter(vis)"
                     + "   .find(x=>/^\\s*purchase\\s*request\\s*approval\\s*$/i.test(norm(x.textContent)));"
                     + " if(!a) return ''; a.id='__praMenu'; return a.getAttribute('href')||''; }");
             if (href != null && !href.toString().isEmpty()) break;
@@ -216,7 +218,118 @@ public class PurchaseRequestApproval extends BasePage {
         waitForAngular(500);
         Object back = page.evaluate("(i) => { const e=document.getElementById(i);"
                 + " return e? (e.value||'') : '(gone)'; }", id);
-        return back == null ? "" : back.toString();
+        String got = back == null ? "" : back.toString();
+        if (!value.equals(got)) {
+            // A pre-filled picker box (class txtDate, inputmode=none, maxlength 10): typed keystrokes are discarded and the
+            // box ends up empty. Set the value through the box's own model instead, as other screens here do.
+            Object set = page.evaluate("(a) => { const e=document.getElementById(a.id); if(!e) return '(gone)';"
+                    + " e.value=a.v;"
+                    + " try{ const c=angular.element(e).controller('ngModel'); if(c){ c.$setViewValue(a.v); c.$render(); } }catch(x){}"
+                    + " e.dispatchEvent(new Event('input',{bubbles:true}));"
+                    + " e.dispatchEvent(new Event('change',{bubbles:true}));"
+                    + " e.dispatchEvent(new Event('blur',{bubbles:true}));"
+                    + " return e.value||''; }", java.util.Map.of("id", id, "v", value));
+            waitForAngular(500);
+            got = set == null ? "" : set.toString();
+        }
+        dismissDatePicker();   // close the calendar the date entry left open
+        return got;
+    }
+
+    /** What {@link #selectSearchFilters()} chose for each of the three filters, or why one could not be chosen. */
+    public String lastFilters = "";
+    private boolean filtersAllChosen = false;
+
+    /**
+     * Select the search filters <b>Requesting Store</b>, <b>Supplier</b> and <b>PR Approval Level</b>
+     * ({@code PurchaseRequest.StoreID / SupplierID / levelid}). Each list is filled by the app after the screen shows, so
+     * each is waited for (up to 15s) and the first real option is taken; an empty list is reported by name.
+     */
+    public String selectSearchFilters() {
+        String store = selectFirstReal("PurchaseRequest.StoreID", "Requesting Store");
+        String supplier = selectFirstReal("PurchaseRequest.SupplierID", "Supplier");
+        String level = selectFirstReal("PurchaseRequest.levelid", "PR Approval Level");
+        // The PR Approval Level is ignored: it is optional here (its list may be empty), so only the store and supplier must be chosen.
+        filtersAllChosen = !store.startsWith("(") && !supplier.startsWith("(");
+        lastFilters = "Requesting Store=" + store + " | Supplier=" + supplier + " | PR Approval Level=" + level;
+        System.out.println("PurchaseRequestApproval: filters -> " + lastFilters);
+        return lastFilters;
+    }
+
+    public boolean searchFiltersSelected() { return filtersAllChosen; }
+
+    /** How many real stores the Requesting Store dropdown offers (set by {@link #selectRequestingStoreAt(int)}). */
+    public int requestingStoreCount = 0;
+
+    /**
+     * Select the {@code k}-th real option (0 = first) of the <b>Requesting Store</b> dropdown, leaving the other filters as
+     * they are. Used to try one store after another when the first one's search lists nothing.
+     *
+     * @return the store's name, or a "(...)" text when there is no such store
+     */
+    public String selectRequestingStoreAt(int k) {
+        Object r = page.evaluate("(k) => {" + JS
+                + " const e=[...document.querySelectorAll(\"select[ng-model='PurchaseRequest.StoreID']\")].find(vis);"
+                + " if(!e) return '(no Requesting Store dropdown)';"
+                + " const reals=[...e.options].map((o,i)=>({o,i})).filter(x=>x.o.value && !/^-*\\s*select/i.test(norm(x.o.text)));"
+                + " if(k>=reals.length) return '(no more stores: only '+reals.length+')';"
+                + " e.selectedIndex=reals[k].i; e.dispatchEvent(new Event('change',{bubbles:true}));"
+                + " try{ angular.element(e).triggerHandler('change'); }catch(x){}"
+                + " return reals.length+'|'+norm(reals[k].o.text); }", k);
+        waitForAngular(900);
+        String s = r == null ? "" : r.toString();
+        if (s.matches("\\d+\\|.*")) {
+            requestingStoreCount = Integer.parseInt(s.substring(0, s.indexOf('|')));
+            s = s.substring(s.indexOf('|') + 1);
+        }
+        System.out.println("PurchaseRequestApproval: Requesting Store #" + (k + 1) + " -> " + s);
+        return s;
+    }
+
+    /** Put the Requesting Store, Supplier and PR Approval Level filters back on "-Select-" (no restriction). */
+    public String clearSearchFilters() {
+        Object r = page.evaluate("() => {" + JS
+                + " const out=[];"
+                + " for(const m of ['PurchaseRequest.StoreID','PurchaseRequest.SupplierID','PurchaseRequest.levelid']){"
+                + "   const e=[...document.querySelectorAll(\"select[ng-model='\"+m+\"']\")].find(vis);"
+                + "   if(!e){ out.push(m.split('.').pop()+': none'); continue; }"
+                + "   e.selectedIndex=0; e.dispatchEvent(new Event('change',{bubbles:true}));"
+                + "   try{ angular.element(e).triggerHandler('change'); }catch(x){}"
+                + "   out.push(m.split('.').pop()+' -> '+norm((e.options[0]||{}).text||'')); }"
+                + " return out.join(', '); }");
+        waitForAngular(900);
+        String s = r == null ? "" : r.toString();
+        System.out.println("PurchaseRequestApproval: filters cleared -> " + s);
+        return s;
+    }
+
+    private String selectFirstReal(String ngModel, String label) {
+        final String sel = "select[ng-model='" + ngModel + "']";
+        try {
+            page.waitForFunction("(s) => { const e=[...document.querySelectorAll(s)].find(x=>x.offsetWidth||x.offsetHeight||x.getClientRects().length);"
+                    + " return !!e && [...e.options].some(o=>o.value && !/^-*\\s*select/i.test((o.text||'').trim())); }",
+                    sel, new Page.WaitForFunctionOptions().setTimeout(15000));
+        } catch (Exception ignore) { /* reported below from what is really there */ }
+        Object r = page.evaluate("([s, label]) => {" + JS
+                + " const e=[...document.querySelectorAll(s)].find(vis);"
+                + " if(!e) return '(no '+label+' dropdown on the screen)';"
+                + " const reals=[...e.options].map((o,i)=>({o,i})).filter(x=>x.o.value && !/^-*\\s*select/i.test(norm(x.o.text)));"
+                + " if(!reals.length) return '(the '+label+' list is empty: '+e.options.length+' option(s), none selectable)';"
+                // Select by index and let the dropdown's own change handling bind it — writing the model by hand
+                // ($setViewValue/$render) on an ng-options select put it back on "-Select-".
+                + " e.selectedIndex=reals[0].i;"
+                + " e.dispatchEvent(new Event('change',{bubbles:true}));"
+                + " try{ angular.element(e).triggerHandler('change'); }catch(x){}"
+                + " return reals[0].i+''; }", java.util.Arrays.asList(sel, label));
+        waitForAngular(900);
+        String idx = r == null ? "" : r.toString();
+        if (idx.startsWith("(")) return idx;
+        // Read back what the dropdown actually shows now, so a selection that did not stick is reported as such.
+        Object shown = page.evaluate("(s) => { const norm=t=>(t||'').replace(/\\s+/g,' ').trim();"
+                + " const e=[...document.querySelectorAll(s)].find(x=>x.offsetWidth||x.offsetHeight||x.getClientRects().length);"
+                + " return e ? norm((e.options[e.selectedIndex]||{}).text||'') : ''; }", sel);
+        String text = shown == null ? "" : shown.toString();
+        return (text.isEmpty() || text.matches("^-*\\s*[Ss]elect.*")) ? "(" + label + " did not stay selected: shows \"" + text + "\")" : text;
     }
 
     public boolean datesEntered(String from, String to) {
@@ -237,16 +350,16 @@ public class PurchaseRequestApproval extends BasePage {
     }
 
     public int rowCount() {
+        // DATA rows only: the old count included the grid's header and filter rows, so an EMPTY result still read as
+        // "2 row(s)" and the Search step passed on a list with nothing in it.
         Object n = page.evaluate("() => {" + JS
-                + " return [...document.querySelectorAll('.ui-grid-row,tr')].filter(vis)"
-                + "   .filter(r=>norm(r.textContent)).length; }");
+                + " return dataRows().length; }");
         return n instanceof Number ? ((Number) n).intValue() : 0;
     }
 
     public String describeRows() {
         Object r = page.evaluate("() => {" + JS
-                + " const rows=[...document.querySelectorAll('.ui-grid-row,tr')].filter(vis)"
-                + "   .map(x=>norm(x.textContent)).filter(t=>t);"
+                + " const rows=dataRows().map(x=>norm(x.textContent)).filter(t=>t);"
                 + " return rows.length+' row(s)'+(rows.length? ': '+rows.slice(0,2)"
                 + "   .map(t=>t.slice(0,110)).join('  ;;  ') : ''); }");
         lastRows = r == null ? "" : r.toString();

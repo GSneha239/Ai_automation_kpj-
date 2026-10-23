@@ -228,7 +228,8 @@ public class LabOrganism extends BasePage {
         long n = Math.abs((System.nanoTime() + attempt * 7919L) % 100000);
         lastCode = numericCodes ? String.format("%06d", Math.abs((System.nanoTime() + attempt * 7919L) % 1000000))
                                 : "LO" + String.format("%05d", n);
-        lastRemark = REMARKS[(int) (Math.abs(System.nanoTime() / 1000 + attempt) % REMARKS.length)];
+        lastRemark = REMARKS[(int) (Math.abs(System.nanoTime() / 1000 + attempt) % REMARKS.length)]
+                + " " + Long.toString(System.currentTimeMillis(), 36).toUpperCase() + attempt;   // unique stamp: never repeats, even across runs
         Object r = page.evaluate("(a) => { const A=window.angular;" + FIND_FIELDS + SET_EL
                 + " const cd=setEl(codeEl, a.code); const rm=setEl(remEl, a.remark);"
                 + " return 'Code='+cd+' | Remark='+rm"
