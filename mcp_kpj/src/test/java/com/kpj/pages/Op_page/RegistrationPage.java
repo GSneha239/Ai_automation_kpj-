@@ -308,7 +308,11 @@ public class RegistrationPage extends BasePage {
         waitForAngular(400);
         // Identification No (NRIC) via the Angular model (the field can be transiently guarded/disabled). Verify it
         // committed and retry — if the Identification Type wasn't set, this field stays empty and blocks Save.
-        for (int a = 0; a < 4; a++) {
+        // A foreigner is identified by the passport: the app disables Passport No. while Registration.NationalId has
+        // a value (ng-disabled="Registration.NationalId || disablePassport"), so typing the NRIC here disabled the
+        // very box that had just been filled (Passport check reported "not fillable"). NRIC for a Malaysian only.
+        boolean nricFor = patientIsMalaysian();
+        for (int a = 0; nricFor && a < 4; a++) {
             page.evaluate("(v)=>{const e=[...document.querySelectorAll(\"input[ng-model='Registration.NationalId']\")].find(x=>x.getAttribute('maxlength')==='12') || [...document.querySelectorAll(\"input[ng-model='Registration.NationalId']\")][0];"
                     + "if(e){const c=angular.element(e).controller('ngModel');e.value=v;if(c){c.$setViewValue(v);c.$render();}"
                     + "e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}));}}", p.nric);
@@ -317,7 +321,8 @@ public class RegistrationPage extends BasePage {
             if (nricSet) break;
             System.out.println("fillPatientInformation: Identification No not committed yet — retrying (attempt " + (a + 1) + ")");
         }
-        snap("Registration.NationalId", p.nric);
+        if (nricFor) snap("Registration.NationalId", p.nric);
+        else System.out.println("fillPatientInformation: foreign nationality — Identification No. (NRIC) left empty, Passport only");
         page.locator("#txtDateOfBirth").fill(p.dob);
         snap("Registration.DateOfBirth", p.dob);
         fillModel("Registration.TINNumber", p.tin);
@@ -810,6 +815,13 @@ public class RegistrationPage extends BasePage {
         for (int attempt = 0; attempt < 3; attempt++) {
             Object cur = page.evaluate("() => { const e=[...document.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')==='Registration.ICCardTypeID');"
                     + " const o=e?e.options[e.selectedIndex]:null; return o?o.textContent.trim():''; }");
+            // Already right? Identification Type reads "want" AND the Passport box is in the wanted state: leave it. The
+            // toggle below flips to the OTHER option first, and on a foreign nationality the select then never offers
+            // "Passport" again (selectOption timed out 3x, leaving the box disabled and the check reporting a false DEFECT).
+            Object already = page.evaluate("(a) => { const s=[...document.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')==='Registration.ICCardTypeID');"
+                    + " const o=s?s.options[s.selectedIndex]:null; const e=[...document.querySelectorAll('input')].find(x=>x.getAttribute('ng-model')==='Registration.FamilyName');"
+                    + " return !!o && o.textContent.trim().toLowerCase()===a[0].toLowerCase() && !!e && (e.disabled===!a[1]); }", java.util.Arrays.asList(want, wantEnabled));
+            if (Boolean.TRUE.equals(already)) return;
             // Re-select even when the label already reads "want" — a select whose VALUE doesn't change fires no
             // 'change' event, so if the label is stale-but-correct from an earlier fill, the ng-disabled watcher on
             // Registration.FamilyName never re-ran. Force a real change by picking a DIFFERENT option first when

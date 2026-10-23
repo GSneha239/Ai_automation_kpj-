@@ -386,6 +386,8 @@ public class Admission extends BasePage {
             setSelLike("Registration.KinRelationID", kinRel);
             setInput("Registration.KinMobileNo", kinMobile);
             setInput("Registration.KinEmail", kinEmail);
+            // NOK TIN is mandatory: without it AddKinDetails answers "Tax Identification Number (TIN) for Next of Kin is mandatory!"
+            setInput("Registration.KinTinNo", "IG" + (rnd.nextInt(90000000) + 10000000));
             setSelLike("Registration.KinOccupationID", "Education");
             setSelTxt("Registration.KinMobileCountryCode", "60");
             // KinCountryID is where the kin LIVES, not what it IS — the nationality is NOKnationalid below, and
@@ -591,7 +593,12 @@ public class Admission extends BasePage {
                 + "    if(!mandatory || chosen(e)) return;"
                 + "    const real=[...e.options].filter(o=>o.value && !/^-*\\s*select\\s*-*$/i.test(norm(o.textContent)));"
                 + "    if(!real.length){ out.push(lab.replace(/\\*/g,'').trim()+'=(no options)'); return; }"
-                + "    e.value=real[0].value; e.dispatchEvent(new Event('change',{bubbles:true}));"
+                // An admission is inpatient: for Encounter Type prefer the inpatient / IPD option over the first one
+                // (DayCare on devhis), which makes Save demand GL Reference No. / GL Approved Amt. / Estimated Amount.
+                // Billing Class (Admission.BillingClassID, reported under the label "Bed Class") must stay on its first option
+                // ("Day Patient"): picking "In Patient" made Save answer "Please fill in all the mandatory fields!" (verified 2026-10-22).
+                + "    const pick=((/encounter\\s*type/i.test(lab)) && real.find(o=>/in.?patient|ipd/i.test(norm(o.textContent)))) || real[0];"
+                + "    e.value=pick.value; e.dispatchEvent(new Event('change',{bubbles:true}));"
                 + "    try{A.element(e).triggerHandler('change');}catch(x){} if($){try{$(e).trigger('change');}catch(x){}}"
                 + "    out.push(lab.replace(/\\*/g,'').trim()+'='+(chosen(e)||'(did not bind)')); });"
                 + " return out.join(', '); }");

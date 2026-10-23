@@ -116,7 +116,9 @@ public class Transfer extends DevHisBase {
         if (!itemListOk) { addSummary("Result", "FAILED — Indent Item List did not populate"); return; }
 
         // 6) Indent Item List -> tick -> verify Item Batch List + Selected Item (bottom)
-        String itemRow = xfer.tickFirstIndentItemRow();
+        // Walk indents/items until one has batch stock (the first item alone is often out of stock at the Issuing Store).
+        String itemRow = xfer.tickIndentItemWithStock();
+        if (itemRow.isEmpty()) itemRow = xfer.tickFirstIndentItemRow();
         List<String> batchRows = xfer.itemBatchListRows();
         List<String> bottomRows = xfer.bottomSelectedItemRows();
         boolean batchOk = !batchRows.isEmpty() && !bottomRows.isEmpty();
