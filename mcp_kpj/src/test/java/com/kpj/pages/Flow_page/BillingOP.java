@@ -777,9 +777,27 @@ public class BillingOP extends BasePage {
                 // the computed Qty can be 0 for a sparse frequency ("Quantity must be greater than 0!!"): state it explicitly
                 + " ngEl('row.entity.Quantity').filter(vis).forEach(q=>{ if(!q.value || Number(q.value)<=0) setEl(q,'10'); }); }");
         waitForAngular(500);
-        // Duration needs its unit, then the row is committed with its own green "+" (fnCheckAndSaveRow) before the section Save.
-        page.evaluate("() => { " + JS + " [...document.querySelectorAll('select')].filter(vis).filter(s=>[...s.options].some(o=>/^days$/i.test(o.text.trim())) && !/dosageunitid|flowrateunitid/.test(s.getAttribute('ng-model')||''))"
-                + ".forEach(s=>{ if(!s.value || /^-*\s*select/i.test((s.options[s.selectedIndex]||{}).text||'')) setSel(s,/^days$/i); }); }");
+        // Duration needs a number AND a unit ("Please Select Duration!"): fill every visible Duration input and pick a Days unit
+        // (matched by model name or by an option reading day/days), then log what the row holds.
+        Object dur = page.evaluate("() => { " + JS + " const row=[];"
+                + " ngEl('row.entity.FrqDuration').filter(vis).forEach(e=>{ if(!e.value || Number(e.value)<=0) setEl(e,'1'); });"
+                + " [...document.querySelectorAll('input')].filter(x=>vis(x) && /duration/i.test(x.getAttribute('ng-model')||'') && !x.value).forEach(e=>setEl(e,'1'));"
+                + " [...document.querySelectorAll('select')].filter(vis).filter(s=>!/dosageunitid|flowrateunitid|StoreId|PrescriptionTypeID/.test(s.getAttribute('ng-model')||'')"
+                + "   && (/duration|frq.*(unit|type)|period/i.test(s.getAttribute('ng-model')||'') || [...s.options].some(o=>/^day/i.test(o.text.trim()))))"
+                + "  .forEach(s=>{ const cur=((s.options[s.selectedIndex]||{}).text||'').trim(); if(!s.value || /^-*\\s*select/i.test(cur)) setSel(s,/^days?$|^day\\(s\\)$|^day/i); });"
+                + " [...document.querySelectorAll('input,select')].filter(x=>vis(x) && /row\\.entity\\./.test(x.getAttribute('ng-model')||'') && /dura|frq|quant|dosage/i.test(x.getAttribute('ng-model')||''))"
+                + "  .forEach(x=>row.push(x.getAttribute('ng-model').replace('row.entity.','') + '=' + (x.tagName==='SELECT' ? ((x.options[x.selectedIndex]||{}).text||'').trim() : x.value)));"
+                + " return row.join(' | '); }");
+        System.out.println("prescribeDrug: duration/dose fields: " + dur);
+        // The Duration unit is row.entity.DayID (DAY(S) / WEEK / MONTH / YEAR); choose it with a real selection so Angular sees it.
+        try {
+            page.locator("select[ng-model='row.entity.DayID']").first().selectOption(new com.microsoft.playwright.options.SelectOption().setLabel("DAY(S)"),
+                    new com.microsoft.playwright.Locator.SelectOptionOptions().setTimeout(5000));
+            waitForAngular(500);
+            System.out.println("prescribeDrug: Duration unit set to DAY(S)");
+        } catch (Exception e) { System.out.println("prescribeDrug: Duration unit selection failed - " + String.valueOf(e.getMessage()).split("\n")[0]); }
+        System.out.println("prescribeDrug: ALL visible grid selects: " + page.evaluate("() => [...document.querySelectorAll('select')].filter(x=>x.offsetParent!==null && /row/.test((x.getAttribute('ng-model')||'')+(x.getAttribute('ng-options')||''))).map(x=>(x.getAttribute('ng-model')||'?')+'=['+((x.options[x.selectedIndex]||{}).text||'').trim()+'] opts='+[...x.options].map(o=>o.text.trim()).slice(0,6).join('/')).join(' || ')"));
+        System.out.println("prescribeDrug: duration-ish labels: " + page.evaluate("() => [...document.querySelectorAll('th,label,span,td')].filter(x=>x.offsetParent!==null && /duration/i.test(x.textContent||'') && (x.textContent||'').length<40).slice(0,8).map(x=>x.tagName+':'+x.textContent.trim()).join(' | ')"));
         waitForAngular(500);
         ensureStoreAndType();
         // changing the unit recalculates Qty - set it again last, so it is what gets committed
