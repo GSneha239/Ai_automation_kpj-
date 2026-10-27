@@ -172,18 +172,33 @@ public class LoanSupplierReturnNote extends BasePage {
 
     // ---- New / Supplier / Search Item ------------------------------------------
 
+    /** The New button's handler source and the registered Loan/Return routes, recorded when New is clicked. */
+    public String lastNewProbe = "";
+
     public String clickNew() {
         page.evaluate("() => {" + JS
                 + " const b=[...document.querySelectorAll('button,a,input[type=button]')].filter(vis)"
                 + "   .find(x=>/^\\s*new\\s*$/i.test(norm(x.textContent)||x.value||'')"
                 + "        || /^(fn)?(add|new)/i.test(x.getAttribute('ng-click')||''));"
                 + " if(b) b.id='__lsrnNew'; }");
+        // What the New button does in the app's own code, and whether the screen it goes to is a registered route — so a bounce to
+        // the dashboard is explained from the app rather than guessed.
+        Object probe = page.evaluate("() => { try { const b=document.getElementById('__lsrnNew'); if(!b) return '(no New button found)';"
+                + " const ng=b.getAttribute('ng-click')||''; const s=angular.element(b).scope();"
+                + " const fn=(ng.match(/([A-Za-z_$][\\w$]*)\\s*\\(/)||[])[1];"
+                + " const src=fn&&s&&s[fn]? String(s[fn]).replace(/\\s+/g,' ').slice(0,400) : '(handler not on scope)';"
+                + " const inj=angular.element(document.body).injector(); let st='';"
+                + " if(inj.has('$state')){ const m=inj.get('$state').get().filter(x=>/loan.*return|goodsreturn|returnnote/i.test((x.name||'')+' '+(x.url||'')));"
+                + "   st=m.map(x=>x.name+' ['+x.url+']').join(' ; ')||'(none)'; }"
+                + " return 'ng-click='+ng+' => '+src+' || states: '+st; } catch(e){ return 'probe failed: '+e.message; } }");
+        lastNewProbe = probe == null ? "" : probe.toString();
         try {
             page.locator("#__lsrnNew").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000));
         } catch (Exception e) { System.out.println("LoanSupplierReturnNote.clickNew: " + e.getMessage().split("\n")[0]); }
         page.evaluate("() => { const e=document.getElementById('__lsrnNew'); if(e) e.removeAttribute('id'); }");
         waitForAngular(1500);
-        lastNew = formOpen() ? "New clicked; the form is open" : "New clicked; no form detected";
+        lastNew = formOpen() ? "New clicked; the form is open"
+                : "New clicked; no form detected (the app is on " + page.url() + ") [" + lastNewProbe + "]";
         System.out.println("LoanSupplierReturnNote: " + lastNew);
         return lastNew;
     }
@@ -634,6 +649,29 @@ public class LoanSupplierReturnNote extends BasePage {
         } catch (Exception ignore) { }
         waitForAngular(300);
 
+        // Record every toast the moment it appears (a toast fades within seconds, and the report check below takes longer than
+        // that), and what the save call itself answers.
+        toastPng = null;
+        lastSaveHttp = "";
+        page.evaluate("() => { window.__lsToasts=[]; if(window.__lsObs) window.__lsObs.disconnect();"
+                + " const grab=()=>{ document.querySelectorAll('.toast-message,.toast,[id^=toast]').forEach(el=>{"
+                + "   const t=(el.textContent||'').replace(/\\s+/g,' ').trim(); if(t && !window.__lsToasts.includes(t)) window.__lsToasts.push(t); }); };"
+                + " window.__lsObs=new MutationObserver(grab); window.__lsObs.observe(document.body,{childList:true,subtree:true,characterData:true}); grab(); }");
+        final java.util.List<String> http = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+        saveListener = resp -> {
+            try {
+                String u = resp.url().toLowerCase();
+                if (!((u.contains("goodsreturnnote") && u.contains("iud")) || resp.status() >= 400)) return;
+                String body = ""; try { body = resp.text(); } catch (Exception ignore) { body = "(body unavailable)"; }
+                java.util.regex.Matcher mm = java.util.regex.Pattern.compile("\"ResultStatus\":(-?\\d+).*?\"Message\":\"([^\"]*)\"").matcher(body);
+                String shown = mm.find() ? "ResultStatus=" + mm.group(1) + ", Message=\"" + mm.group(2) + "\""
+                        : body.replaceAll("\\s+", " ").substring(0, Math.min(200, body.replaceAll("\\s+", " ").length()));
+                http.add(resp.request().method() + " " + resp.url().replaceFirst("^https?://[^/]+", "") + " " + resp.status() + " => " + shown);
+                lastSaveHttp = String.join(" ;; ", http);
+            } catch (Exception ignore) { }
+        };
+        page.onResponse(saveListener);
+
         int pagesBefore = page.context().pages().size();
         Object clicked = page.evaluate("() => {" + JS
                 + " const b=[...document.querySelectorAll('button,a,input[type=submit],input[type=button]')]"
@@ -644,7 +682,23 @@ public class LoanSupplierReturnNote extends BasePage {
                 + " return 'clicked \"'+(norm(b.textContent)||b.value||'')+'\" [ng-click='"
                 + "   +(b.getAttribute('ng-click')||'-')+']'; }");
         String clickedText = clicked == null ? "" : clicked.toString();
-        waitForAngular(2500);
+        // Screenshot the toast the moment it is on screen and fully faded in (up to 3 s), instead of a fixed wait that lets it fade.
+        long until = System.currentTimeMillis() + 3000;
+        while (System.currentTimeMillis() < until && toastPng == null) {
+            boolean showing = Boolean.TRUE.equals(page.evaluate("() => [...document.querySelectorAll('.toast-message,.toast,[id^=toast]')]"
+                    + ".some(el=>el.offsetParent!==null && (el.textContent||'').trim())"));
+            if (!showing) { page.waitForTimeout(100); continue; }
+            for (int w = 0; w < 10; w++) {
+                boolean solid = Boolean.TRUE.equals(page.evaluate("() => { const t=[...document.querySelectorAll('.toast,.toast-message,[id^=toast]')]"
+                        + ".filter(el=>el.offsetParent!==null && (el.textContent||'').trim()); if(!t.length) return true;"
+                        + " return t.every(el=>{ let o=1; for(let n=el; n && n!==document.body; n=n.parentElement) o*=parseFloat(getComputedStyle(n).opacity||'1'); return o>=0.98; }); }"));
+                if (solid) break;
+                page.waitForTimeout(100);
+            }
+            try { toastPng = page.screenshot(new Page.ScreenshotOptions().setTimeout(6000)); }
+            catch (Exception e) { System.out.println("LoanSupplierReturnNote: toast screenshot failed - " + e.getMessage()); break; }
+        }
+        waitForAngular(1000);
         try { acceptSaveDialog(); } catch (Exception ignore) { }
 
         int pagesAfter = page.context().pages().size();
@@ -666,12 +720,20 @@ public class LoanSupplierReturnNote extends BasePage {
 
     public boolean saveClicked() { return lastReportSignal != null && lastReportSignal.startsWith("clicked \""); }
 
+    /** Screenshot taken while the toast was on screen, and what the save call (GoodsReturnNote/IUD) answered. */
+    public byte[] toastPng;
+    public String lastSaveHttp = "";
+    private java.util.function.Consumer<com.microsoft.playwright.Response> saveListener;
+
     /** Wait for and return the success toast after Save. */
     public String waitForSaveToast() {
         String toast = "";
         long deadline = System.currentTimeMillis() + 15000;
         while (System.currentTimeMillis() < deadline && toast.isEmpty()) {
             try {
+                // The toasts recorded since Save was clicked (a success one preferred), then whatever is on screen now.
+                Object seen = page.evaluate("() => { const a=window.__lsToasts||[]; return a.find(x=>/saved|success|added|updated/i.test(x)) || a.find(x=>x) || ''; }");
+                if (seen != null && !seen.toString().trim().isEmpty()) { toast = seen.toString().trim(); break; }
                 Object now = page.evaluate("() => {" + JS + TOAST_ELS
                         + " return toastEls().map(x=>norm(x.textContent)); }");
                 if (now instanceof java.util.List) {
@@ -683,6 +745,10 @@ public class LoanSupplierReturnNote extends BasePage {
             } catch (Exception ignore) { }
             if (toast.isEmpty()) page.waitForTimeout(400);
         }
+        try { if (saveListener != null) page.offResponse(saveListener); } catch (Exception ignore) { }
+        saveListener = null;
+        // Drop the toast frame's close "×" and "KPJ Portal" title so the report shows just the message.
+        toast = toast.replaceFirst("^[\\u00d7x\\s]*KPJ\\s*Portal\\s*", "").trim();
         lastSave = toast;
         lastSaveDiagnostics = lastSaveDiagnostics + (toast.isEmpty() ? "; no message within 15s" : "");
         System.out.println("LoanSupplierReturnNote: save toast=\"" + toast + "\"");

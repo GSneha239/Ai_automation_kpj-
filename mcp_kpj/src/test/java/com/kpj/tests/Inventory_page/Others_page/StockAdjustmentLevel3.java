@@ -125,8 +125,15 @@ public class StockAdjustmentLevel3 extends DevHisBase {
         if (!printClickedOk) { addSummary("Result", "FAILED — the Print button was not found"); return; }
 
         PdfReport.Result pdf = PdfReport.capture(page, tabsBeforePrint, 15000);
-        step(page, "Verify pdf generated", "Wait for the report to open",
-                "A non-blank PDF is generated", pdf.diagnostics, pdf.blank ? "FAIL" : "PASS");
+        // The report opens in ANOTHER tab: step(page, ...) would photograph the app tab behind it. pdf.png is the PDF's first page, or the
+        // report tab itself when the server answered with an error page.
+        if (pdf.png != null && pdf.png.length > 0) {
+            step(pdf.png, "Verify pdf generated", "Wait for the report to open",
+                    "A non-blank PDF is generated", pdf.diagnostics, pdf.blank ? "FAIL" : "PASS");
+        } else {
+            step(page, "Verify pdf generated", "Wait for the report to open",
+                    "A non-blank PDF is generated", pdf.diagnostics, pdf.blank ? "FAIL" : "PASS");
+        }
 
         addSummary("Row selected", sal3.lastRowTick);
         addSummary("Stock Management Details", sal3.lastDetailsCount);

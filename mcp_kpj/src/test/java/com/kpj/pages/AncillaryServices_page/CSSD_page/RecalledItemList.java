@@ -173,6 +173,9 @@ public class RecalledItemList extends BasePage {
 
     // ---- New -> Recall form ------------------------------------------------
 
+    /** Source text of the app's {@code fnAddRecalledItem()} handler (the New link), recorded for the report. */
+    public String addHandlerSource = "";
+
     /** Click <b>New</b> ({@code fnAddRecalledItem()}) and wait for the Recall form. */
     public boolean clickNew() {
         // The New link sits BELOW the results grid (ng-click="fnAddRecalledItem()"), so match it by that handler
@@ -188,6 +191,18 @@ public class RecalledItemList extends BasePage {
                 + " return a.outerHTML; }");
         if (tagged == null || tagged.toString().isEmpty()) { System.out.println("CSSD.RecalledItemList.clickNew: New link not found"); return false; }
         System.out.println("CSSD.RecalledItemList.clickNew: link = " + tagged);
+        // What the app's own New handler does, so a bounce to another route is explained from the app's code rather than guessed.
+        Object src = page.evaluate("() => { try { const a=document.getElementById('__ril_new'); const s=angular.element(a).scope();"
+                + " return String(s.fnAddRecalledItem).replace(/\\s+/g,' ').slice(0,1800); } catch(e){ return 'probe failed: '+e.message; } }");
+        // ...and whether the route it navigates to is registered in the app's router at all.
+        Object routes = page.evaluate("() => { try { const inj=angular.element(document.body).injector();"
+                + " if(inj.has('$state')){ const st=inj.get('$state').get(); const m=st.filter(s=>/recall/i.test((s.name||'')+' '+(s.url||'')));"
+                + "   return 'ui-router states matching \"recall\": '+(m.length? m.map(s=>s.name+' ['+s.url+'] -> '+(s.templateUrl||'?')).join(' ; ') : '(none)')+' | of '+st.length+' states'; }"
+                + " if(inj.has('$route')){ const R=inj.get('$route'); const keys=Object.keys(R.routes).filter(k=>/recall/i.test(k));"
+                + "   return 'ngRoute routes matching \"recall\": '+(keys.length? keys.join(' ; ') : '(none)')+' | of '+Object.keys(R.routes).length; }"
+                + " return 'no $state / $route service'; } catch(e){ return 'route probe failed: '+e.message; } }");
+        addHandlerSource = (src == null ? "" : src.toString()) + "  ||  " + routes;
+        System.out.println("CSSD.RecalledItemList.clickNew: fnAddRecalledItem source = " + addHandlerSource);
         try { page.locator("#__ril_new").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000)); }
         catch (Exception e) { System.out.println("CSSD.RecalledItemList.clickNew: click failed - " + e.getMessage()); }
         boolean opened = waitForRecallForm("click", 8);

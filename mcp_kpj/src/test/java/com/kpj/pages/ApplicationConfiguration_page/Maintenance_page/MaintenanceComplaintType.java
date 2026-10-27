@@ -55,8 +55,11 @@ public class MaintenanceComplaintType extends BasePage {
         try { page.waitForFunction("() => window.angular", null,
                 new Page.WaitForFunctionOptions().setTimeout(20000)); } catch (Exception ignore) { }
 
-        clickMenu("^\\s*application\\s*configuration\\s*$");
-        clickMenu("^\\s*maintenance\\s*$");
+        // Expand each level only if it is not already open (a second click on an open entry CLOSES it), and look "Maintenance" up INSIDE
+        // Application Configuration — the sidebar is built lazily and has same-named entries.
+        expandMenuEntry(null, "^\\s*application\\s*config(uration)?\\s*$");
+        expandMenuEntry("^\\s*application\\s*config(uration)?\\s*$", "^\\s*maintenance\\s*$");
+        waitForAngular(800);
         lastMenu = describeMenu();
 
         // Anchored to the whole label. A loose match on "generic" would take the first menu entry that

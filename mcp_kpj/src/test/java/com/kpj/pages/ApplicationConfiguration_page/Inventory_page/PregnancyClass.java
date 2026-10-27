@@ -55,8 +55,11 @@ public class PregnancyClass extends BasePage {
         try { page.waitForFunction("() => window.angular", null,
                 new Page.WaitForFunctionOptions().setTimeout(20000)); } catch (Exception ignore) { }
 
-        clickMenu("^\\s*application\\s*configuration\\s*$");
-        clickMenu("^\\s*inventory\\s*$");
+        // Expand each level only if it is not already open (a second click on an open entry CLOSES it), and look "Inventory" up INSIDE
+        // Application Configuration — Inventory is ALSO a top-level module, and the sidebar is built lazily.
+        expandMenuEntry(null, "^\\s*application\\s*config(uration)?\\s*$");
+        expandMenuEntry("^\\s*application\\s*config(uration)?\\s*$", "^\\s*inventory\\s*$");
+        waitForAngular(800);
         lastMenu = describeMenu();
 
         // Anchored to the whole label. A loose match on "generic" would take the first menu entry that

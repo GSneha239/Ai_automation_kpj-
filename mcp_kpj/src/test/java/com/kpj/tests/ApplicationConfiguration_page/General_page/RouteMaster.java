@@ -46,7 +46,9 @@ public class RouteMaster extends DevHisBase {
                         + "Description, Route Instruction and MIMS Description, then Submit.");
 
         String counter = System.getProperty("counter", COUNTER_FOR_MENU);
-        String stamp = String.format("%05d", Math.abs(System.nanoTime() % 100000));
+        // Stamped from the wall clock: System.nanoTime() ticks in 100 ns steps on this machine, so its remainders end in "00" and a code
+        // taken from them came from only ~1,000 values — too few for a master list that keeps every record ever saved.
+        String stamp = String.format("%05d", System.currentTimeMillis() % 100000);
         String code = System.getProperty("code", "RT" + stamp);
         // Every value is distinct AND carries its own field name, so a value that lands in a neighbouring
         // box is visible in the report instead of looking like a pass.

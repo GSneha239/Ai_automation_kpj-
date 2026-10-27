@@ -43,10 +43,11 @@ public class BedType extends DevHisBase {
                 new com.kpj.pages.ApplicationConfiguration_page.Admission_page.BedType(page);
 
         // 1) Navigate
-        bt.navigateViaMenu();
-        boolean onScreen = bt.onScreen();
-        step(page, "Open Bed Type screen", "Click Application Configuration -> Bed Type",
-                "The Bed Type screen is shown", onScreen ? "Opened " + page.url() : "Did NOT reach the screen (" + page.url() + ")",
+        boolean onScreen = bt.navigateViaMenu();
+        if (!onScreen) addSummary("Menu offered", bt.lastMenu);
+        step(page, "Open Bed Type screen", "Click Application Configuration -> Admission -> Bed Type",
+                "The Bed Type screen is shown",
+                onScreen ? "Opened " + page.url() : "Did NOT reach the screen (" + page.url() + ") — see the menu dump",
                 onScreen ? "PASS" : "FAIL");
         if (!onScreen) { addSummary("Result", "FAILED — screen not reached"); return; }
 

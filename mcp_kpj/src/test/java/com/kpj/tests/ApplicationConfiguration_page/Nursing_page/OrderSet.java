@@ -81,6 +81,13 @@ public class OrderSet extends DevHisBase {
         step(page, "Enter Diagnosis", "Select a Diagnosis (typeahead)",
                 "A Diagnosis is selected", diag, diagOk ? "PASS" : "MANUAL");
 
+        // 4b) ICD-11 Diagnosis — a SECOND mandatory picker (text search; only picking a row binds it).
+        String icd = os.pickIcd11Diagnosis();
+        boolean icdOk = icd != null && icd.contains("ICD-11 Diagnosis=") && !icd.contains("(not selected") && !icd.contains("(no ICD-11");
+        step(page, "Enter ICD-11 Diagnosis", "Search an ICD-11 Diagnosis (e.g. \"fever\") and pick a suggestion row",
+                "An ICD-11 Diagnosis is selected", icd, icdOk ? "PASS" : "FAIL");
+        addSummary("ICD-11 Diagnosis", os.lastIcd11Diagnosis);
+
         // 5) Submit — retry with different Code/Remark on "already exists"; any OTHER (non-success) toast
         // stops the loop and FAILs the step naming the exact message returned.
         String toast = "";

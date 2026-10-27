@@ -179,6 +179,8 @@ public class OrderSet extends BasePage {
     public String pickDiagnosis() {
         Object found = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();" + LABEL_NEAR_JS
                 + " const e=[...document.querySelectorAll('input')].find(x=>x.offsetParent!==null && x.type!=='file'"
+                // The ICD-11 box has its own picker (pickIcd11Diagnosis) — this one is the ICD-10 "Diagnosis" box.
+                + "   && !/icd.?11/i.test((x.getAttribute('ng-model')||'')+' '+(x.placeholder||'')+' '+x.id)"
                 + "   && (/diagnos/i.test(x.getAttribute('ng-model')||'') || /diagnos/i.test(labelNear(x)) || /diagnos/i.test(x.placeholder||'')));"
                 + " if(!e) return false; e.id='__osDiagField'; return true; }");
         if (!Boolean.TRUE.equals(found)) return "(no Diagnosis control found)";
@@ -195,7 +197,7 @@ public class OrderSet extends BasePage {
             String picked = "";
             for (int i = 0; i < 16 && picked.isEmpty(); i++) {
                 Object tag = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                        + " const sels=['.dropdown-menu li','li.uib-typeahead-match','.ui-select-choices-row','.select2-results li',"
+                        + " const sels=['li.auto-complete-item','.dropdown-menu li','li.uib-typeahead-match','.ui-select-choices-row','.select2-results li',"
                         + "  '.tt-suggestion','.autocomplete-suggestion','ul.typeahead li','.angucomplete-row','.ui-menu-item'];"
                         + " for(const s of sels){ const el=[...document.querySelectorAll(s)].find(x=>x.offsetParent!==null && norm(x.textContent)); "
                         + "   if(el){ el.id='__osSug'; return norm(el.textContent).slice(0,80); } }"
@@ -228,6 +230,54 @@ public class OrderSet extends BasePage {
         }
         page.evaluate("() => { const e=document.getElementById('__osDiagField'); if(e) e.removeAttribute('id'); }");
         return "Diagnosis=(not selected after trying all prefixes)";
+    }
+
+    public String lastIcd11Diagnosis = "";
+
+    /**
+     * Select an <b>ICD-11 Diagnosis</b> ({@code OrderSet1.ICD11Diagnosis}, id {@code txtICD11DiagnosisName}). It searches by
+     * TEXT (e.g. "fever" → rows like "SP51 : Fever disorder (TM2)", {@code POST /api/OrderSet/Fetch ExecFlag=SearchICD11Diagnosis}),
+     * and only picking a row ({@code li.auto-complete-item}, ng-click {@code ctrl.selectItem}) binds
+     * {@code OrderSet1.icd11diagnosisid} — text left in the box does not count, and Submit then says "Please Select Diagnosis!".
+     * Verified live 2026-10-22. Returns {@code ICD-11 Diagnosis=<text>} or a "(not selected…" message.
+     */
+    public String pickIcd11Diagnosis() {
+        String[] terms = {"fever", "pain", "infection", "cough"};
+        for (String term : terms) {
+            try {
+                // Focus by script instead of Playwright's click: the click waits for "visible and stable" and timed out here (the box
+                // sits under an ICD-10 suggestion list / re-rendering form). Then real keystrokes, which the autocomplete directive needs.
+                Object st = page.evaluate("() => { const e=document.getElementById('txtICD11DiagnosisName'); if(!e) return 'missing';"
+                        + " e.scrollIntoView({block:'center'}); try{ document.activeElement && document.activeElement.blur(); }catch(x){}"
+                        + " document.querySelectorAll('li.auto-complete-item').forEach(li=>{ const c=li.closest('.auto-complete-container'); if(c) c.style.display='none'; });"
+                        + " e.focus(); try{ e.select(); }catch(x){} const r=e.getBoundingClientRect();"
+                        + " return 'visible='+(e.offsetParent!==null)+' rect='+Math.round(r.width)+'x'+Math.round(r.height)+' active='+(document.activeElement===e); }");
+                System.out.println("pickIcd11Diagnosis: field " + st);
+                if ("missing".equals(String.valueOf(st))) return "ICD-11 Diagnosis=(no ICD-11 Diagnosis control found)";
+                page.keyboard().press("Control+A");
+                page.keyboard().press("Backspace");
+                page.keyboard().type(term, new com.microsoft.playwright.Keyboard.TypeOptions().setDelay(150));
+            } catch (Exception e) { System.out.println("pickIcd11Diagnosis: typing failed - " + e.getMessage()); return "ICD-11 Diagnosis=(no ICD-11 Diagnosis control found)"; }
+            String picked = "";
+            for (int i = 0; i < 20 && picked.isEmpty(); i++) {
+                Object row = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                        + " const li=[...document.querySelectorAll('li.auto-complete-item')].find(x=>x.offsetParent!==null && norm(x.textContent));"
+                        + " if(!li) return ''; li.id='__osIcdRow'; return norm(li.textContent).slice(0,90); }");
+                if (row != null && !row.toString().isEmpty()) {
+                    try { page.locator("#__osIcdRow").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(4000)); picked = row.toString(); }
+                    catch (Exception e) { System.out.println("pickIcd11Diagnosis: row click failed - " + e.getMessage()); }
+                    page.evaluate("() => { const e=document.getElementById('__osIcdRow'); if(e) e.removeAttribute('id'); }");
+                }
+                if (picked.isEmpty()) page.waitForTimeout(400);
+            }
+            waitForAngular(900);
+            Object bound = page.evaluate("() => { const e=document.getElementById('txtICD11DiagnosisName'); if(!e) return ''; let s=angular.element(e).scope(); while(s && !s.OrderSet1) s=s.$parent;"
+                    + " const id=s&&s.OrderSet1?s.OrderSet1.icd11diagnosisid:null; return (id!=null && (''+id).trim()!=='' && (''+id)!=='0') ? (e.value||'').trim() : ''; }");
+            String v = bound == null ? "" : bound.toString().trim();
+            if (!v.isEmpty()) { lastIcd11Diagnosis = v; return "typed=" + term + " | picked=" + picked + " | ICD-11 Diagnosis=" + v; }
+            System.out.println("pickIcd11Diagnosis: '" + term + "' did not bind a diagnosis — trying the next term");
+        }
+        return "ICD-11 Diagnosis=(not selected after trying all terms)";
     }
 
     /**

@@ -672,6 +672,24 @@ public class Admission extends BasePage {
         return r == null ? "" : r.toString();
     }
 
+    /**
+     * Every control Angular currently marks invalid ({@code ng-invalid}, which covers required boxes, required dropdowns and radio / checkbox
+     * groups that carry no star in their label), with its model, kind and value. The label-star scan below cannot see those, and the
+     * app's "Please fill in all the mandatory fields!" names nothing — this names the field it is actually objecting to.
+     */
+    public String describeInvalidControls() {
+        Object r = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const out=[];"
+                + " const vis=e=>!!(e.offsetWidth||e.offsetHeight||e.getClientRects().length);"
+                + " document.querySelectorAll('input.ng-invalid,select.ng-invalid,textarea.ng-invalid').forEach(e=>{"
+                + "   const m=e.getAttribute('ng-model')||''; if(!m || /colFilter|grid\\.|pagination/i.test(m) || e.disabled) return;"
+                + "   const l=e.closest('.form-group,.row,td,div'); const lab=l&&l.querySelector('label')? norm(l.querySelector('label').textContent).slice(0,40):'';"
+                + "   const kind=e.tagName==='SELECT'?'select':(e.type||'input');"
+                + "   const val=e.tagName==='SELECT'? norm((e.options[e.selectedIndex]||{}).textContent) : (e.type==='radio'||e.type==='checkbox'? String(e.checked) : norm(e.value));"
+                + "   out.push((lab?lab+' ':'')+'['+m+' '+kind+(vis(e)?'':' hidden')+']='+JSON.stringify(val)); });"
+                + " return [...new Set(out)].slice(0,25).join(' ; '); }");
+        return r == null ? "" : r.toString();
+    }
+
     public String describeEmptyMandatory() {
         Object r = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
                 + " const labelOf=e=>{ let n=e.closest('.form-group,.form-line,.row,.col-sm-2,.col-sm-3,.col-sm-4,.col-sm-6,.col-md-2,.col-md-3,.col-md-4,.col-md-6,td,div');"
@@ -1184,6 +1202,13 @@ public class Admission extends BasePage {
         String payor = refillPayorIfEmpty();
         if (!payor.isEmpty()) out.append(" | payor refilled: ").append(payor);
 
+        // 3b) Guarantee-letter / estimate boxes — on v2026.10.27.303 Save answers "Please fill in all the mandatory fields!" while
+        // GL Reference No., GL Approved Amt. and Estimated Amount are empty (the payor mode ASSOCIATE COMPANY asks for them).
+        String gl = fillGuaranteeFieldsIfEmpty();
+        if (!gl.isEmpty()) { out.append(" | guarantee/estimate refilled: ").append(gl); waitForAngular(600); }
+        String reason = fillReasonOfAdmissionIfEmpty();
+        if (!reason.isEmpty()) { out.append(" | reason of admission: ").append(reason); waitForAngular(600); }
+
         // 4) Admission section: Department, then Doctor (the doctor list cascades off it), then any other empty required dropdown.
         String dept = ensureDepartmentSelected();
         String doc = ensureDoctorSelected();
@@ -1203,6 +1228,57 @@ public class Admission extends BasePage {
         String s = out.toString();
         System.out.println("recheckAndRefillAll: " + s);
         return s;
+    }
+
+    /**
+     * "Reason of Admission Payment Type/ Financial Class" ({@code Admission.ReasonOfAdmission}) — required by Save on the feature build
+     * v2026.10.27.307 ("Please Enter Reason of Admission Payment Type/ Financial Class!"). Whether it is a dropdown or a text box, it is
+     * filled only when empty: a dropdown takes its first real option (through its own change handling), a text box a short reason.
+     * Returns what was done, or "" when the box is absent or already holds a value.
+     */
+    private String fillReasonOfAdmissionIfEmpty() {
+        Object r = page.evaluate("() => { const A=window.angular; const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                + " const e=[...document.querySelectorAll('select,input,textarea')].find(x=>(x.getAttribute('ng-model')||'')==='Admission.ReasonOfAdmission');"
+                + " if(!e) return '';"
+                + " if(e.tagName==='SELECT'){ const real=o=>o.value && !/^-*\\s*select\\s*-*$/i.test(norm(o.textContent));"
+                + "   const cur=e.options[e.selectedIndex]; if(cur && real(cur)) return '';"
+                + "   const i=[...e.options].findIndex(real); if(i<0) return '(dropdown has no options)';"
+                + "   e.selectedIndex=i; e.dispatchEvent(new Event('change',{bubbles:true})); try{ A.element(e).triggerHandler('change'); }catch(x){}"
+                + "   const $=window.jQuery; if($){ try{ $(e).trigger('change'); }catch(x){} }"
+                + "   return 'dropdown = '+norm(e.options[e.selectedIndex].textContent); }"
+                + " if((e.value||'').trim()) return '';"
+                + " const v='Auto reason of admission'; const c=A.element(e).controller('ngModel'); e.focus(); e.value=v; if(c){ c.$setViewValue(v); c.$render(); }"
+                + " e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true})); e.dispatchEvent(new Event('blur',{bubbles:true}));"
+                + " return 'text = '+v; }");
+        return r == null ? "" : r.toString();
+    }
+
+    /**
+     * Fill GL Reference No. ({@code Registration.GLNumber}), GL Approved Amt. ({@code Registration.GLAmount}) and Estimated Amount
+     * ({@code Registration.EstimatedAmount}) where they are empty; returns what was filled ("" = nothing was empty / not on the form).
+     * The reference is stamped from the wall clock so it is unique per run.
+     */
+    private String fillGuaranteeFieldsIfEmpty() {
+        String ref = "GL" + String.format("%06d", System.currentTimeMillis() % 1000000);
+        Object r = page.evaluate("(a) => { const A=window.angular; const done=[];"
+                + " const put=(ng,v)=>{ const e=[...document.querySelectorAll('input,textarea')].find(x=>x.getAttribute('ng-model')===ng);"
+                + "   if(!e || (e.value||'').trim()) return; const c=A.element(e).controller('ngModel'); e.focus(); e.value=v;"
+                + "   if(c){ c.$setViewValue(v); c.$render(); }"
+                + "   e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true})); e.dispatchEvent(new Event('blur',{bubbles:true}));"
+                + "   done.push(ng.split('.').pop()+'='+v); };"
+                + " put('Registration.GLNumber', a.ref); put('Registration.GLAmount','1000'); put('Registration.EstimatedAmount','1000');"
+                // GL Type (Single Visit / Multiple Visit) is a radio pair: Save answers "Please select GL Type (Single Visit or Multiple Visit)!"
+                // while neither is ticked. Find it by its label, and tick Single Visit only when nothing in that group is ticked.
+                + " const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                + " const radios=[...document.querySelectorAll('input[type=radio]')];"
+                + " const lab=r=>{ const l=r.closest('label'); if(l) return norm(l.textContent); let t='',n=r.nextSibling;"
+                + "   while(n && !(n.nodeType===1 && n.tagName==='INPUT')){ t+=(n.textContent||''); n=n.nextSibling; } return norm(t); };"
+                + " const single=radios.find(r=>/^single\\s*visit$/i.test(lab(r)));"
+                + " if(single){ const ng=single.getAttribute('ng-model')||'';"
+                + "   const grp=radios.filter(r=>(r.getAttribute('ng-model')||'')===ng);"
+                + "   if(!grp.some(r=>r.checked)){ single.click(); try{ A.element(single).triggerHandler('click'); }catch(x){} done.push('GLType=Single Visit ['+ng+']'); } }"
+                + " return done.join(', '); }", java.util.Map.of("ref", ref));
+        return r == null ? "" : r.toString();
     }
 
     /** Re-enter Payor Mode / Payor Status / Payor name only where they are empty; returns what was refilled ("" = nothing). */
@@ -1310,8 +1386,11 @@ public class Admission extends BasePage {
                 String flagged = appFlaggedMandatory();
                 String empty = describeEmptyMandatory();
                 String named = !flagged.isEmpty() ? flagged : empty;
+                String invalid = describeInvalidControls();
                 System.out.println("saveAdmission: unnamed mandatory-field rejection — app-flagged: "
-                        + (flagged.isEmpty() ? "(none)" : flagged) + " | empty-scan: " + (empty.isEmpty() ? "(none)" : empty));
+                        + (flagged.isEmpty() ? "(none)" : flagged) + " | empty-scan: " + (empty.isEmpty() ? "(none)" : empty)
+                        + " | Angular-invalid controls: " + (invalid.isEmpty() ? "(none)" : invalid));
+                if (!invalid.isEmpty()) com.kpj.core.Reasons.add("controls the app marks invalid: " + invalid);
                 if (!named.isEmpty()) com.kpj.core.Reasons.add("Save rejected with 'Please fill in all the mandatory fields!' - the actual empty field(s): " + named);
                 continue;
             }
@@ -1386,6 +1465,7 @@ public class Admission extends BasePage {
         // Bind the mandatory dropdowns HERE, not during the fill. Selecting a vacant bed / flipping to Non-Presence
         // re-renders the Admission section and drops Registration Department, AttendingDoctor and Encounter Type —
         // so a bind done earlier reports "nothing to fix" and the form is empty again by the time Save runs.
+        ensureResidenceCountryCode();
         String bound = bindEmptyMandatorySelects();
         if (!bound.isEmpty()) {
             System.out.println("saveAdmission: bound empty mandatory selects -> " + bound);
@@ -1605,6 +1685,26 @@ public class Admission extends BasePage {
      * Writes through the ngModel controller AND onto every scope holding the variable, since the timepicker
      * directive reads the scope rather than the input.</p>
      */
+    /**
+     * Residence Country Code ({@code Registration.ResiNoCountryCode}, the 2-digit box beside Residence No.) is
+     * mandatory through the data-driven ValidationList ("Please Enter Residence Country Code !"). A patient carried over
+     * from Preadmission arrives with it empty — and loading the patient overwrites it, so it must be (re)asserted right
+     * before Save, not earlier. Only fills when the model is empty.
+     */
+    private void ensureResidenceCountryCode() {
+        Object r = page.evaluate("() => { const A=window.angular;"
+                + " const e=[...document.querySelectorAll('input,select')].find(x=>x.getAttribute('ng-model')==='Registration.ResiNoCountryCode');"
+                + " if(!e) return '(no Residence Country Code field)';"
+                + " const c=A.element(e).controller('ngModel'); const cur=c?c.$modelValue:e.value;"
+                + " if(cur!=null && (''+cur).trim()!=='' && (''+cur).trim()!=='0') return 'already '+cur;"
+                + " const v='60'; try{e.removeAttribute('disabled'); e.disabled=false;}catch(x){} e.value=v;"
+                + " if(c){ c.$setViewValue(v); if(c.$commitViewValue) c.$commitViewValue(); c.$render(); }"
+                + " e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true}));"
+                + " let s=A.element(e).scope(); while(s && !s.Registration) s=s.$parent; if(s && s.Registration) s.$evalAsync(()=>{ s.Registration.ResiNoCountryCode=v; });"
+                + " return 'set '+v; }");
+        System.out.println("ensureResidenceCountryCode: " + r);
+    }
+
     private void fillAdmissionTimeIfEmpty() {
         String now = java.time.LocalTime.now().format(java.time.format.DateTimeFormatter.ofPattern("hh:mm a"));
         Object r = page.evaluate("(v) => { const A=window.angular;"

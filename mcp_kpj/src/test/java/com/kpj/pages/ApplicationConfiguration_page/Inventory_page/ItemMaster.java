@@ -471,6 +471,11 @@ public class ItemMaster extends BasePage {
                 || t.contains("inserted") || t.contains("updated");
     }
 
+    /** What the save call answered over HTTP (status + message), recorded by {@link #submitAndGetToast()}. */
+    public String lastSaveHttp = "";
+    /** Screenshot taken while the toast was on screen. */
+    public byte[] toastPng;
+
     /** Click <b>Submit</b> and return the toast. Toasts are cleared first so a repeat still reads. */
     public String submitAndGetToast() {
         try { page.waitForLoadState(com.microsoft.playwright.options.LoadState.DOMCONTENTLOADED); }
@@ -495,6 +500,24 @@ public class ItemMaster extends BasePage {
                     + " window.__imObs.observe(document.body,{childList:true,subtree:true}); }");
         } catch (Exception ignore) { }
 
+        // What the save call answers (every POST/PUT and anything failing) — a screen that is silent may have been refused by the server.
+        lastSaveHttp = "";
+        final java.util.List<String> http = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+        final java.util.function.Consumer<com.microsoft.playwright.Response> onResp = resp -> {
+            try {
+                String m = resp.request().method();
+                if (!(("POST".equals(m) || "PUT".equals(m)) || resp.status() >= 400)) return;
+                String u = resp.url().toLowerCase();
+                if (u.contains("getinternalmsgcount")) return;
+                String body = ""; try { body = resp.text(); } catch (Exception ignore) { body = "(body unavailable)"; }
+                java.util.regex.Matcher mm = java.util.regex.Pattern.compile("\"ResultStatus\":(-?\\d+).*?\"Message\":\"([^\"]*)\"").matcher(body);
+                String shown = mm.find() ? "ResultStatus=" + mm.group(1) + ", Message=\"" + mm.group(2) + "\""
+                        : body.replaceAll("\\s+", " ").substring(0, Math.min(200, body.replaceAll("\\s+", " ").length()));
+                http.add(m + " " + resp.url().replaceFirst("^https?://[^/]+", "") + " " + resp.status() + " => " + shown);
+            } catch (Exception ignore) { }
+        };
+        page.onResponse(onResp);
+
         Object clicked;
         try {
             clicked = page.evaluate("() => {" + JS
@@ -514,7 +537,9 @@ public class ItemMaster extends BasePage {
         try { acceptSaveDialog(); } catch (Exception ignore) { }
 
         String toast = "";
-        long deadline = System.currentTimeMillis() + 30000;
+        // Saving an item also writes its pricing-policy rows, and the save call can take well over 30 s — the item was in the list after a
+        // run that had already reported "no message within 30s". Wait up to 120 s for the answer.
+        long deadline = System.currentTimeMillis() + 120000;
         while (System.currentTimeMillis() < deadline && toast.isEmpty()) {
             try {
                 Object now = page.evaluate("() => {" + JS + TOAST_ELS
@@ -535,6 +560,19 @@ public class ItemMaster extends BasePage {
             } catch (Exception ignore) { }
             if (toast.isEmpty()) page.waitForTimeout(500);
         }
+        // Screenshot the toast while it is on screen and fully faded in (a shot taken after the step misses it).
+        toastPng = null;
+        if (!toast.isEmpty()) {
+            for (int w = 0; w < 15; w++) {
+                boolean solid = Boolean.TRUE.equals(page.evaluate("() => { const t=[...document.querySelectorAll('.toast,.toast-message,[id^=toast]')]"
+                        + ".filter(el=>el.offsetParent!==null && (el.textContent||'').trim()); if(!t.length) return true;"
+                        + " return t.every(el=>{ let o=1; for(let n=el; n && n!==document.body; n=n.parentElement) o*=parseFloat(getComputedStyle(n).opacity||'1'); return o>=0.98; }); }"));
+                if (solid) break;
+                page.waitForTimeout(100);
+            }
+            try { toastPng = page.screenshot(new Page.ScreenshotOptions().setTimeout(8000)); }
+            catch (Exception e) { System.out.println("ItemMaster: toast screenshot failed - " + e.getMessage()); }
+        }
 
         if (toast.isEmpty()) {
             // Some screens in this module answer in a "KPJ Portal" banner that carries no toast class —
@@ -550,8 +588,28 @@ public class ItemMaster extends BasePage {
             } catch (Exception ignore) { }
         }
 
+        try { page.offResponse(onResp); } catch (Exception ignore) { }
+        lastSaveHttp = http.isEmpty() ? "(no save request was sent)" : String.join(" ;; ", http);
+        toast = toast.replaceFirst("^[\\u00d7x\\s]*KPJ\\s*Portal\\s*", "").trim();
+        // A form validated by the client (validationEngine) refuses to submit WITHOUT a toast: red bubbles beside the fields, or fields left
+        // invalid. Name them so the silence explains itself.
+        String clientSide = "";
+        if (toast.isEmpty()) {
+            try {
+                Object v = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                        + " const vis=e=>!!(e.offsetWidth||e.offsetHeight||e.getClientRects().length);"
+                        + " const bubbles=[...document.querySelectorAll('.formError .formErrorContent')].map(e=>norm(e.textContent)).filter(x=>x);"
+                        + " const alerts=[...document.querySelectorAll('.jAlert,.sweet-alert,.modal.in .modal-body,.bootbox')].filter(vis).map(e=>norm(e.textContent).slice(0,160));"
+                        + " const inv=[...document.querySelectorAll('input.ng-invalid,select.ng-invalid,textarea.ng-invalid')].filter(vis)"
+                        + "   .filter(e=>!/colFilter|pagination/i.test(e.getAttribute('ng-model')||'')).map(e=>(e.getAttribute('ng-model')||e.name||e.id||'?')).slice(0,12);"
+                        + " return 'validation bubbles: '+(bubbles.length? bubbles.join(' | ') : '(none)')+'; dialogs: '+(alerts.length? alerts.join(' | ') : '(none)')"
+                        + "   +'; invalid fields: '+(inv.length? inv.join(', ') : '(none)'); }");
+                clientSide = v == null ? "" : v.toString();
+            } catch (Exception ignore) { }
+        }
+
         lastSaveDiagnostics = (clicked == null ? "" : clicked.toString())
-                + (toast.isEmpty() ? "; no message within 30s (a toast observer was watching from the click)" : "");
+                + (toast.isEmpty() ? "; no message within 120s (a toast observer was watching from the click) [server: " + lastSaveHttp + "] [screen: " + clientSide + "]" : "");
         lastToast = toast;
         System.out.println("ItemMaster: submit -> " + lastSaveDiagnostics + " toast=\"" + toast + "\"");
         return toast;

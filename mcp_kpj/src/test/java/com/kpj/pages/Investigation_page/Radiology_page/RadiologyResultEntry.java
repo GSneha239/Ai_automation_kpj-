@@ -185,6 +185,42 @@ public class RadiologyResultEntry extends BasePage {
         return lastRefusal != null && lastRefusal.toLowerCase().contains("please");
     }
 
+    /**
+     * Set both registration filters to <b>All</b> — Reg. Type (OPD / IPD / All) and the MLC group (MLC / NON-MLC / All) — so a search
+     * is not limited to OPD, NON-MLC orders (the screen's defaults). Used only when the default filters list nothing; the radio is
+     * found by its own "All" label, so the screen's field names are not assumed.
+     */
+    public String widenFilters() {
+        Object r = page.evaluate("() => {" + JS
+                + " const radios=[...document.querySelectorAll('input[type=radio]')].filter(vis);"
+                + " const textOf=e=>{ const l=e.closest('label'); if(l) return norm(l.textContent);"
+                + "   let t=''; let n=e.nextSibling; while(n && !(n.nodeType===1 && n.tagName==='INPUT')){ t+=(n.textContent||''); n=n.nextSibling; } return norm(t); };"
+                + " const all=radios.filter(e=>/^all$/i.test(textOf(e)));"
+                + " const done=[];"
+                + " all.forEach(e=>{ if(!e.checked){ e.click(); } try{ angular.element(e).triggerHandler('click'); }catch(x){} done.push((e.getAttribute('ng-model')||'?')+'='+e.value); });"
+                + " return all.length+' \"All\" radio(s) set: '+done.join(', '); }");
+        waitForAngular(800);
+        String s = r == null ? "" : r.toString();
+        System.out.println("RadiologyResultEntry: widened filters -> " + s);
+        return s;
+    }
+
+    /** Put Reg. Type back to OPD and the MLC group back to NON-MLC (the screen's defaults) without searching again. */
+    public String restoreDefaultFilters() {
+        Object r = page.evaluate("() => {" + JS
+                + " const radios=[...document.querySelectorAll('input[type=radio]')].filter(vis);"
+                + " const textOf=e=>{ const l=e.closest('label'); if(l) return norm(l.textContent);"
+                + "   let t=''; let n=e.nextSibling; while(n && !(n.nodeType===1 && n.tagName==='INPUT')){ t+=(n.textContent||''); n=n.nextSibling; } return norm(t); };"
+                + " const want=radios.filter(e=>/^(opd|non-?\\s*mlc)$/i.test(textOf(e)));"
+                + " const done=[];"
+                + " want.forEach(e=>{ if(!e.checked){ e.click(); } try{ angular.element(e).triggerHandler('click'); }catch(x){} done.push(textOf(e)+' ('+(e.getAttribute('ng-model')||'?')+'='+e.value+')'); });"
+                + " return want.length+' default radio(s) set: '+done.join(', '); }");
+        waitForAngular(800);
+        String s = r == null ? "" : r.toString();
+        System.out.println("RadiologyResultEntry: default filters restored -> " + s);
+        return s;
+    }
+
     /** Pick a sub group and search again — used only when the screen asks for one. */
     public String selectSubGroupWithRecords() {
         Object count = page.evaluate("() => {" + JS

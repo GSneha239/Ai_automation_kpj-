@@ -257,6 +257,21 @@ public abstract class BasePage {
 
     // ---- utility ----------------------------------------------------------
 
+    /**
+     * Read-only probe of the app's router: the registered ui-router states whose name or URL matches {@code regex}, with the template each
+     * loads. A New / menu click that ends on the Patient Dashboard is usually a route the app never registered — this shows that in
+     * the report instead of leaving it to guesswork.
+     */
+    public String describeRoutes(String regex) {
+        Object r = page.evaluate("(rx) => { try { const inj=angular.element(document.body).injector(); const re=new RegExp(rx,'i');"
+                + " if(inj.has('$state')){ const st=inj.get('$state').get(); const m=st.filter(s=>re.test((s.name||'')+' '+(s.url||'')));"
+                + "   return 'states matching /'+rx+'/: '+(m.length? m.map(s=>s.name+' ['+s.url+'] -> '+(s.templateUrl||'?')).join(' ; ') : '(none)')+' | of '+st.length+' states'; }"
+                + " if(inj.has('$route')){ const R=inj.get('$route'); const k=Object.keys(R.routes).filter(x=>re.test(x));"
+                + "   return 'routes matching /'+rx+'/: '+(k.length? k.join(' ; ') : '(none)')+' | of '+Object.keys(R.routes).length; }"
+                + " return 'no $state / $route service'; } catch(e){ return 'route probe failed: '+e.message; } }", regex);
+        return r == null ? "" : r.toString();
+    }
+
     private static String escapeForJs(String s) {
         return s.replace("\\", "\\\\").replace("'", "\\'");
     }

@@ -97,6 +97,18 @@ public class RadiologyResultEntry extends DevHisBase {
                     + "will not search without it.";
             search = re.lastSearch;
         }
+        boolean widenedUsed = false;
+        if (rows == 0) {
+            widenedUsed = true;
+            // The defaults are OPD + NON-MLC + Pending. Nothing there does not mean nothing anywhere: try Reg. Type All and MLC All
+            // (read-only) and say so, so the report shows which filter the records were under.
+            String wide = re.widenFilters();
+            String widened = re.clickSearch();
+            rows = re.rowCount();
+            note += "  ||  the default filters (Reg. Type OPD, NON-MLC, Status Pending) listed nothing, so Reg. Type and MLC were set to All and "
+                    + "the search repeated (" + wide + "): " + widened + ". That is not in the requested steps.";
+            search = widened;
+        }
         step(page, "Click Search", "Click Search",
                 "The test grid is filled",
                 (rows > 0 ? "PASSES because the search returned records: " + search + note
@@ -127,6 +139,16 @@ public class RadiologyResultEntry extends DevHisBase {
         // Report
         String report = re.clickReportAndVerify();
         boolean reportOk = !re.reportBlank;
+        if (!reportOk && widenedUsed) {
+            // The report URL carries the Reg. Type / MLC filters. Check whether it is the "All" setting that breaks it by asking for
+            // the report again with the screen's own defaults (OPD, NON-MLC) — nothing is searched or saved.
+            String restored = re.restoreDefaultFilters();
+            String report2 = re.clickReportAndVerify();
+            boolean ok2 = !re.reportBlank;
+            addSummary("Report again with the default filters (OPD, NON-MLC)", restored + " -> " + report2);
+            report = report + "  ||  asked again with the default filters (" + restored + "): " + report2;
+            reportOk = ok2;
+        }
         addSummary("Result Entry Report", report);
         step(re.reportPng, "Click Result Entry Report and verify it is generated",
                 "Click Result Entry Report",

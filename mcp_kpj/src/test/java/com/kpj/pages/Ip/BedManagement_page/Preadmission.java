@@ -165,11 +165,44 @@ public class Preadmission extends BasePage {
         for (int i = 0; i < 60; i++) {
             boolean confirm = Boolean.TRUE.equals(page.evaluate("() => [...document.querySelectorAll('.jconfirm,.ng-confirm-box,.modal,[class*=confirm]')].some(m=>m.getBoundingClientRect().width>0 && /file is not generated|do you want to create/i.test(m.textContent||''))"));
             if (confirm) return "confirm";
+            // A patient that already has a file gets the "MRD Request" popup (From/To Department, User, Requested For*, Remark).
+            if (Boolean.TRUE.equals(page.evaluate("() => [...document.querySelectorAll('.modal,[role=dialog]')].some(m=>m.getBoundingClientRect().width>0 && /mrd request/i.test(m.textContent||'') && /requested for/i.test(m.textContent||''))"))) return "request";
             if (page.context().pages().size() > tabsBefore) return "report";
             page.waitForTimeout(800);
         }
         page.evaluate("() => { const no=[...document.querySelectorAll('.jconfirm button, button')].find(b=>/^no$/i.test((b.textContent||'').trim()) && b.offsetParent!==null); if(no) no.click(); }");
         return "none";
+    }
+
+    /**
+     * Fill the <b>MRD Request</b> popup and click <b>OK</b>. <b>Requested For*</b> is the mandatory dropdown (left on
+     * "-Select-" the request is refused), so pick the first real option; Remark/Reason gets a short text. From/To
+     * Department and User arrive pre-filled. Returns the toast the app showed ("" when none).
+     */
+    public String fillMrdRequestAndSave() {
+        Object picked = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const m=[...document.querySelectorAll('.modal,[role=dialog]')].find(x=>x.getBoundingClientRect().width>0 && /mrd request/i.test(x.textContent||''));"
+                + " if(!m) return '(no MRD Request popup)';"
+                + " const labelOf=e=>{ let n=e.parentElement; for(let i=0;i<5&&n;i++){ const l=n.querySelector('label,.control-label'); if(l && norm(l.textContent)) return norm(l.textContent); n=n.parentElement; } return ''; };"
+                + " const sel=[...m.querySelectorAll('select')].find(s=>/requested\\s*for/i.test(labelOf(s)));"
+                + " if(!sel) return '(no Requested For dropdown)';"
+                + " const idx=[...sel.options].findIndex(o=>o.value && !/^-*\\s*select\\s*-*$/i.test(norm(o.text)));"
+                + " if(idx<0) return '(Requested For has no options)';"
+                + " sel.selectedIndex=idx; sel.dispatchEvent(new Event('change',{bubbles:true})); try{ angular.element(sel).triggerHandler('change'); }catch(e){} const $=window.jQuery||window.$; if($){try{$(sel).trigger('change');}catch(e){}}"
+                + " const ta=[...m.querySelectorAll('textarea')][0]; if(ta){ const c=angular.element(ta).controller('ngModel'); const v='Auto test MRD request'; ta.value=v; if(c){c.$setViewValue(v);c.$render();} ta.dispatchEvent(new Event('input',{bubbles:true})); }"
+                + " return norm(sel.options[sel.selectedIndex].text); }");
+        System.out.println("fillMrdRequestAndSave: Requested For = " + picked);
+        waitForAngular(700);
+        page.evaluate("() => { window.__mrdToasts=[]; if(window.__mrdObs) window.__mrdObs.disconnect();"
+                + " window.__mrdObs=new MutationObserver(()=>{ document.querySelectorAll('.toast-message,.toast').forEach(el=>{ const t=(el.textContent||'').replace(/\\s+/g,' ').trim(); if(t && !window.__mrdToasts.includes(t)) window.__mrdToasts.push(t); }); });"
+                + " window.__mrdObs.observe(document.body,{childList:true,subtree:true});"
+                + " const m=[...document.querySelectorAll('.modal,[role=dialog]')].find(x=>x.getBoundingClientRect().width>0 && /mrd request/i.test(x.textContent||''));"
+                + " const ok=m && [...m.querySelectorAll('button')].find(b=>/^ok$/i.test((b.textContent||'').trim()) && b.offsetParent!==null); if(ok) ok.click(); }");
+        try {
+            page.waitForFunction("() => (window.__mrdToasts||[]).length>0", null, new Page.WaitForFunctionOptions().setTimeout(12000));
+        } catch (Exception ignore) { System.out.println("fillMrdRequestAndSave: no toast observed"); }
+        Object r = page.evaluate("() => { const a=window.__mrdToasts||[]; return a.find(x=>/success|request|saved/i.test(x)) || a[0] || ''; }");
+        waitForAngular(400);
+        return r == null ? "" : r.toString().trim();
     }
 
     /** Click <b>Yes</b> on the "…create one?" confirm, then wait for the <b>MRD Details</b> modal. */
@@ -835,6 +868,9 @@ public class Preadmission extends BasePage {
                 + " const setF=(sel,v)=>{ const e=[...document.querySelectorAll(sel)][0]; if(!e) return '(no)'; const c=A.element(e).controller('ngModel'); const cur=(e.value||'').trim(); const modelOk=c && c.$modelValue!=null && (''+c.$modelValue).trim()!=='' && (''+c.$modelValue).trim()!=='0'; if(cur && cur!=='0' && modelOk) return cur+'(kept)'; try{e.removeAttribute('disabled');e.disabled=false;}catch(x){} e.value=v; if(c){c.$setViewValue(v);c.$render();} e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true})); const c2=A.element(e).controller('ngModel'); return v+'(set,model='+(c2&&c2.$modelValue!=null?c2.$modelValue:'empty')+')'; };"
                 + " out.push('MobileCC='+setF(\"select[ng-model='Registration.MobileCountryCode'],input[ng-model='Registration.MobileCountryCode']\",'60'));"
                 + " out.push('Mobile='+setF(\"input[ng-model='Registration.MobileNo']\",'0123456789'));"
+                // Residence Country Code — Save answers "Please Enter Residence Country Code !" while it is empty.
+                // (the box is Registration.ResiNoCountryCode, verified live; it defaults to 60 on a blank form but a carried patient can arrive empty)
+                + " out.push('ResiCC='+setF(\"input[ng-model='Registration.ResiNoCountryCode'],select[ng-model='Registration.ResiNoCountryCode']\",'60'));"
                 // NATIONALITY = MALAYSIAN, ALWAYS. Carried preadmission patients arrive with whatever their record
                 // holds (Myanmar / Afghanistan were both seen), which drags the City/State/Country cascade with it.
                 + " const natEl=[...document.querySelectorAll(\"select[ng-model='Registration.NationalityID']\")][0];"
@@ -1089,18 +1125,27 @@ public class Preadmission extends BasePage {
             return true;
         }
         waitForAngular(400);
-        // IP top-level
-        Object ip = page.evaluate("() => { const lis=[...document.querySelectorAll('li')]; const ipLi=lis.find(li=>{ const a=li.querySelector(':scope > a'); return a && /^\\s*IP\\s*$/i.test((a.textContent||'').trim()); }); const a=ipLi&&ipLi.querySelector(':scope > a'); if(!a) return false; a.id='__ipMenuTab'; return true; }");
-        if (Boolean.TRUE.equals(ip)) {
-            try { page.locator("#__ipMenuTab").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000)); } catch (Exception e) { System.out.println("Preadmission.nav: IP click failed - " + e.getMessage()); }
-            waitForAngular(800);
+        // Open only what is still CLOSED: the IP and Bed Management items are toggles, so when the IP menu is already
+        // expanded (as it is after the Admission screen) blindly clicking IP collapses it and the Preadmission link
+        // disappears — then the direct-hash fallback below is bounced to the Patient Dashboard by the app.
+        boolean pa = false;
+        for (int step = 0; step < 4 && !pa; step++) {
+            Object next = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const vis=x=>x.offsetParent!==null;"
+                    + " document.querySelectorAll('#__preadmMenu,#__ipMenuTab').forEach(e=>e.removeAttribute('id'));"
+                    + " const pa=[...document.querySelectorAll('a')].find(x=>/^\\s*pre[-\\s]?admission\\s*$/i.test(norm(x.textContent)) && vis(x));"
+                    + " if(pa){ pa.id='__preadmMenu'; return 'preadmission'; }"
+                    + " const bm=[...document.querySelectorAll('a')].find(x=>/^\\s*bed\\s*management\\s*$/i.test(norm(x.textContent)) && vis(x) && !(x.getAttribute('href')||'').includes('#/'));"
+                    + " if(bm){ bm.click(); return 'bed management'; }"
+                    + " const ipLi=[...document.querySelectorAll('li')].find(li=>{ const a=li.querySelector(':scope > a'); return a && /^\\s*IP\\s*$/i.test((a.textContent||'').trim()); });"
+                    + " const a=ipLi&&ipLi.querySelector(':scope > a'); if(!a) return 'no IP menu'; a.id='__ipMenuTab'; return 'ip'; }");
+            String what = String.valueOf(next);
+            if ("preadmission".equals(what)) { pa = true; break; }
+            if ("ip".equals(what)) {
+                try { page.locator("#__ipMenuTab").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000)); } catch (Exception e) { System.out.println("Preadmission.nav: IP click failed - " + e.getMessage()); }
+            } else if ("no IP menu".equals(what)) { break; }
+            waitForAngular(900);
         }
-        // Bed Management group
-        page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const a=[...document.querySelectorAll('a')].find(x=>/^\\s*bed\\s*management\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null && !(x.getAttribute('href')||'').includes('#/')); if(a) a.click(); }");
-        waitForAngular(700);
-        // Preadmission link
-        Object pa = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const a=[...document.querySelectorAll('a')].find(x=>/^\\s*pre[-\\s]?admission\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null); if(!a) return false; a.id='__preadmMenu'; return true; }");
-        if (Boolean.TRUE.equals(pa)) {
+        if (pa) {
             try { page.locator("#__preadmMenu").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000)); } catch (Exception e) { System.out.println("Preadmission.nav: Preadmission click failed - " + e.getMessage()); }
         } else { System.out.println("Preadmission.nav: 'Preadmission' link not found — using direct route"); }
         waitForAngular(1200);

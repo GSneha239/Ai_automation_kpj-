@@ -255,8 +255,16 @@ public class Preadmission extends DevHisBase {
 
         String outcome = pa.clickRequestMrdFile();
         step(page, "Request MRD File · Click", "Click Request MRD File (fnRequestMRDFile())",
-                "A 'create MRD file?' confirm appears (no file) OR the report opens (already has a file)",
-                "Outcome: " + outcome, "confirm".equals(outcome) || "report".equals(outcome) ? "PASS" : "FAIL");
+                "A 'create MRD file?' confirm appears (no file), the MRD Request popup opens, OR the report opens (already has a file)",
+                "Outcome: " + outcome, "confirm".equals(outcome) || "report".equals(outcome) || "request".equals(outcome) ? "PASS" : "FAIL");
+        if ("request".equals(outcome)) {
+            String toast = pa.fillMrdRequestAndSave();
+            step(page, "Request MRD File · Fill Requested For & OK", "Pick Requested For, add a remark, click OK in the MRD Request popup",
+                    "The MRD request is submitted with a success toast",
+                    toast.isEmpty() ? "No toast appeared after OK" : toast, toast.isEmpty() ? "FAIL" : "PASS");
+            addSummary("Request MRD File · Result", toast.isEmpty() ? "No toast after OK" : toast);
+            return;
+        }
         if ("report".equals(outcome)) { addSummary("Request MRD File · Result", "Patient already has an MRD file — report opened"); return; }
         if (!"confirm".equals(outcome)) { addSummary("Request MRD File · Result", "No confirm/report"); return; }
 

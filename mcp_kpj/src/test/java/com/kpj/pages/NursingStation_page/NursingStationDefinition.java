@@ -21,8 +21,10 @@ public class NursingStationDefinition extends BasePage {
 
     public boolean navigateTo(String baseUrl) {
         try { page.waitForFunction("() => window.angular", null, new Page.WaitForFunctionOptions().setTimeout(15000)); } catch (Exception ignore) { }
-        page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const b=[...document.querySelectorAll('a,li>a')].find(x=>/^\\s*nursing\\s*station\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null); if(b) b.click(); }");
-        waitForAngular(1000);
+        // Open the top-level "Nursing Station" entry only if it is closed (a second click on an open entry CLOSES it, and the sidebar is
+        // built lazily) — "Nursing Station" also exists under Application Configuration, but the top-level one comes first.
+        expandMenuEntry(null, "^\\s*nursing\\s*station\\s*$");
+        waitForAngular(800);
         Object href = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const a=[...document.querySelectorAll('a[href]')].find(x=>/nursing\\s*station\\s*defin/i.test(norm(x.textContent)) || /stationdefination|nursingstationdef/i.test(x.getAttribute('href')||'')); if(!a) return ''; a.id='__nsdMenu'; return a.getAttribute('href')||'link'; }");
         if (href != null && !href.toString().isEmpty()) {
             route = href.toString();
@@ -94,7 +96,9 @@ public class NursingStationDefinition extends BasePage {
     /** Enter Code, Remark and select Location -> Floor -> Ward (cascade). */
     public String fillHeader() {
         clickIpd();
-        String code = "NSD" + String.format("%05d", Math.abs(System.nanoTime() % 100000));
+        // Stamped from the wall clock: System.nanoTime() ticks in 100 ns steps on this machine, so its remainders end in "00" and a code
+        // taken from them came from only ~1,000 values — too few for a list that keeps every record ever saved.
+        String code = "NSD" + String.format("%05d", System.currentTimeMillis() % 100000);
         lastCode = code;
         setNg("NursingStationDefination.code", code);
         setNg("NursingStationDefination.description", "Auto nursing station " + code);

@@ -44,10 +44,12 @@ public class CurrencyMaster extends DevHisBase {
                 new com.kpj.pages.ApplicationConfiguration_page.Billing_page.CurrencyMaster(page);
 
         // 1) Navigate
-        cm.navigateViaMenu();
-        boolean onScreen = cm.onScreen();
+        boolean onScreen = cm.navigateViaMenu();
+        if (!onScreen) addSummary("Menu offered", cm.lastMenu);
         step(page, "Open Currency Master screen", "Click Application Configuration -> Billing -> Currency Master",
-                "The Currency Master screen is shown", onScreen ? "Opened " + page.url() : "Did NOT reach the screen (" + page.url() + ")",
+                "The Currency Master screen is shown",
+                onScreen ? "Opened " + page.url() + (cm.lastRoute.isEmpty() ? "" : " (menu route " + cm.lastRoute + ")")
+                         : "Did NOT reach the screen (" + page.url() + ") — see the menu dump",
                 onScreen ? "PASS" : "FAIL");
         if (!onScreen) { addSummary("Result", "FAILED — screen not reached"); return; }
 

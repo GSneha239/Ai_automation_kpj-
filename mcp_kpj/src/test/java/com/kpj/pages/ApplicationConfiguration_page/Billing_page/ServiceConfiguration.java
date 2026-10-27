@@ -25,36 +25,69 @@ public class ServiceConfiguration extends BasePage {
 
     // ---- navigation ------------------------------------------------------
 
+    /** Menu entries on screen when the walk was made — dumped into the report if the screen is not reached. */
+    public String lastMenu = "";
+    public String lastRoute = "";
+    /** Failing / Service Configuration HTTP calls seen while the menu click loaded the screen. */
+    public String lastNavHttp = "";
+
     public boolean navigateViaMenu() {
-        try {
-            page.waitForFunction("() => [...document.querySelectorAll('a')].some(a=>/application\\s*config/i.test((a.textContent||'')) && a.offsetParent!==null)",
-                    null, new Page.WaitForFunctionOptions().setTimeout(15000));
-        } catch (Exception ignore) { }
-        page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                + " const a=[...document.querySelectorAll('a')].find(x=>/application\\s*config/i.test(norm(x.textContent)) && x.offsetParent!==null); if(a) a.click(); }");
-        waitForAngular(900);
-        // "Billing" is ALSO a top-level module in the sidebar, listed before Application Configuration: an unscoped lookup clicks
-        // that one, which collapses the Application Configuration menu again. Look only inside the Application Configuration entry.
-        page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                + " const top=[...document.querySelectorAll('a')].find(x=>/application\\s*config/i.test(norm(x.textContent)) && x.offsetParent!==null); const scope=(top&&top.closest('li'))||document;"
-                + " const a=[...scope.querySelectorAll('a')].find(x=>/^\\s*billing\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null); if(a) a.click(); }");
+        try { page.waitForFunction("() => window.angular", null,
+                new Page.WaitForFunctionOptions().setTimeout(20000)); } catch (Exception ignore) { }
+        // The sidebar is built lazily and "Billing" is ALSO a top-level module listed before Application Configuration. Open each
+        // level only if it is closed (a second click on an open entry CLOSES it) and look the next one up INSIDE its parent's li.
+        expandMenuEntry(null, "^\\s*application\\s*config(uration)?\\s*$");
+        expandMenuEntry("^\\s*application\\s*config(uration)?\\s*$", "^\\s*billing\\s*$");
         waitForAngular(800);
         Object href = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                + " const a=[...document.querySelectorAll('a[href]')].find(x=>/service\\s*configuration/i.test(norm(x.textContent)) || /serviceconfiguration/i.test(x.getAttribute('href')||'')); if(!a) return ''; a.id='__scMenu'; return a.getAttribute('href')||'link'; }");
-        if (href != null && !href.toString().isEmpty()) {
-            try { page.locator("#__scMenu").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000)); }
-            catch (Exception e) { System.out.println("ServiceConfiguration.nav: click failed - " + e.getMessage()); }
-            waitForAngular(1500);
+                + " const top=[...document.querySelectorAll('a')].find(x=>/^\\s*application\\s*config(uration)?\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null);"
+                + " const topLi=(top&&top.closest('li'))||document;"
+                + " const bill=[...topLi.querySelectorAll('a')].find(x=>/^\\s*billing\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null);"
+                + " const scope=(bill&&bill.closest('li'))||topLi;"
+                + " const a=[...scope.querySelectorAll('a[href]')].find(x=>/^\\s*service\\s*configuration\\s*$/i.test(norm(x.textContent)));"
+                + " if(!a) return ''; a.id='__scMenu'; return a.getAttribute('href')||'link'; }");
+        lastRoute = href == null ? "" : href.toString();
+        // What the browser asked for while the screen was loading — a view/API that 404s or 500s explains a route that resolves but never renders.
+        final java.util.List<String> http = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+        java.util.function.Consumer<com.microsoft.playwright.Response> onResp = resp -> {
+            try {
+                String u = resp.url();
+                if (resp.status() >= 400 || u.toLowerCase().contains("serviceconfig")) {
+                    String body = "";
+                    if (resp.status() >= 400) { try { body = resp.text(); } catch (Exception ignore) { } }
+                    if (body.length() > 200) body = body.substring(0, 200) + "…";
+                    http.add(resp.status() + " " + u + (body.isEmpty() ? "" : " => " + body.replaceAll("\\s+", " ").trim()));
+                }
+            } catch (Exception ignore) { }
+        };
+        page.onResponse(onResp);
+        if (!lastRoute.isEmpty()) {
+            try { page.locator("#__scMenu").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000)); }
+            catch (Exception e) { System.out.println("ServiceConfiguration.nav: click failed - " + e.getMessage().split("\n")[0]); }
+            page.evaluate("() => { const e=document.getElementById('__scMenu'); if(e) e.removeAttribute('id'); }");
+            waitForAngular(2500);
         }
-        if (!onScreen()) {
-            System.out.println("ServiceConfiguration.nav: direct route " + LIST_ROUTE);
-            try { page.evaluate("(h) => { window.location.hash = h; }", LIST_ROUTE); } catch (Exception ignore) { }
-            waitForAngular(1600);
+        boolean reached = onScreen();
+        try { page.offResponse(onResp); } catch (Exception ignore) { }
+        lastNavHttp = http.isEmpty() ? "(no failing or ServiceConfiguration HTTP call seen)" : String.join(" ;; ", http);
+        // Direct hash navigation is bounced to #/PatientDashboard by the app, so it is NOT a way in — only the menu link is.
+        if (!reached) {
+            lastMenu = String.valueOf(page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                    + " return [...new Set([...document.querySelectorAll('a')].filter(a=>a.offsetParent!==null)"
+                    + "   .map(a=>norm(a.textContent)+' -> '+(a.getAttribute('href')||'')).filter(t=>t.length>4&&t.length<70))].slice(0,140).join('\\n'); }"));
+            return false;
         }
         return true;
     }
 
+    /** On the Service Configuration list/add screen — the route AND the screen's own control must be there (a bounce to the dashboard fails). */
     public boolean onScreen() {
+        if (!page.url().toLowerCase().contains("serviceconfiguration")) return false;
+        try {
+            page.waitForFunction("() => [...document.querySelectorAll('button,a,input[type=button]')].some(x=>x.offsetParent!==null && /^\\s*add\\s*$/i.test(((x.textContent||x.value)||'').replace(/\\s+/g,' ').trim()))"
+                    + " || [...document.querySelectorAll('select')].some(e=>e.offsetParent!==null && (e.getAttribute('ng-model')||'')==='ServiceConfiguration.serviceitemid')",
+                    null, new Page.WaitForFunctionOptions().setTimeout(30000));   // the list is large; one run took >15 s to render
+        } catch (Exception e) { return false; }
         return page.url().toLowerCase().contains("serviceconfiguration");
     }
 
@@ -143,7 +176,10 @@ public class ServiceConfiguration extends BasePage {
     public String submitAndGetToast() {
         Object tagged = page.evaluate("() => { window.__scToasts=[]; if(window.__scObs) window.__scObs.disconnect();"
                 + " try{ if(window.toastr) toastr.clear(); }catch(e){} document.querySelectorAll('#toast-container .toast, .toast-message').forEach(t=>t.remove());"
-                + " const grab=()=>{ document.querySelectorAll('.toast-message,.toast,[id^=toast]').forEach(el=>{ const t=(el.textContent||'').replace(/\\s+/g,' ').trim(); if(t && !window.__scToasts.includes(t)) window.__scToasts.push(t); }); };"
+                // Read the message line of each toast; the container ("[id^=toast]") also holds the PREVIOUS attempt's still-fading toast, so its
+                // text came back glued together ("Failed!×KPJ PortalService Saved Successfully."). It is only a fallback when no .toast-message exists.
+                + " const grab=()=>{ const msgs=[...document.querySelectorAll('.toast-message')]; const els=msgs.length?msgs:[...document.querySelectorAll('.toast,[id^=toast]')];"
+                + "   els.forEach(el=>{ const t=(el.textContent||'').replace(/\\s+/g,' ').trim(); if(t && !window.__scToasts.includes(t)) window.__scToasts.push(t); }); };"
                 + " window.__scObs=new MutationObserver(grab); window.__scObs.observe(document.body,{childList:true,subtree:true}); grab();"
                 + " const b=[...document.querySelectorAll('button,a,input[type=submit]')].find(x=>/fnIUDServices/.test(x.getAttribute('ng-click')||'') && x.offsetParent!==null)"
                 + " || [...document.querySelectorAll('button,input[type=submit]')].find(x=>/^\\s*submit\\s*$/i.test((x.textContent||x.value||'').trim()) && x.offsetParent!==null); if(!b) return false; b.id='__scSubmit'; return true; }");
@@ -159,13 +195,28 @@ public class ServiceConfiguration extends BasePage {
         }
         Object r = page.evaluate("() => { const a=window.__scToasts||[]; return a.find(x=>/saved|added|success/i.test(x)) || a.find(x=>/exist|already/i.test(x)) || a.find(x=>x) || ''; }");
         waitForAngular(400);
-        return r == null ? "" : r.toString().trim();
+        // The toast's title ("KPJ Portal", with the close "×") is glued to its message in textContent — keep only the message.
+        return r == null ? "" : r.toString().replaceFirst("^\\s*×?\\s*KPJ Portal\\s*", "").trim();
     }
 
     /** After Submit, open the list ({@code #/ServiceConfiguration}) and confirm a grid row matches the saved
      *  Service (filtered via the first column filter if present). Returns the matched row text, or "". */
     public String findAddedInList() {
-        if (!onScreen() || page.url().toLowerCase().contains("add-")) {
+        // The app returns to the list by itself shortly after a save; give it a moment before deciding it did not.
+        for (int i = 0; i < 8 && page.url().toLowerCase().contains("add-"); i++) page.waitForTimeout(500);
+        if (page.url().toLowerCase().contains("add-")) {
+            // Setting location.hash from the form raises the app's "Reload page" popup, which the framework answers No — so leave
+            // with the form's own Back button instead.
+            Object tagged = page.evaluate("() => { const b=[...document.querySelectorAll('button,a,input[type=button]')]"
+                    + ".find(x=>/^\\s*back\\s*$/i.test((x.textContent||x.value||'').replace(/\\s+/g,' ').trim()) && x.offsetParent!==null);"
+                    + " if(!b) return false; b.id='__scBack'; return true; }");
+            if (Boolean.TRUE.equals(tagged)) {
+                try { page.locator("#__scBack").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000)); }
+                catch (Exception e) { System.out.println("ServiceConfiguration.findAddedInList: Back click failed - " + e.getMessage().split("\n")[0]); }
+                page.evaluate("() => { const e=document.getElementById('__scBack'); if(e) e.removeAttribute('id'); }");
+                waitForAngular(1500);
+            }
+        } else if (!page.url().toLowerCase().contains("serviceconfiguration")) {
             try { page.evaluate("(h) => { window.location.hash = h; }", LIST_ROUTE); } catch (Exception ignore) { }
         }
         try {

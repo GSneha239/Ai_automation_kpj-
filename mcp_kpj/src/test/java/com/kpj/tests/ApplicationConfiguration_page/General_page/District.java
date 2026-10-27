@@ -50,7 +50,9 @@ public class District extends DevHisBase {
                         + "District, Submit.");
 
         String counter = System.getProperty("counter", COUNTER_FOR_MENU);
-        String stamp = String.format("%05d", Math.abs(System.nanoTime() % 100000));
+        // Stamped from the wall clock: System.nanoTime() ticks in 100 ns steps on this machine, so its remainders end in "00" and a code
+        // taken from them came from only ~1,000 values — too few for a master list that keeps every record ever saved.
+        String stamp = String.format("%05d", System.currentTimeMillis() % 100000);
         String code = System.getProperty("code", "DS" + stamp);
         String district = System.getProperty("district", "Auto District " + stamp);
 

@@ -150,6 +150,7 @@ public class Emergency_Admission extends BasePage {
      * ADMISSION-section element (else the Registration scope's Admission object is used and nothing sticks).
      */
     public String fillAdmissionSection() {
+        loadAdmissionLists();
         page.evaluate("() => { const e=document.querySelector(\"select[ng-model='Admission.AdmissionLocationID']\") || document.querySelector(\"input[ng-model='Registration.FirstName']\"); const sc=angular.element(e).scope(); let s=sc, adm=null; for(let i=0;i<15&&s;i++){ if(!adm&&s.Admission)adm=s.Admission; s=s.$parent; }"
                 + " sc.$apply(function(){ if(adm){ adm.AdmissionLocationID=1; } if(typeof sc.fnSetDepartment==='function') sc.fnSetDepartment();"
                 + "   if(adm){ adm.DepartmentID=1; } if(typeof sc.fnDeparmentChange==='function') sc.fnDeparmentChange(); if(typeof sc.onEmergencyOnCallChange==='function') sc.onEmergencyOnCallChange(); }); }");
@@ -172,7 +173,78 @@ public class Emergency_Admission extends BasePage {
         // department reloads the doctor list and clears the doctor).
         String dept = ensureDepartmentSelected();
         String doc = ensureDoctorSelected();
-        return "Admission: " + (rest == null ? "" : rest.toString().trim()) + " | " + dept + " | " + doc;
+        String cash = ensureCashCounterSelected();
+        String others = ensureAdmissionDropdowns();
+        return "Admission: " + (rest == null ? "" : rest.toString().trim()) + " | " + dept + " | " + doc + " | " + cash + " | " + others;
+    }
+
+    /**
+     * Admission Type, Patient Source, Bed Class, Ward, Billing Class and Admission Purpose. Assigning their ids on the scope does NOT stick
+     * (Save then answers "Please Select a valid Admission Type !!!!"), so each is picked from its OWN option list through selectedIndex +
+     * change and read back — preferring the Emergency option where there is one, else the first real option. Order matters: a Bed Class
+     * change reloads the Ward list, so Ward is chosen after it.
+     */
+    public String ensureAdmissionDropdowns() {
+        Object r = page.evaluate("async () => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                + " const real=o=>o.value && !/^-*\\s*select\\s*-*$/i.test(norm(o.textContent));"
+                + " const sleep=ms=>new Promise(r=>setTimeout(r,ms)); const $=window.jQuery;"
+                + " const pick=async(model,rx)=>{ const tail=model.split('.').pop(); let sel=null;"
+                + "   for(let w=0;w<10;w++){ sel=document.querySelector(\"select[ng-model='\"+model+\"']\"); if(sel && [...sel.options].some(real)) break; await sleep(500); }"
+                + "   if(!sel) return tail+'=(no select)';"
+                + "   const cur=sel.options[sel.selectedIndex]; if(cur && real(cur) && (!rx || rx.test(norm(cur.textContent)))) return tail+'='+norm(cur.textContent)+' (kept)';"
+                + "   let i=rx? [...sel.options].findIndex(o=>real(o)&&rx.test(norm(o.textContent))) : -1; if(i<0) i=[...sel.options].findIndex(real);"
+                + "   if(i<0) return tail+'=(no options)';"
+                + "   sel.selectedIndex=i; sel.dispatchEvent(new Event('change',{bubbles:true}));"
+                + "   try{ window.angular.element(sel).triggerHandler('change'); }catch(e){} if($){try{$(sel).trigger('change');}catch(e){}}"
+                + "   await sleep(900); return tail+'='+norm(sel.options[sel.selectedIndex].textContent); };"
+                + " const out=[];"
+                + " out.push(await pick('Admission.AdmissionTypeID',/emergency/i));"
+                + " out.push(await pick('Admission.PatientSourceID',null));"
+                + " out.push(await pick('Admission.BedClassID',/emergency/i));"
+                + " out.push(await pick('Admission.WardID',/emergency/i));"
+                + " out.push(await pick('Admission.BillingClassID',/emergency/i));"
+                + " out.push(await pick('Admission.AdmissionPurposeID',/emergency/i));"
+                + " return out.join(' | '); }");
+        waitForAngular(400);
+        return r == null ? "(admission dropdowns: null)" : r.toString();
+    }
+
+    /**
+     * Load the Admission Type, Patient Source, Bed Class, Billing Class, Doctor and Location lists. The screen fills them with its own
+     * {@code FillAdmissionDropDown()} (found in the browser, 2026-10-27), which runs only once and is gated by
+     * {@code IsFillAdmissionDropDown}; until it has run, every one of those dropdowns holds just "--Select--" and Save answers "Please
+     * Select a valid Admission Type !!!!". It is therefore run here (flag reset first) and the Admission Type list waited for.
+     */
+    public void loadAdmissionLists() {
+        page.evaluate("() => { const e=document.querySelector(\"select[ng-model='Admission.AdmissionLocationID']\") || document.querySelector(\"input[ng-model='Registration.FirstName']\");"
+                + " const sc=angular.element(e).scope(); sc.$apply(function(){ sc.IsFillAdmissionDropDown=0; if(typeof sc.FillAdmissionDropDown==='function') sc.FillAdmissionDropDown(); }); }");
+        try {
+            page.waitForFunction("() => { const s=document.querySelector(\"select[ng-model='Admission.AdmissionTypeID']\");"
+                    + " return !!s && s.options.length>1; }", null, new Page.WaitForFunctionOptions().setTimeout(20000));
+        } catch (Exception ignore) { System.out.println("Emergency_Admission: the Admission Type list did not load after FillAdmissionDropDown()"); }
+        waitForAngular(800);
+    }
+
+    /**
+     * <b>Cash Counter</b> — Save answers "Please Select a valid Cash Counter !!!!" while the counter box is empty. The box is found by its
+     * model name (anything with "CashCounter") or its label, and a real option is picked through the select's own change handling and
+     * read back. Reports "(no cash counter field)" when the form has none, so a missing field is not mistaken for a selected one.
+     */
+    public String ensureCashCounterSelected() {
+        Object r = page.evaluate("async () => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                + " const vis=e=>!!(e.offsetWidth||e.offsetHeight||e.getClientRects().length);"
+                + " const real=o=>o.value && !/^-*\\s*select\\s*-*$/i.test(norm(o.textContent));"
+                + " const find=()=>[...document.querySelectorAll('select')].find(x=>/cash\\s*counter/i.test((x.getAttribute('ng-model')||'')+' '+(x.id||'')+' '+(x.name||'')));"
+                + " let sel=null; for(let w=0;w<10;w++){ sel=find(); if(sel && [...sel.options].some(real)) break; await new Promise(r=>setTimeout(r,500)); }"
+                + " if(!sel) return 'CashCounter=(no cash counter field)';"
+                + " const cur=sel.options[sel.selectedIndex]; if(cur && real(cur)) return 'CashCounter='+norm(cur.textContent)+' (already selected)';"
+                + " const i=[...sel.options].findIndex(real); if(i<0) return 'CashCounter=(no options: '+sel.options.length+')';"
+                + " sel.selectedIndex=i; sel.dispatchEvent(new Event('change',{bubbles:true}));"
+                + " try{ window.angular.element(sel).triggerHandler('change'); }catch(e){} const $=window.jQuery; if($){try{$(sel).trigger('change');}catch(e){}}"
+                + " await new Promise(r=>setTimeout(r,600));"
+                + " return 'CashCounter='+norm(sel.options[sel.selectedIndex].textContent)+' ['+(sel.getAttribute('ng-model')||'?')+']'; }");
+        waitForAngular(400);
+        return r == null ? "CashCounter=(null)" : r.toString();
     }
 
     /**
@@ -193,8 +265,17 @@ public class Emergency_Admission extends BasePage {
                 + " if(i<0) return 'Dept=(no options)';"
                 + " sel.selectedIndex=i; sel.dispatchEvent(new Event('change',{bubbles:true})); const $=window.jQuery; if($){try{$(sel).trigger('change');}catch(e){}}"
                 + " await new Promise(r=>setTimeout(r,2500));"
+                // The Doctor list is filled from the Department, and Save refuses without a Doctor ("Please Select a valid Cash Counter !!!!" /
+                // "Please Select Doctor!"). When the Emergency department has no doctor loaded, walk the other departments until one does.
+                + " const docOk=()=>{ const d=document.querySelector(\"select[ng-model='Admission.DoctorID']\"); return !!d && [...d.options].some(real); };"
+                + " const tried=[norm(sel.options[i].textContent)+(docOk()?'':' (no doctors)')];"
+                + " if(!docOk()){ let n=0;"
+                + "   for(let k=0;k<sel.options.length && n<25 && !docOk();k++){ const o=sel.options[k]; if(!real(o) || k===i) continue; n++;"
+                + "     sel.selectedIndex=k; sel.dispatchEvent(new Event('change',{bubbles:true})); if($){try{$(sel).trigger('change');}catch(e){}}"
+                + "     for(let w=0;w<8 && !docOk();w++) await new Promise(r=>setTimeout(r,500));"
+                + "     tried.push(norm(o.textContent)+(docOk()?' (has doctors)':' (no doctors)')); if(docOk()){ i=k; } } }"
                 + " let val=null; document.querySelectorAll('*').forEach(el=>{ if(val)return; try{ const s=window.angular.element(el).scope(); let x=s; for(let k=0;k<15&&x;k++){ if(x.Admission){ val=x.Admission.DepartmentID; return; } x=x.$parent; } }catch(e){} });"
-                + " return 'Dept='+norm(sel.options[i].textContent)+' (DepartmentID='+JSON.stringify(val)+')'; }");
+                + " return 'Dept='+norm(sel.options[sel.selectedIndex].textContent)+' (DepartmentID='+JSON.stringify(val)+')'+(tried.length>1? ' [departments tried: '+tried.join(', ')+']' : ''); }");
         waitForAngular(400);
         return r == null ? "Dept=(null)" : r.toString();
     }

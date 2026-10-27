@@ -41,10 +41,12 @@ public class ServiceConfiguration extends DevHisBase {
                 new com.kpj.pages.ApplicationConfiguration_page.Billing_page.ServiceConfiguration(page);
 
         // 1) Navigate
-        sc.navigateViaMenu();
-        boolean onScreen = sc.onScreen();
+        boolean onScreen = sc.navigateViaMenu();
+        if (!onScreen) { addSummary("Menu offered", sc.lastMenu); addSummary("Menu route / HTTP while loading", sc.lastRoute + " :: " + sc.lastNavHttp); }
         step(page, "Open Service Configuration screen", "Click Application Configuration -> Billing -> Service Configuration",
-                "The Service Configuration screen is shown", onScreen ? "Opened " + page.url() : "Did NOT reach the screen (" + page.url() + ")",
+                "The Service Configuration screen is shown",
+                onScreen ? "Opened " + page.url() + (sc.lastRoute.isEmpty() ? "" : " (menu route " + sc.lastRoute + ")")
+                         : "Did NOT reach the screen (" + page.url() + ") — see the menu dump",
                 onScreen ? "PASS" : "FAIL");
         if (!onScreen) { addSummary("Result", "FAILED — screen not reached"); return; }
 
@@ -64,11 +66,17 @@ public class ServiceConfiguration extends DevHisBase {
         String fill = "", toast = "";
         boolean ok = false, exists = false;
         int attempts = services, used = 0;
-        for (int ordinal = 1; ordinal <= attempts; ordinal++) {
-            used = ordinal;
+        // Every save uses one Service up for good, and the walk used to start at Service #1 every time — so each run had to get past all
+        // the ones earlier runs had already configured (23 attempts, and one more each run). Start at a RANDOM Service and wrap round
+        // the whole list instead: still every Service is tried before giving up, but a free one is usually found at once.
+        int startOrd = new java.util.Random().nextInt(services);
+        System.out.println("ServiceConfiguration: " + services + " Service(s), starting at #" + (startOrd + 1));
+        for (int k = 0; k < attempts; k++) {
+            int ordinal = (startOrd + k) % services + 1;
+            used = k + 1;
             fill = sc.selectServiceAndConfigure(ordinal);
-            if (fill.contains("Service=(exhausted)")) { used = ordinal - 1; break; }
-            if (ordinal == 1) {
+            if (fill.contains("Service=(exhausted)")) { used = k; break; }
+            if (k == 0) {
                 boolean fillOk = !fill.contains("Service=(") && !fill.contains("ProcessingLocation=(no");
                 step(page, "Select Service, tick Select, choose Processing Location",
                         "Select a Service; tick the Select checkbox; choose a Processing Location",
@@ -79,7 +87,7 @@ public class ServiceConfiguration extends DevHisBase {
             ok = tl.contains("saved") || tl.contains("success") || tl.contains("added") || tl.contains("updated");
             exists = tl.contains("exist") || tl.contains("already");
             if (ok || !exists) break;
-            System.out.println("ServiceConfiguration: attempt " + ordinal + " exists (\"" + toast + "\") — retrying with a different Service");
+            System.out.println("ServiceConfiguration: attempt " + used + " (Service #" + ordinal + ") exists (\"" + toast + "\") — retrying with a different Service");
         }
 
         String actual = toast == null || toast.isEmpty() ? "No toast appeared"

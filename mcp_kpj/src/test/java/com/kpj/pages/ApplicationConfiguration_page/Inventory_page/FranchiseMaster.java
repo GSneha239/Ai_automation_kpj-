@@ -56,8 +56,11 @@ public class FranchiseMaster extends BasePage {
         try { page.waitForFunction("() => window.angular", null,
                 new Page.WaitForFunctionOptions().setTimeout(20000)); } catch (Exception ignore) { }
 
-        clickMenu("^\\s*application\\s*configuration\\s*$");
-        clickMenu("^\\s*inventory\\s*$");
+        // Expand each level only if it is not already open (a second click on an open entry CLOSES it), and look "Inventory" up INSIDE
+        // Application Configuration — "Inventory" is also a top-level module of the sidebar, and the sidebar is built lazily.
+        expandMenuEntry(null, "^\\s*application\\s*config(uration)?\\s*$");
+        expandMenuEntry("^\\s*application\\s*config(uration)?\\s*$", "^\\s*inventory\\s*$");
+        waitForAngular(800);
         lastMenu = describeMenu();
 
         Object href = page.evaluate("() => {" + JS
@@ -147,12 +150,19 @@ public class FranchiseMaster extends BasePage {
     /** Click <b>Add</b> and wait for the entry form to render. */
     public boolean clickAdd() {
         if (formOpen()) return true;
-        page.evaluate("() => {" + JS
-                + " const b=[...document.querySelectorAll('button,a,input[type=button]')].filter(vis)"
-                + "   .find(x=>/^\\s*add\\s*$/i.test(norm(x.textContent)||x.value||'')"
-                + "        || /add-?franchise|AddFranchise/i.test((x.getAttribute('href')||'')"
-                + "             +' '+(x.getAttribute('ng-click')||'')));"
-                + " if(b) b.id='__fmAdd'; }");
+        // The Add button appears only once the list screen has finished loading (its rights are fetched first), and a single look at
+        // the page a moment too early found nothing to tag — the click and every fallback below then had no button. Poll for it (≤30 s).
+        boolean tagged = false;
+        for (int i = 0; i < 60 && !tagged; i++) {
+            tagged = Boolean.TRUE.equals(page.evaluate("() => {" + JS
+                    + " const b=[...document.querySelectorAll('button,a,input[type=button]')].filter(vis)"
+                    + "   .find(x=>/^\\s*add\\s*$/i.test(norm(x.textContent)||x.value||'')"
+                    + "        || /add-?franchise|AddFranchise/i.test((x.getAttribute('href')||'')"
+                    + "             +' '+(x.getAttribute('ng-click')||'')));"
+                    + " if(b){ b.id='__fmAdd'; return true; } return false; }"));
+            if (!tagged) page.waitForTimeout(500);
+        }
+        if (!tagged) System.out.println("FranchiseMaster.clickAdd: the Add button never appeared on " + page.url());
         try {
             page.locator("#__fmAdd").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000));
         } catch (Exception e) {

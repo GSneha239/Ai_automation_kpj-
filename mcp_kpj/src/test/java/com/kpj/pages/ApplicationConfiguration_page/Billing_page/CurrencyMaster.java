@@ -33,36 +33,51 @@ public class CurrencyMaster extends BasePage {
 
     // ---- navigation ------------------------------------------------------
 
+    /** Menu entries on screen when the walk was made — dumped into the report if the screen is not reached. */
+    public String lastMenu = "";
+    public String lastRoute = "";
+
     public boolean navigateViaMenu() {
-        try {
-            page.waitForFunction("() => [...document.querySelectorAll('a')].some(a=>/application\\s*config/i.test((a.textContent||'')) && a.offsetParent!==null)",
-                    null, new Page.WaitForFunctionOptions().setTimeout(15000));
-        } catch (Exception ignore) { }
-        page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                + " const a=[...document.querySelectorAll('a')].find(x=>/application\\s*config/i.test(norm(x.textContent)) && x.offsetParent!==null); if(a) a.click(); }");
-        waitForAngular(900);
-        // "Billing" is ALSO a top-level module in the sidebar, listed before Application Configuration: an unscoped lookup clicks
-        // that one, which collapses the Application Configuration menu again. Look only inside the Application Configuration entry.
-        page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                + " const top=[...document.querySelectorAll('a')].find(x=>/application\\s*config/i.test(norm(x.textContent)) && x.offsetParent!==null); const scope=(top&&top.closest('li'))||document;"
-                + " const a=[...scope.querySelectorAll('a')].find(x=>/^\\s*billing\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null); if(a) a.click(); }");
+        try { page.waitForFunction("() => window.angular", null,
+                new Page.WaitForFunctionOptions().setTimeout(20000)); } catch (Exception ignore) { }
+        // The sidebar is built lazily and "Billing" is ALSO a top-level module listed before Application Configuration. Open each
+        // level only if it is closed (a second click on an open entry CLOSES it) and look the next one up INSIDE its parent's li.
+        expandMenuEntry(null, "^\\s*application\\s*config(uration)?\\s*$");
+        expandMenuEntry("^\\s*application\\s*config(uration)?\\s*$", "^\\s*billing\\s*$");
         waitForAngular(800);
         Object href = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                + " const a=[...document.querySelectorAll('a[href]')].find(x=>/currency\\s*master/i.test(norm(x.textContent)) || /currencymaster/i.test(x.getAttribute('href')||'')); if(!a) return ''; a.id='__curMenu'; return a.getAttribute('href')||'link'; }");
-        if (href != null && !href.toString().isEmpty()) {
-            try { page.locator("#__curMenu").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000)); }
-            catch (Exception e) { System.out.println("CurrencyMaster.nav: click failed - " + e.getMessage()); }
-            waitForAngular(1500);
+                + " const top=[...document.querySelectorAll('a')].find(x=>/^\\s*application\\s*config(uration)?\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null);"
+                + " const topLi=(top&&top.closest('li'))||document;"
+                + " const bill=[...topLi.querySelectorAll('a')].find(x=>/^\\s*billing\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null);"
+                + " const scope=(bill&&bill.closest('li'))||topLi;"
+                + " const a=[...scope.querySelectorAll('a[href]')].find(x=>/^\\s*currency\\s*master\\s*$/i.test(norm(x.textContent)));"
+                + " if(!a) return ''; a.id='__curMenu'; return a.getAttribute('href')||'link'; }");
+        lastRoute = href == null ? "" : href.toString();
+        if (!lastRoute.isEmpty()) {
+            try { page.locator("#__curMenu").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000)); }
+            catch (Exception e) { System.out.println("CurrencyMaster.nav: click failed - " + e.getMessage().split("\n")[0]); }
+            page.evaluate("() => { const e=document.getElementById('__curMenu'); if(e) e.removeAttribute('id'); }");
+            waitForAngular(2500);
         }
+        // Direct hash navigation is bounced to #/PatientDashboard by the app, so it is NOT a way in — only the menu link is.
         if (!onScreen()) {
-            System.out.println("CurrencyMaster.nav: direct route " + LIST_ROUTE);
-            try { page.evaluate("(h) => { window.location.hash = h; }", LIST_ROUTE); } catch (Exception ignore) { }
-            waitForAngular(1600);
+            lastMenu = String.valueOf(page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                    + " return [...new Set([...document.querySelectorAll('a')].filter(a=>a.offsetParent!==null)"
+                    + "   .map(a=>norm(a.textContent)+' -> '+(a.getAttribute('href')||'')).filter(t=>t.length>4&&t.length<70))].slice(0,140).join('\\n'); }"));
+            return false;
         }
         return true;
     }
 
+    /** On the Currency Master list/add screen — the route AND the screen's own control must be there (a bounce to the dashboard fails). */
     public boolean onScreen() {
+        String u = page.url().toLowerCase();
+        if (!u.contains("currencymaster")) return false;
+        try {
+            page.waitForFunction("() => [...document.querySelectorAll('button,a,input[type=button]')].some(x=>x.offsetParent!==null && /^\\s*add\\s*$/i.test(((x.textContent||x.value)||'').replace(/\\s+/g,' ').trim()))"
+                    + " || [...document.querySelectorAll('input')].some(e=>e.offsetParent!==null && (e.getAttribute('ng-model')||'')==='CurrencyMaster.code')",
+                    null, new Page.WaitForFunctionOptions().setTimeout(15000));
+        } catch (Exception e) { return false; }
         return page.url().toLowerCase().contains("currencymaster");
     }
 
@@ -93,7 +108,9 @@ public class CurrencyMaster extends BasePage {
      * different details.
      */
     public String fillDetails(int attempt) {
-        String code = "CUR" + String.format("%05d", Math.abs((System.nanoTime() + attempt * 7919L) % 100000));
+        // Stamped from the wall clock: System.nanoTime() ticks in 100 ns steps on this machine, so its remainders end in "00" and a code
+        // taken from them came from only ~1,000 values — too few for a master list that keeps every record ever saved.
+        String code = "CUR" + String.format("%05d", (System.currentTimeMillis() + attempt * 7919L) % 100000);
         lastCode = code;
         // The Description (Remark) is UNIQUE per run: the shared QA environment keeps every currency ever saved, so a bare pool
         // name such as "US Dollar" collides with earlier runs. A realistic name + the run time (+ the retry number) never repeats.
@@ -127,7 +144,8 @@ public class CurrencyMaster extends BasePage {
         }
         Object r = page.evaluate("() => { const a=window.__curToasts||[]; return a.find(x=>/saved|added|success/i.test(x)) || a.find(x=>x) || ''; }");
         waitForAngular(400);
-        return r == null ? "" : r.toString().trim();
+        // The toast's title ("KPJ Portal", with the close "×") is glued to its message in textContent — keep only the message.
+        return r == null ? "" : r.toString().replaceFirst("^\\s*×?\\s*KPJ Portal\\s*", "").trim();
     }
 
     /** After Submit, open the list ({@code #/CurrencyMaster}) and confirm a grid row matches the saved Code.

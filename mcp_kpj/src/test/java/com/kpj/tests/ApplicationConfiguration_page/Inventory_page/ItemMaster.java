@@ -45,7 +45,9 @@ public class ItemMaster extends DevHisBase {
                         + "Group, tick a pricing policy, enter the HSN Code, Submit.");
 
         String counter = System.getProperty("counter", COUNTER_FOR_MENU);
-        String stamp = String.format("%05d", Math.abs(System.nanoTime() % 100000));
+        // Stamped from the wall clock: System.nanoTime() ticks in 100 ns steps on this machine, so its remainders end in "00" and a code
+        // taken from them came from only ~1,000 values — too few for a master list that keeps every record ever saved.
+        String stamp = String.format("%05d", System.currentTimeMillis() % 100000);
         String code = System.getProperty("code", "IM" + stamp);
         String name = System.getProperty("name", "Auto item " + stamp);
         String hsn = System.getProperty("hsn", "HSN" + stamp);
@@ -148,11 +150,13 @@ public class ItemMaster extends DevHisBase {
                               + "text in the message master."
                             : "Submit answered \"" + toast + "\" and the record is NOT in the list. "
                               + im.lastListCheck)
-                        : "Submit not confirmed — server returned: \"" + toast + "\"");
+                        : "Submit not confirmed — the screen answered: \"" + toast + "\"  [save request: " + im.lastSaveHttp + "]"
+                          + (inList ? "  [the record IS in the list]" : "  [the record is NOT in the list: " + im.lastListCheck + "]"));
         // A message containing "undefined" FAILS the step, even though the save goes through: the record
         // identifier is never substituted into the template, so the user is told "undefined" was saved.
         boolean malformed = toast != null && toast.toLowerCase().contains("undefined");
-        step(page, "Click Submit & success toast", "Click Submit; wait for the success toast",
+        // The screenshot taken while the toast was on screen — a shot after the step would miss it.
+        step(im.toastPng != null ? im.toastPng : page.screenshot(), "Click Submit & success toast", "Click Submit; wait for the success toast",
                 "'... saved successfully' toast",
                 (ok ? "PASSES because the screen answered with a success message: " : "FAILS — ") + actual
                     + (malformed

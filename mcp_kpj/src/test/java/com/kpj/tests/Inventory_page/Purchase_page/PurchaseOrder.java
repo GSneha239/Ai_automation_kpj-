@@ -146,6 +146,21 @@ public class PurchaseOrder extends DevHisBase {
         // 6) In the dialog: Search, tick checkbox, OK
         String rowsResult = po.clickSearchAndVerifyRows();
         boolean rowsOk = po.rowsFound();
+        // The picker lists only items applicable to the chosen Supplier, so a supplier with none gives 0 rows however the search is
+        // phrased. Try the next suppliers (close the picker, change the supplier, search again) before calling it a failure.
+        StringBuilder triedSuppliers = new StringBuilder();
+        for (int alt = 1; alt <= 6 && !rowsOk; alt++) {
+            triedSuppliers.append(triedSuppliers.length() == 0 ? "" : " | ").append(supplier.replaceAll("\\s*\\[.*$", "")).append(" -> 0 rows");
+            po.closeItemPicker();
+            supplier = po.selectSupplierNth(alt);
+            po.clickSearchItem();
+            po.selectPickerStore();
+            rowsResult = po.clickSearchAndVerifyRows();
+            rowsOk = po.rowsFound();
+        }
+        if (triedSuppliers.length() > 0) {
+            rowsResult = rowsResult + "  [supplier changed after 0 rows: " + triedSuppliers + " | now " + supplier.replaceAll("\\s*\\[.*$", "") + "]";
+        }
         if (!rowsOk) {
             addSummary("Item picker controls (diagnostic, 0 rows)", po.describeControls());
             try {

@@ -152,6 +152,9 @@ public class FileLinking extends BasePage {
         return c instanceof Number ? ((Number) c).intValue() : 0;
     }
 
+    /** Screenshot taken while the toast was on screen. */
+    public byte[] toastPng;
+
     /** Click <b>Submit</b> ({@code fnSaveFilesonServer}) and return the success toast (toastr cleared first). */
     public String submitAndGetToast() {
         page.evaluate("() => { window.__flToasts=[]; if(window.__flObs) window.__flObs.disconnect(); try{ if(window.toastr) toastr.clear(); }catch(e){} document.querySelectorAll('#toast-container .toast,.toast-message').forEach(t=>t.remove());"
@@ -160,12 +163,25 @@ public class FileLinking extends BasePage {
         page.evaluate("() => { const b=[...document.querySelectorAll('button,a,input[type=submit],input[type=button]')].find(x=>/fnSaveFilesonServer/.test(x.getAttribute('ng-click')||'') && x.offsetParent!==null) || [...document.querySelectorAll('button')].find(x=>/^\\s*submit\\s*$/i.test((x.textContent||'').trim()) && x.offsetParent!==null); if(b) b.id='__flSubmit'; }");
         try { page.locator("#__flSubmit").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000)); } catch (Exception e) { System.out.println("submit: " + e.getMessage()); }
         page.evaluate("() => { const e=document.getElementById('__flSubmit'); if(e) e.removeAttribute('id'); }");
+        // Submit uploads the file to the FTP server before the screen answers, and that can take well over 20 s (an unreachable FTP
+        // server answered "Error while uploading … on FTP Server!" only after ~25 s), so wait up to 90 s for ANY toast.
+        toastPng = null;
         try {
-            page.waitForFunction("() => (window.__flToasts||[]).some(a=>/saved|succes|linked|uploaded|added|please|select|enter|required|mandatory|format|size|error/i.test(a))",
-                    null, new Page.WaitForFunctionOptions().setTimeout(20000));
+            page.waitForFunction("() => (window.__flToasts||[]).some(a=>a && a.length>2)",
+                    null, new Page.WaitForFunctionOptions().setTimeout(90000));
         } catch (Exception ignore) { page.waitForTimeout(2000); }
+        // Screenshot the toast while it is on screen and fully faded in — a shot taken after the step misses it.
+        for (int w = 0; w < 15; w++) {
+            boolean solid = Boolean.TRUE.equals(page.evaluate("() => { const t=[...document.querySelectorAll('.toast,.toast-message,[id^=toast]')]"
+                    + ".filter(el=>el.offsetParent!==null && (el.textContent||'').trim()); if(!t.length) return true;"
+                    + " return t.every(el=>{ let o=1; for(let n=el; n && n!==document.body; n=n.parentElement) o*=parseFloat(getComputedStyle(n).opacity||'1'); return o>=0.98; }); }"));
+            if (solid) break;
+            page.waitForTimeout(100);
+        }
+        try { toastPng = page.screenshot(new Page.ScreenshotOptions().setTimeout(8000)); }
+        catch (Exception e) { System.out.println("FileLinking.submit: toast screenshot failed - " + e.getMessage()); }
         Object r = page.evaluate("() => { const a=window.__flToasts||[]; return a.find(x=>/saved|succes|linked|uploaded|added/i.test(x)) || a.find(x=>x) || ''; }");
-        lastToast = r == null ? "" : r.toString().trim();
+        lastToast = (r == null ? "" : r.toString()).replaceFirst("^[\\u00d7x\\s]*KPJ\\s*Portal\\s*", "").trim();
         waitForAngular(400);
         return lastToast;
     }

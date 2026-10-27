@@ -196,10 +196,12 @@ public class LoanSupplierReturnNote extends DevHisBase {
         // 11) Verify success toast
         String toast = lsrn.waitForSaveToast();
         boolean success = com.kpj.pages.Inventory_page.Purchase_page.LoanSupplierReturnNote.isSuccess(toast);
+        String saveHttp = lsrn.lastSaveHttp == null || lsrn.lastSaveHttp.isEmpty() ? "" : "  [server: " + lsrn.lastSaveHttp + "]";
         String actual = toast == null || toast.isEmpty()
-                ? "No message appeared — " + lsrn.lastSaveDiagnostics
-                : (success ? toast : "Save not confirmed — the screen answered: \"" + toast + "\"");
-        step(page, "Verify success toast message", "Wait for the success toast",
+                ? "No message appeared — " + lsrn.lastSaveDiagnostics + saveHttp
+                : (success ? toast + saveHttp : "Save not confirmed — the screen answered: \"" + toast + "\"" + saveHttp);
+        // The screenshot taken while the toast was on screen — a shot after the step would miss it.
+        step(lsrn.toastPng != null ? lsrn.toastPng : page.screenshot(), "Verify success toast message", "Wait for the success toast",
                 "'... saved successfully' toast", actual, success ? "PASS" : "FAIL");
 
         addSummary("Supplier", lsrn.lastSupplier);

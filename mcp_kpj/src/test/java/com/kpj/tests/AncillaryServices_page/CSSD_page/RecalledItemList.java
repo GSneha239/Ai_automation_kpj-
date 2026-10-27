@@ -74,7 +74,12 @@ public class RecalledItemList extends DevHisBase {
                 "The Recall form opens (From Date / To Date / Search visible)",
                 formOpen ? "Form opened" : "Form did NOT open",
                 formOpen ? "PASS" : "FAIL");
-        if (!formOpen) { addSummary("Result", "FAILED — Recall form not reached"); return; }
+        if (!formOpen) {
+            addSummary("App's New handler (fnAddRecalledItem)", ril.addHandlerSource);
+            addSummary("Landed on", page.url());
+            addSummary("Result", "FAILED — Recall form not reached");
+            return;
+        }
 
         // 3) From Date / To Date
         String fromSet = ril.setFromDate(fromDate);

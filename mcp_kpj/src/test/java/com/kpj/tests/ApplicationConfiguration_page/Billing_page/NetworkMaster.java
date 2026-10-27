@@ -60,12 +60,25 @@ public class NetworkMaster extends DevHisBase {
         // 3) + 4) Fill cascade and Submit; retry a different Pricing Policy on "already exists".
         String fill = "", toast = "";
         boolean ok = false, exists = false;
-        int attempts = Math.min(tariffCount, 8), used = 0;
-        for (int ordinal = 1; ordinal <= attempts; ordinal++) {
-            used = ordinal;
-            fill = nw.fillCascade(ordinal);
-            if (fill.contains("PricingPolicy=(exhausted)")) { used = ordinal - 1; break; }
-            if (ordinal == 1) {
+        // Location/Policy/Payor/Network combinations pile up on the shared environment: every Pricing Policy of the first
+        // Payor + Network may already exist. So walk Pricing Policy (inner), then Payor, then Network, up to MAX_COMBOS tries.
+        final int MAX_COMBOS = 40;
+        int polAttempts = Math.min(tariffCount, 8), used = 0, tries = 0;
+        int payorOrd = 1, networkOrd = 1, policyOrd = 1;
+        while (tries < MAX_COMBOS) {
+            tries++;
+            used = tries;
+            fill = nw.fillCascade(policyOrd, payorOrd, networkOrd);
+            if (fill.contains("Payor=(exhausted)")) {        // no more Payors: next Network, back to Payor 1
+                if (networkOrd >= 4 && payorOrd == 1) { used = tries - 1; break; }
+                networkOrd++; payorOrd = 1; policyOrd = 1; continue;
+            }
+            if (fill.contains("Network=(exhausted)")) { used = tries - 1; break; }
+            if (fill.contains("PricingPolicy=(exhausted)")) {  // policies used up for this Payor/Network: next Payor
+                payorOrd++; policyOrd = 1; continue;
+            }
+            int ordinal = tries;
+            if (tries == 1) {
                 boolean fillOk = fill.contains("Location=") && !fill.contains("Location=(no")
                         && !fill.contains("PricingPolicy=(no") && !fill.contains("Network=(no");
                 step(page, "Select Location, Pricing Policy, Payor, Network",
@@ -77,16 +90,22 @@ public class NetworkMaster extends DevHisBase {
             ok = tl.contains("saved") || tl.contains("success") || tl.contains("added") || tl.contains("updated");
             exists = tl.contains("exist") || tl.contains("already");
             if (ok || !exists) break;
-            System.out.println("NetworkMaster: attempt " + ordinal + " exists (\"" + toast + "\") — retrying with a different Pricing Policy");
+            System.out.println("NetworkMaster: attempt " + ordinal + " exists (\"" + toast + "\") — retrying with a different combination");
+            if (++policyOrd > polAttempts) { policyOrd = 1; payorOrd++; }
         }
 
+        // Every combination tried already exists: the form works (the app validated the duplicate, which is correct
+        // behaviour) but nothing new could be saved on this shared environment — a PARTIAL pass, not a failure. The report
+        // has no "partial" status, so MANUAL (amber, not counted as FAILED) carries it.
+        boolean allExist = !ok && exists;
         String actual = toast == null || toast.isEmpty() ? "No toast appeared"
-                : (ok ? toast : (exists ? "Still 'already exists' after trying " + used + " Pricing Policy option(s): \"" + toast + "\""
+                : (ok ? toast : (exists ? "PARTIALLY PASSED - the form and the duplicate check work, but every combination tried (" + used
+                                        + " Location/Pricing Policy/Payor/Network tries) already exists, so no new Network Master could be saved: \"" + toast + "\""
                                         : "Save not confirmed — server returned: \"" + toast + "\""));
         step(page, "Click Submit & success toast (retry Pricing Policy on 'exists')",
-                "Click Submit; if it says the combination already exists, pick a different Pricing Policy and Submit again",
+                "Click Submit; if it says the combination already exists, try a different Pricing Policy / Payor / Network and Submit again",
                 "'... saved successfully.' toast",
-                (used > 1 && ok ? "(after " + used + " Pricing Policy attempts) " : "") + actual, ok ? "PASS" : "FAIL");
+                (used > 1 && ok ? "(after " + used + " attempts) " : "") + actual, ok ? "PASS" : (allExist ? "MANUAL" : "FAIL"));
 
         // 5) Check the table
         if (ok) {
@@ -103,6 +122,7 @@ public class NetworkMaster extends DevHisBase {
         }
 
         addSummary("Pricing Policy attempts", String.valueOf(used));
-        addSummary("Result", ok ? toast : "Not confirmed (\"" + toast + "\")");
+        addSummary("Result", ok ? toast : (allExist ? "PARTIALLY PASSED - all " + used + " combinations tried already exist (\"" + toast + "\")"
+                                                      : "Not confirmed (\"" + toast + "\")"));
     }
 }

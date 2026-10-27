@@ -46,7 +46,9 @@ public class MaritalStatus extends DevHisBase {
                 "&#9888; Creates a REAL marital status: enter Code and Remark, then Submit.");
 
         String counter = System.getProperty("counter", COUNTER_FOR_MENU);
-        String stamp = String.format("%05d", Math.abs(System.nanoTime() % 100000));
+        // Stamped from the wall clock: System.nanoTime() ticks in 100 ns steps on this machine, so its remainders end in "00" and a code
+        // taken from them came from only ~1,000 values — too few for a master list that keeps every record ever saved.
+        String stamp = String.format("%05d", System.currentTimeMillis() % 100000);
         String code = System.getProperty("code", "MST" + stamp);
         String remark = System.getProperty("remark", "Auto marital status " + stamp);
         // Distinct from the remark on purpose: the form carries two description boxes, and identical

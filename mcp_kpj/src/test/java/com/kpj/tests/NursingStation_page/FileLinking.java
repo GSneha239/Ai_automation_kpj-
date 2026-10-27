@@ -108,11 +108,13 @@ public class FileLinking extends DevHisBase {
 
         String toast = fl.submitAndGetToast();
         String tl = toast == null ? "" : toast.toLowerCase();
-        boolean ok = tl.contains("saved") || tl.contains("succes") || tl.contains("linked")
-                || tl.contains("uploaded") || tl.contains("added");
-        String actual = toast == null || toast.isEmpty() ? "No toast appeared"
-                : (ok ? toast : "Submit not confirmed — server returned: \"" + toast + "\"");
-        step(page, "Click Submit & success toast", "Click Submit (fnSaveFilesonServer); wait for the success toast",
+        boolean ok = (tl.contains("saved") || tl.contains("succes") || tl.contains("linked")
+                || tl.contains("uploaded") || tl.contains("added")) && !tl.contains("error");
+        String actual = toast == null || toast.isEmpty() ? "No toast appeared within 90 s"
+                : (ok ? toast : "Submit not confirmed — the screen answered: \"" + toast + "\"");
+        // The screenshot taken while the toast was on screen — a shot after the step would miss it.
+        step(fl.toastPng != null ? fl.toastPng : page.screenshot(), "Click Submit & success toast",
+                "Click Submit (fnSaveFilesonServer); wait for the success toast",
                 "A success toast appears", actual, ok ? "PASS" : "FAIL");
 
         addSummary("Patient", fl.lastPatient);

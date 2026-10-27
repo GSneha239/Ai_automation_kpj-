@@ -417,6 +417,25 @@ public class PurchaseOrder extends BasePage {
         return lastSearchItem;
     }
 
+    /** Close the Item Search dialog (its × / Close / Cancel button) so the form behind it can be changed. */
+    public String closeItemPicker() {
+        Object r = page.evaluate("() => {" + JS
+                + " const d=topDialog(); if(!d) return '(no dialog to close)';"
+                + " const b=[...d.querySelectorAll('button,a')].filter(vis)"
+                + "   .find(x=>/^\\s*(close|cancel)\\s*$/i.test(norm(x.textContent)) || /^\\s*[×x]\\s*$/i.test(norm(x.textContent)) || /Cancel\\(|close/i.test(x.getAttribute('ng-click')||''));"
+                + " if(!b) return '(no close button found)'; b.click(); return 'closed'; }");
+        waitForAngular(1000);
+        return r == null ? "" : r.toString();
+    }
+
+    /** Select the {@code n}-th real Supplier (0 = the first), for retrying when the first supplier lists no items. */
+    public String selectSupplierNth(int n) {
+        String prev = System.getProperty("poSupplier");
+        System.setProperty("poSupplier", String.valueOf(n));
+        try { return selectSupplier(); }
+        finally { if (prev == null) System.clearProperty("poSupplier"); else System.setProperty("poSupplier", prev); }
+    }
+
     public boolean itemPickerOpen() {
         return lastSearchItem != null && lastSearchItem.startsWith("the item search dialog opened");
     }
@@ -441,14 +460,36 @@ public class PurchaseOrder extends BasePage {
         return lastPickerRows;
     }
 
+    /** What the item search call returned (URL, request filters, status, row count) — shown in the step so "0 rows" explains itself. */
+    public String lastSearchHttp = "", lastSearchButton = "";
+
     private void clickSearchInPicker() {
-        page.evaluate("() => {" + JS
-                + " const d=topDialog(); if(!d) return;"
+        final java.util.List<String> http = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+        java.util.function.Consumer<com.microsoft.playwright.Response> onResp = resp -> {
+            try {
+                String u = resp.url().toLowerCase();
+                String rq = resp.request().postData() == null ? "" : resp.request().postData();
+                String rt = resp.request().resourceType();
+                // every data call the Search click makes (not the page's own background polling), plus anything failing
+                if (!(rt.equals("xhr") || rt.equals("fetch") || resp.status() >= 400)) return;
+                if (u.contains("getinternalmsgcount")) return;
+                String rb = ""; try { rb = resp.text(); } catch (Exception ignore) { rb = "(body unavailable)"; }
+                int rows = rb.startsWith("[") ? (rb.equals("[]") ? 0 : rb.split("\\},\\s*\\{", -1).length) : -1;
+                String q = rq.replaceAll("\\s+", " ");
+                http.add(resp.url().replaceFirst("^https?://[^/]+", "") + " " + resp.status() + " request=" + q.substring(0, Math.min(260, q.length()))
+                        + " -> " + (rows >= 0 ? rows + " row(s)" : rb.substring(0, Math.min(120, rb.length()))));
+            } catch (Exception ignore) { }
+        };
+        page.onResponse(onResp);
+        Object btn = page.evaluate("() => {" + JS
+                + " const d=topDialog(); if(!d) return '(no dialog)';"
                 + " const b=[...d.querySelectorAll('button,a')].filter(vis)"
                 + "   .find(x=>/SearchItem/i.test(x.getAttribute('ng-click')||''))"
                 + "   || [...d.querySelectorAll('button,a')].filter(vis)"
                 + "     .find(x=>/^\\s*search\\s*$/i.test(norm(x.textContent)));"
-                + " if(b) b.click(); }");
+                + " if(!b) return '(no Search button found in the dialog)';"
+                + " b.click(); return 'clicked \"'+norm(b.textContent)+'\" [ng-click='+(b.getAttribute('ng-click')||'-')+']'; }");
+        lastSearchButton = btn == null ? "" : btn.toString();
         // A validation message (toast) the screen shows instead of searching — read it before it fades.
         String shown = "";
         try {
@@ -461,8 +502,11 @@ public class PurchaseOrder extends BasePage {
             shown = msg == null ? "" : msg.toString();
         } catch (Exception ignore) { }
         waitForAngular(3000);
+        try { page.offResponse(onResp); } catch (Exception ignore) { }
+        lastSearchHttp = http.isEmpty() ? "(no search call seen)" : String.join(" ;; ", http);
         lastPickerSearch = "clicked Search -> " + pickerRowCount() + " row(s) in the item picker"
-                + (shown.isEmpty() ? "" : "; the screen said: '" + shown + "'");
+                + (shown.isEmpty() ? "" : "; the screen said: '" + shown + "'")
+                + "  [button: " + lastSearchButton + "] [server: " + lastSearchHttp + "]";
         System.out.println("PurchaseOrder: " + lastPickerSearch);
     }
 

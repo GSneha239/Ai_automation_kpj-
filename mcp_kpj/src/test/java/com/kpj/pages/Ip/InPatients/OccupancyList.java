@@ -39,13 +39,13 @@ public class OccupancyList extends BedboardOccupancyListPage {
         // The temp ids MUST be cleared first: this method runs once per footer-action section, and a leftover
         // __occTab / __ipMenuTab on a previous anchor makes locator("#__occTab") match 2 elements (strict-mode
         // violation) so the click never happens.
-        page.evaluate("() => { document.querySelectorAll('#__ipMenuTab,#__occTab').forEach(e=>e.removeAttribute('id'));"
-                + " const lis=[...document.querySelectorAll('li')];"
-                + " const ipLi=lis.find(li=>{ const a=li.querySelector(':scope > a'); return a && /^\\s*IP\\s*$/i.test((a.textContent||'').trim()); });"
-                + " const a=ipLi&&ipLi.querySelector(':scope > a'); if(!a) return; a.id='__ipMenuTab'; }");
-        try { page.locator("#__ipMenuTab").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000)); }
-        catch (Exception e) { System.out.println("navigateViaMenu: IP menu click failed - " + e.getMessage()); }
-        page.evaluate("() => { const e=document.getElementById('__ipMenuTab'); if(e) e.removeAttribute('id'); }");
+        page.evaluate("() => { document.querySelectorAll('#__ipMenuTab,#__occTab').forEach(e=>e.removeAttribute('id')); }");
+        // Found in the browser (2026-10-23): "Occupancy List" is NOT directly under IP — it sits inside the collapsed "Inpatients" submenu
+        // (next to Graphical View), so its link is hidden until Inpatients is opened. The test never opened it, found no visible link and
+        // jumped to #/AdmissionList by URL, which this app bounces to the Patient Dashboard (direct navigation leaves the screen
+        // uninitialised). Open each level only if it is closed (a second click on an open entry closes it), "Inpatients" inside IP.
+        expandMenuEntry(null, "^\\s*IP\\s*$");
+        expandMenuEntry("^\\s*IP\\s*$", "^\\s*inpatients\\s*$");
         waitForAngular(800);
         // Click the Occupancy List link (#/AdmissionList). Fall back to the "Inpatients" link (same route) / direct route.
         Object tagged = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
@@ -76,8 +76,21 @@ public class OccupancyList extends BedboardOccupancyListPage {
             catch (Exception e) { System.out.println("OccupancyList.navigateViaMenu: still not ready after retry"); }
         }
         waitForAngular(1200);
-        return page.url().toLowerCase().contains("admissionlist");
+        boolean reached = page.url().toLowerCase().contains("admissionlist");
+        if (!reached && lastRouteProbe.isEmpty()) {
+            // Explain a bounce to the dashboard from the app's own router (once per run).
+            Object ipLinks = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                    + " const ipLi=[...document.querySelectorAll('li')].find(li=>{ const a=li.querySelector(':scope > a'); return a && /^\\s*IP\\s*$/i.test((a.textContent||'').trim()); });"
+                    + " if(!ipLi) return '(no IP entry in the sidebar)';"
+                    + " return [...ipLi.querySelectorAll('a')].filter(a=>a.getAttribute('href') && a.getAttribute('href')!=='#').map(a=>norm(a.textContent)+' -> '+a.getAttribute('href')).join(' ; '); }");
+            lastRouteProbe = "IP menu links: " + ipLinks + " | " + describeRoutes("admission|occupan|inpatient") + " | landed on " + page.url();
+            System.out.println("OccupancyList.navigateViaMenu: NOT reached — " + lastRouteProbe);
+        }
+        return reached;
     }
+
+    /** The app's registered routes matching admission / occupancy / inpatient, recorded the first time the list is not reached. */
+    public String lastRouteProbe = "";
 
     // ---- Close -> Revoke the SAME patient --------------------------------
 

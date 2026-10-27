@@ -41,12 +41,20 @@ public class DepartmentGroup extends DevHisBase {
                 new com.kpj.pages.ApplicationConfiguration_page.Billing_page.DepartmentGroup(page);
 
         // 1) Navigate
-        dg.navigateViaMenu();
-        boolean onScreen = dg.onScreen();
+        boolean onScreen = dg.navigateViaMenu();
+        if (!onScreen) addSummary("Menu offered", dg.lastMenu);
         step(page, "Open Department Group screen", "Click Application Configuration -> Billing -> Department Group",
-                "The Department Group screen is shown", onScreen ? "Opened " + page.url() : "Did NOT reach the screen (" + page.url() + ")",
+                "The Department Group screen is shown",
+                onScreen ? "Opened " + page.url() + (dg.lastRoute.isEmpty() ? "" : " (menu route " + dg.lastRoute + ")")
+                         : "Did NOT reach the screen (" + page.url() + ") — see the menu dump",
                 onScreen ? "PASS" : "FAIL");
         if (!onScreen) { addSummary("Result", "FAILED — screen not reached"); return; }
+
+        // What is already assigned — read from the list while it is on screen, before Add leaves it.
+        java.util.List<String> pairs = dg.readListPairs();
+        java.util.Set<String> assignedDepts = new java.util.HashSet<>();
+        for (String p : pairs) assignedDepts.add(p.substring(0, p.indexOf('\t')));
+        if (pairs.isEmpty()) addSummary("List read", "no rows read — " + dg.lastListProbe);
 
         // 2) Add
         boolean added = dg.clickAdd();
@@ -63,21 +71,31 @@ public class DepartmentGroup extends DevHisBase {
         int deptCount = Math.max(1, dg.departmentCount());
         int groupCount = Math.max(1, dg.groupCount());
         int maxAttempts = 40;
-        // Every Department x Group pair can be saved only once, and earlier runs have used up the START of both lists (the old
-        // walk only ever tried the first 12 Departments x 10 Groups, so every one of its 40 attempts hit "Group Already Assigned
-        // to the Department!"). So begin at a RANDOM combination and walk on from there, wrapping round the whole
-        // Department x Group space (174 x 43), instead of re-trying the same used-up pairs every run.
+        // A Department can hold only ONE Group: once it is on the list, every further Group for it is refused with "Group Already
+        // Assigned to the Department!" (two such Departments burned all 40 blind attempts of an earlier run). The list was read above,
+        // so try only the Departments that are NOT on it yet, each with a Group chosen at random. If every Department already has a
+        // Group, fall back to a short blind walk so the rule is re-confirmed rather than assumed.
+        java.util.List<String> deptNames = dg.departmentNames();
+        java.util.List<Integer> candidates = new java.util.ArrayList<>();
+        for (int i = 0; i < deptNames.size(); i++)
+            if (!assignedDepts.contains(deptNames.get(i).replaceAll("\\s+", " ").trim().toUpperCase())) candidates.add(i + 1);
+        boolean noFreeDept = candidates.isEmpty();
+        addSummary("Rows on the list", pairs.size() + " Department+Group rows, " + assignedDepts.size() + " distinct Departments");
+        addSummary("Departments without a Group", candidates.size() + " of " + deptNames.size());
         java.util.Random rnd = new java.util.Random();
         int startD = rnd.nextInt(deptCount), startG = rnd.nextInt(groupCount);
-        System.out.println("DepartmentGroup: starting at Department #" + (startD + 1) + " / Group #" + (startG + 1)
-                + " of " + deptCount + " x " + groupCount);
+        if (noFreeDept) { maxAttempts = 6; }
+        else { java.util.Collections.shuffle(candidates, rnd); maxAttempts = Math.min(maxAttempts, candidates.size()); }
+        System.out.println("DepartmentGroup: " + candidates.size() + " Department(s) of " + deptNames.size() + " have no Group yet"
+                + (noFreeDept ? " — none free, trying a short blind walk from Department #" + (startD + 1) + " / Group #" + (startG + 1) : ""));
 
         String dept = "", group = "", toast = "";
         boolean ok = false, exists = false, selStepDone = false;
         int used = 0, lastD = -1;
         for (int k = 0; k < maxAttempts; k++) {
-            int g = (startG + k) % groupCount + 1;                                   // 1-based Group ordinal
-            int d = (startD + (startG + k) / groupCount) % deptCount + 1;            // moves to the next Department when Groups wrap
+            int g = noFreeDept ? (startG + k) % groupCount + 1 : rnd.nextInt(groupCount) + 1;   // 1-based Group ordinal
+            int d = noFreeDept ? (startD + (startG + k) / groupCount) % deptCount + 1
+                               : candidates.get(k);                                            // a Department with no Group yet
             if (d != lastD) {
                 String dsel = dg.selectDepartmentOrdinal(d);
                 // realSelectOrdinal()'s failure placeholders are exactly "(no-opt)", "(no)" and "(err)" — a
@@ -109,7 +127,10 @@ public class DepartmentGroup extends DevHisBase {
         }
 
         String actual = toast == null || toast.isEmpty() ? "No toast appeared"
-                : (ok ? toast : (exists ? "Still 'already exists' after trying " + used + " Department x Group combination(s): \"" + toast + "\""
+                : (ok ? toast : (exists ? (noFreeDept ? "ENVIRONMENT DATA EXHAUSTED: all " + deptNames.size() + " Departments already have a Group ("
+                                                        + assignedDepts.size() + " distinct Departments on the list), and a Department holds only one; "
+                                                        + "a blind try of " + used + " combination(s) was also refused: \"" + toast + "\""
+                                                      : "Still 'already exists' after trying " + used + " Department x Group combination(s): \"" + toast + "\"")
                                         : "Save not confirmed — server returned: \"" + toast + "\""));
         String submitStepTitle = "Click Submit & success toast (retry other Department x Group combos on 'exists')";
         String submitStepExpected = "Click Submit (fnIUDDepartmentGroup); if the combination already exists, try the next Department x Group combination and Submit again";

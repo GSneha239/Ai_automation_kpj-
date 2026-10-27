@@ -174,7 +174,9 @@ public class InterpretationTemplate extends BasePage {
         // NUMERIC code, no letter prefix. The save proc casts template codes to int
         // ("Conversion failed when converting the nvarchar value 'IT74800' to data type int"), so an alphanumeric
         // code inserts once and then breaks every later save that touches the existing rows.
-        String code = String.format("%06d", Math.abs((System.nanoTime() + attempt * 7919L) % 1000000));
+        // Stamped from the wall clock: System.nanoTime() ticks in 100 ns steps on this machine, so its remainders end in "00" and a code
+        // taken from them came from only ~10,000 values — too few for a master list that keeps every record ever saved.
+        String code = String.format("%06d", (System.currentTimeMillis() + attempt * 7919L) % 1000000);
         lastCode = code;
         // Both Name and Description are unique-constrained on the server ("Name already exist" / "Description
         // already exist"), and the dev database has long since exhausted every combination of the 6 base

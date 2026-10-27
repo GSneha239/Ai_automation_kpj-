@@ -56,8 +56,11 @@ public class State extends BasePage {
         try { page.waitForFunction("() => window.angular", null,
                 new Page.WaitForFunctionOptions().setTimeout(20000)); } catch (Exception ignore) { }
 
-        clickMenu("^\\s*application\\s*configuration\\s*$");
-        clickMenu("^\\s*general\\s*$");
+        // Expand each level only if it is not already open (a second click on an open entry CLOSES it, which left the General submenu
+        // unbuilt), and look "General" up INSIDE Application Configuration — the sidebar is built lazily and has same-named entries.
+        expandMenuEntry(null, "^\\s*application\\s*config(uration)?\\s*$");
+        expandMenuEntry("^\\s*application\\s*config(uration)?\\s*$", "^\\s*general\\s*$");
+        waitForAngular(800);
         lastMenu = describeMenu();
 
         Object href = page.evaluate("() => {" + JS

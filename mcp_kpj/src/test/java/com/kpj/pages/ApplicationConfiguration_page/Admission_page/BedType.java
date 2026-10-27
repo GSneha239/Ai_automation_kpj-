@@ -44,47 +44,50 @@ public class BedType extends BasePage {
 
     // ---- navigation ------------------------------------------------------
 
+    /** Visible menu entries when the walk was made — dumped into the report if the screen is not reached. */
+    public String lastMenu = "";
+
     public boolean navigateViaMenu() {
-        try {
-            page.waitForFunction("() => [...document.querySelectorAll('a')].some(a=>/application\\s*config/i.test((a.textContent||'')) && a.offsetParent!==null)",
-                    null, new Page.WaitForFunctionOptions().setTimeout(15000));
-        } catch (Exception ignore) { }
-        Object appCfg = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                + " const a=[...document.querySelectorAll('a')].find(x=>/application\\s*config/i.test(norm(x.textContent)) && x.offsetParent!==null); if(!a) return false; a.id='__appCfgMenu'; return true; }");
-        if (Boolean.TRUE.equals(appCfg)) {
-            try { page.locator("#__appCfgMenu").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000)); }
-            catch (Exception e) { System.out.println("BedType.nav: Application Configuration click failed - " + e.getMessage()); }
-            waitForAngular(900);
-        }
-        page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                + " const a=[...document.querySelectorAll('a')].find(x=>/^\\s*admission\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null && !(x.getAttribute('href')||'').includes('#/')); if(a) a.click(); }");
-        waitForAngular(700);
-        // real-click the visible "Bed Type" link (exact text) if present (capture its route)
+        try { page.waitForFunction("() => window.angular", null,
+                new Page.WaitForFunctionOptions().setTimeout(20000)); } catch (Exception ignore) { }
+        // Open each level only if it is closed (a second click on an open entry CLOSES it, and the sidebar is built lazily), then look
+        // "Bed Type" up INSIDE Application Configuration — an unscoped exact-text lookup can hit a same-named entry in another module.
+        expandMenuEntry(null, "^\\s*application\\s*config(uration)?\\s*$");
+        expandMenuEntry("^\\s*application\\s*config(uration)?\\s*$", "^\\s*admission\\s*$");
+        waitForAngular(800);
         Object href = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                + " const a=[...document.querySelectorAll('a')].find(x=>/^\\s*bed\\s*type\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null); if(!a) return ''; a.id='__bedTypeMenu'; return a.getAttribute('href')||'link'; }");
+                + " const top=[...document.querySelectorAll('a')].find(x=>/^\\s*application\\s*config(uration)?\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null);"
+                + " const topLi=(top&&top.closest('li'))||document;"
+                + " const adm=[...topLi.querySelectorAll('a')].find(x=>/^\\s*admission\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null);"
+                + " const scope=(adm&&adm.closest('li'))||topLi;"
+                + " const a=[...scope.querySelectorAll('a[href]')].find(x=>/^\\s*bed\\s*type\\s*$/i.test(norm(x.textContent)));"
+                + " if(!a) return ''; a.id='__bedTypeMenu'; return a.getAttribute('href')||'link'; }");
         if (href != null && !href.toString().isEmpty()) {
-            try { page.locator("#__bedTypeMenu").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000)); }
-            catch (Exception e) { System.out.println("BedType.nav: click failed - " + e.getMessage()); }
-            waitForAngular(1500);
             if (href.toString().contains("#/")) ROUTE = href.toString().substring(href.toString().indexOf("#/"));
+            try { page.locator("#__bedTypeMenu").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000)); }
+            catch (Exception e) { System.out.println("BedType.nav: click failed - " + e.getMessage().split("\n")[0]); }
+            page.evaluate("() => { const e=document.getElementById('__bedTypeMenu'); if(e) e.removeAttribute('id'); }");
+            waitForAngular(2500);
         }
-        // mine ANY anchor (even hidden) whose text is exactly "Bed Type" or href mentions bedtype
-        if (ROUTE.isEmpty()) {
-            Object mined = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                    + " const a=[...document.querySelectorAll('a[href]')].find(x=>/^\\s*bed\\s*type\\s*$/i.test(norm(x.textContent)) || /bedtype/i.test(x.getAttribute('href')||'')); return a ? (a.getAttribute('href')||'') : ''; }");
-            System.out.println("BedType.nav: mined href => " + mined);
-            if (mined != null && mined.toString().contains("#/")) ROUTE = mined.toString().substring(mined.toString().indexOf("#/"));
-        }
-        if (!onScreen() && !ROUTE.isEmpty()) {
-            System.out.println("BedType.nav: direct route " + ROUTE);
-            try { page.evaluate("(h) => { window.location.hash = h; }", ROUTE); } catch (Exception ignore) { }
-            waitForAngular(1600);
+        // Direct hash navigation is bounced to #/PatientDashboard by the app, so it is NOT a way in — only the menu link is.
+        if (!onScreen()) {
+            lastMenu = String.valueOf(page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                    + " return [...new Set([...document.querySelectorAll('a')].filter(a=>a.offsetParent!==null)"
+                    + "   .map(a=>norm(a.textContent)+' -> '+(a.getAttribute('href')||'')).filter(t=>t.length>4&&t.length<70))].slice(0,140).join('\\n'); }"));
+            return false;
         }
         return true;
     }
 
+    /** On the Bed Type list/add screen — the route AND the screen's own control must be there (a bounce to the dashboard fails). */
     public boolean onScreen() {
-        return !ROUTE.isEmpty() && page.url().toLowerCase().contains(ROUTE.replace("#/", "").toLowerCase());
+        if (ROUTE.isEmpty() || !page.url().toLowerCase().contains(ROUTE.replace("#/", "").toLowerCase())) return false;
+        try {
+            page.waitForFunction("() => [...document.querySelectorAll('button,a,input[type=button]')].some(x=>x.offsetParent!==null && /^\\s*add\\s*$/i.test(((x.textContent||x.value)||'').replace(/\\s+/g,' ').trim()))"
+                    + " || [...document.querySelectorAll('input')].some(e=>e.offsetParent!==null && (e.getAttribute('ng-model')||'')==='BedTypeMaster.code')",
+                    null, new Page.WaitForFunctionOptions().setTimeout(15000));
+        } catch (Exception e) { return false; }
+        return page.url().toLowerCase().contains(ROUTE.replace("#/", "").toLowerCase());
     }
 
     // ---- actions ---------------------------------------------------------
@@ -117,9 +120,13 @@ public class BedType extends BasePage {
      *  a summary incl. the discovered ng-models. {@code attempt} shifts both values so a retry after an "already
      *  exists" toast submits genuinely different details. */
     public String fillCodeAndBedType(int attempt) {
-        String code = "BT" + String.format("%06d", Math.abs((System.nanoTime() + attempt * 7919L) % 1000000));
+        // Stamped from the wall clock: System.nanoTime() ticks in 100 ns steps on this machine, so its remainders end in "00" and a code
+        // taken from them came from only ~10,000 values — too few for a master list that keeps every record ever saved. The Bed Type
+        // name carries the same unique stamp: a bare pool name ("ICU Bed") collides with earlier runs.
+        String stamp = String.format("%06d", (System.currentTimeMillis() + attempt * 7919L) % 1000000);
+        String code = "BT" + stamp;
         lastCode = code;
-        lastBedType = BED_TYPES[attempt % BED_TYPES.length] + (attempt >= BED_TYPES.length ? " " + (attempt / BED_TYPES.length + 1) : "");
+        lastBedType = BED_TYPES[attempt % BED_TYPES.length] + " " + stamp;
         try {
             page.waitForFunction("() => [...document.querySelectorAll('input[ng-model],textarea[ng-model]')].some(e=>e.offsetParent!==null && /code|bedtype|commonmaster/i.test(e.getAttribute('ng-model')||''))",
                     null, new Page.WaitForFunctionOptions().setTimeout(10000));

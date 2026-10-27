@@ -30,23 +30,38 @@ public class NetworkMaster extends BasePage {
             page.waitForFunction("() => [...document.querySelectorAll('a')].some(a=>/application\\s*config/i.test((a.textContent||'')) && a.offsetParent!==null)",
                     null, new Page.WaitForFunctionOptions().setTimeout(15000));
         } catch (Exception ignore) { }
-        page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                + " const a=[...document.querySelectorAll('a')].find(x=>/application\\s*config/i.test(norm(x.textContent)) && x.offsetParent!==null); if(a) a.click(); }");
-        waitForAngular(900);
-        // "Billing" is ALSO a top-level module in the sidebar, listed before Application Configuration: an unscoped lookup clicks
-        // that one, which collapses the Application Configuration menu again. Look only inside the Application Configuration entry.
-        page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                + " const top=[...document.querySelectorAll('a')].find(x=>/application\\s*config/i.test(norm(x.textContent)) && x.offsetParent!==null); const scope=(top&&top.closest('li'))||document;"
-                + " const a=[...scope.querySelectorAll('a')].find(x=>/^\\s*billing\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null); if(a) a.click(); }");
-        waitForAngular(800);
-        Object href = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                + " const a=[...document.querySelectorAll('a[href]')].find(x=>/network\\s*master/i.test(norm(x.textContent)) || /networkmaster/i.test(x.getAttribute('href')||'')); if(!a) return ''; a.id='__nwMenu'; return a.getAttribute('href')||'link'; }");
-        if (href != null && !href.toString().isEmpty()) {
+        // Open only what is still CLOSED: the sidebar items are toggles, so re-clicking an already-open one collapses it and the
+        // link vanishes (then the direct-hash fallback is bounced to the dashboard). All lookups stay inside the Application
+        // Configuration entry — "Billing" is also a top-level module, and a "Network Master" link can exist in another module.
+        Object href = "";
+        for (int step = 0; step < 4; step++) {
+            href = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const vis=x=>x.offsetParent!==null;"
+                    + " document.querySelectorAll('#__nwMenu,#__nwTop,#__nwBilling').forEach(e=>e.removeAttribute('id'));"
+                    + " const top=[...document.querySelectorAll('.sidebar-menu > li > a, li > a')].find(x=>/^\\s*application\\s*config/i.test(norm(x.textContent)) && vis(x));"
+                    + " if(!top) return 'no-top'; const scope=top.closest('li')||document;"
+                    + " const nm=[...scope.querySelectorAll('a[href]')].find(x=>vis(x) && (/^\\s*network\\s*master\\s*$/i.test(norm(x.textContent)) || /networkmaster/i.test(x.getAttribute('href')||'')));"
+                    + " if(nm){ nm.id='__nwMenu'; return 'link:'+(nm.getAttribute('href')||''); }"
+                    + " const bill=[...scope.querySelectorAll('a')].find(x=>/^\\s*billing\\s*$/i.test(norm(x.textContent)) && vis(x) && !(x.getAttribute('href')||'').includes('#/'));"
+                    + " if(bill){ bill.id='__nwBilling'; return 'billing'; }"
+                    + " top.id='__nwTop'; return 'top'; }");
+            String what = String.valueOf(href);
+            if (what.startsWith("link:") || "no-top".equals(what)) break;
+            String id = "billing".equals(what) ? "#__nwBilling" : "#__nwTop";
+            try { page.locator(id).click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000)); }
+            catch (Exception e) { System.out.println("NetworkMaster.nav: " + what + " click failed - " + e.getMessage()); }
+            waitForAngular(900);
+        }
+        if (href != null && String.valueOf(href).startsWith("link:")) {
             try { page.locator("#__nwMenu").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000)); }
             catch (Exception e) { System.out.println("NetworkMaster.nav: click failed - " + e.getMessage()); }
             waitForAngular(1500);
         }
         if (!onScreen()) {
+            System.out.println("NetworkMaster.nav: last menu step = " + href + " | url = " + page.url());
+            System.out.println("NetworkMaster.nav: links mentioning 'network' => " + page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                    + " return JSON.stringify([...document.querySelectorAll('a')].filter(a=>/network/i.test(norm(a.textContent))||/network/i.test(a.getAttribute('href')||''))"
+                    + "  .map(a=>{ const ch=[]; for(let li=a.closest('li');li;li=li.parentElement&&li.parentElement.closest('li')){ const t=li.querySelector(':scope > a'); if(t&&t!==a) ch.unshift(norm(t.textContent)); }"
+                    + "   return norm(a.textContent)+' | '+(a.getAttribute('href')||'')+' | '+ch.join(' > ')+' | vis='+(a.offsetParent!==null); })); }"));
             System.out.println("NetworkMaster.nav: direct route " + LIST_ROUTE);
             try { page.evaluate("(h) => { window.location.hash = h; }", LIST_ROUTE); } catch (Exception ignore) { }
             waitForAngular(1600);
@@ -91,17 +106,22 @@ public class NetworkMaster extends BasePage {
     /** Fill the cascade choosing the {@code tariffOrdinal}-th (1-based) Pricing Policy, then Payor and Network
      *  (first real of each, re-polled). Location = first real. Returns a summary (contains {@code (exhausted)} if
      *  the ordinal has no option). */
-    public String fillCascade(int tariffOrdinal) {
-        Object r = page.evaluate("(ord) => new Promise(async (resolve) => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const A=window.angular; const $=window.jQuery; const sleep=ms=>new Promise(r=>setTimeout(r,ms));"
+    public String fillCascade(int tariffOrdinal) { return fillCascade(tariffOrdinal, 1, 1); }
+
+    /** Same, but also choosing the {@code payorOrdinal}-th Payor and {@code networkOrdinal}-th Network (1-based) — used once
+     *  every Pricing Policy for the first Payor/Network already exists. {@code (exhausted)} marks an ordinal with no option. */
+    public String fillCascade(int tariffOrdinal, int payorOrdinal, int networkOrdinal) {
+        Object r = page.evaluate("(a) => new Promise(async (resolve) => { const ord=a[0], payN=a[1], nwN=a[2]; const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const A=window.angular; const $=window.jQuery; const sleep=ms=>new Promise(r=>setTimeout(r,ms));"
                 + " const sel=ng=>document.querySelector(\"select[ng-model='\"+ng+\"']\");"
                 + " const real=e=>[...e.options].map((o,i)=>({o,i})).filter(x=>x.o.value && !/^-*\\s*select/i.test(norm(x.o.textContent)));"
                 + " const pickIdx=(ng,ordinal)=>{ const e=sel(ng); if(!e) return '(no-el)'; const rs=real(e); if(rs.length<ordinal) return '(exhausted)'; const t=rs[ordinal-1]; e.selectedIndex=t.i; e.dispatchEvent(new Event('change',{bubbles:true})); try{A.element(e).triggerHandler('change');}catch(x){} if($){try{$(e).trigger('change');}catch(x){}} return norm(t.o.textContent); };"
                 + " const pickFirstPoll=async(ng)=>{ for(let k=0;k<15;k++){ const e=sel(ng); if(e){ const rs=real(e); if(rs.length){ const cur=e.options[e.selectedIndex]; if(!(cur && cur.value && !/^-*\\s*select/i.test(norm(cur.textContent)))){ e.selectedIndex=rs[0].i; e.dispatchEvent(new Event('change',{bubbles:true})); try{A.element(e).triggerHandler('change');}catch(x){} if($){try{$(e).trigger('change');}catch(x){}} } return norm((e.options[e.selectedIndex]||{}).textContent); } } await sleep(400); } return '(no-opt)'; };"
                 + " const loc=await pickFirstPoll('network.locationid'); await sleep(1000);"
                 + " const tar=pickIdx('network.tariffid', ord); await sleep(1000);"
-                + " const pay=await pickFirstPoll('network.receivableid'); await sleep(800);"
-                + " const nw=await pickFirstPoll('network.receivableassociateid'); await sleep(400);"
-                + " resolve('Location='+loc+' | PricingPolicy='+tar+' | Payor='+pay+' | Network='+nw); })", tariffOrdinal);
+                + " const pickNthPoll=async(ng,n)=>{ if(n<=1) return await pickFirstPoll(ng); for(let k=0;k<15;k++){ const e=sel(ng); if(e){ const rs=real(e); if(rs.length){ if(rs.length<n) return '(exhausted)'; const t=rs[n-1]; e.selectedIndex=t.i; e.dispatchEvent(new Event('change',{bubbles:true})); try{A.element(e).triggerHandler('change');}catch(x){} if($){try{$(e).trigger('change');}catch(x){}} return norm(t.o.textContent); } } await sleep(400); } return '(no-opt)'; };"
+                + " const pay=await pickNthPoll('network.receivableid', payN); await sleep(800);"
+                + " const nw=pay==='(exhausted)' ? '(skipped)' : await pickNthPoll('network.receivableassociateid', nwN); await sleep(400);"
+                + " resolve('Location='+loc+' | PricingPolicy='+tar+' | Payor='+pay+' | Network='+nw); })", java.util.Arrays.asList(tariffOrdinal, payorOrdinal, networkOrdinal));
         waitForAngular(400);
         String res = r == null ? "" : r.toString();
         lastLocation = grab(res, "Location");

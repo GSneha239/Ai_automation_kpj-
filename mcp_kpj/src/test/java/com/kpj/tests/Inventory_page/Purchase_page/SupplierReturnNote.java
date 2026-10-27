@@ -211,8 +211,15 @@ public class SupplierReturnNote extends DevHisBase {
 
         // 11) Verify report generation
         com.kpj.pages.PdfReport.Result pdf = com.kpj.pages.PdfReport.capture(page, tabsBeforeSave, 15000);
-        step(page, "Verify report generation", "Wait for the report to open",
-                "A non-blank PDF is generated", pdf.diagnostics, pdf.blank ? "FAIL" : "PASS");
+        // The report opens in ANOTHER tab: step(page, ...) would photograph the app tab behind it. pdf.png is the PDF's first page, or the
+        // report tab itself when the server answered with an error page.
+        if (pdf.png != null && pdf.png.length > 0) {
+            step(pdf.png, "Verify report generation", "Wait for the report to open",
+                    "A non-blank PDF is generated", pdf.diagnostics, pdf.blank ? "FAIL" : "PASS");
+        } else {
+            step(page, "Verify report generation", "Wait for the report to open",
+                    "A non-blank PDF is generated", pdf.diagnostics, pdf.blank ? "FAIL" : "PASS");
+        }
 
         addSummary("Transaction selected", srn.lastTransactionTick);
         addSummary("Items ticked", srn.lastItemTick);

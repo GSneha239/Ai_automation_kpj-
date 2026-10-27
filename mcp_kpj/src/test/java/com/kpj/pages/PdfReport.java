@@ -75,7 +75,12 @@ public final class PdfReport {
                     + " const pages = (text.match(/\\/Type\\s*\\/Page[^s]/g)||[]).length;"
                     + " const streams = (text.match(/stream/g)||[]).length;"
                     + " let bin=''; const chunk=0x8000; for(let i=0;i<u8.length;i+=chunk) bin += String.fromCharCode.apply(null, u8.subarray(i,i+chunk));"
-                    + " return {len:u8.length, head:head, pages:pages, streams:streams, status:res.status, b64:btoa(bin)}; }");
+                    // When the answer is an error page rather than a PDF, quote what the server says (ASP.NET error pages carry the title,
+                    // the message and the exception details), so a 500 explains itself.
+                    + " const pick=re=>{ const x=re.exec(text); return x? x[1].replace(/<[^>]*>/g,' ').replace(/\\s+/g,' ').trim() : ''; };"
+                    + " const errText = head.startsWith('%PDF') ? '' : [pick(/<title>([\\s\\S]*?)<\\/title>/i), pick(/<h2>([\\s\\S]*?)<\\/h2>/i),"
+                    + "   pick(/Description:\\s*<\\/b>([\\s\\S]*?)<br/i), pick(/Exception Details:\\s*<\\/b>([\\s\\S]*?)<br/i)].filter(x=>x).join(' | ').slice(0,500);"
+                    + " return {len:u8.length, head:head, pages:pages, streams:streams, status:res.status, b64:btoa(bin), err:errText}; }");
             @SuppressWarnings("unchecked")
             java.util.Map<String, Object> m = (java.util.Map<String, Object>) o;
             r.bytes = ((Number) m.get("len")).intValue();
@@ -91,6 +96,17 @@ public final class PdfReport {
                     System.out.println("PdfReport: could not render the PDF to an image — " + e.getMessage());
                 }
             }
+            // The tab did NOT hold a PDF (typically the server's HTML error page): that page screenshots normally, unlike Chrome's PDF
+            // viewer, so the report gets a picture of what the tab actually showed instead of the app tab behind it.
+            boolean tabScreenshot = false;
+            if (!isPdf) {
+                try {
+                    r.png = tab.screenshot(new Page.ScreenshotOptions().setTimeout(8000));
+                    tabScreenshot = r.png != null && r.png.length > 0;
+                } catch (Exception e) {
+                    System.out.println("PdfReport: could not screenshot the report tab — " + e.getMessage().split("\n")[0]);
+                }
+            }
             // A document with nothing on it is a few hundred bytes of scaffolding and no content
             // stream; a real one carries fonts and streams.
             boolean hasContent = isPdf && r.bytes > 3000 && r.streams > 0;
@@ -100,8 +116,11 @@ public final class PdfReport {
                     + ", " + r.pdfPages + " page object(s), " + r.streams + " content stream(s). "
                     + (hasContent ? "It carries content, so it really was generated."
                                   : "It carries no content, so nothing is printed on it.")
-                    + " Judged on the file itself: a screenshot cannot see inside Chrome's PDF viewer, "
-                    + "so the page around it is blank however good the report is.";
+                    + (isPdf || m.get("err") == null || String.valueOf(m.get("err")).isEmpty() ? "" : " The server's error page says: \"" + m.get("err") + "\".")
+                    + (tabScreenshot
+                        ? " The screenshot is of the report tab itself (it is an HTML page, not a PDF)."
+                        : " Judged on the file itself: a screenshot cannot see inside Chrome's PDF viewer, "
+                          + "so the page around it is blank however good the report is.");
         } catch (Exception e) {
             r.blank = true;
             r.diagnostics = "a tab opened at " + r.url + " but its content could not be read: "
