@@ -154,7 +154,8 @@ public class BillingOP extends DevHisBase {
                             why = bp.registerNewSelfPayPatient(reg, BASE, p);
                         } catch (RuntimeException e) {
                             if (attempt == 3) throw e;
-                            System.out.println("Stage 1: registration attempt " + attempt + " threw (" + String.valueOf(e.getMessage()).replaceAll("\\s+", " ").substring(0, Math.min(90, String.valueOf(e.getMessage()).length())) + ") - retrying with a fresh form");
+                            String flat = String.valueOf(e.getMessage()).replaceAll("\\s+", " ");
+                            System.out.println("Stage 1: registration attempt " + attempt + " threw (" + flat.substring(0, Math.min(90, flat.length())) + ") - retrying with a fresh form");
                             why = "Visit Information incomplete (retry after exception)";
                         }
                         if (why == null || !why.startsWith("Visit Information incomplete")) break;

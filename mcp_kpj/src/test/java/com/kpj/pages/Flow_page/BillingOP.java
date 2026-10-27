@@ -384,7 +384,7 @@ public class BillingOP extends BasePage {
                 f.scrollIntoViewIfNeeded(new com.microsoft.playwright.Locator.ScrollIntoViewIfNeededOptions().setTimeout(3000));
                 f.fill(value, new com.microsoft.playwright.Locator.FillOptions().setTimeout(4000));
             }
-        } catch (Exception e) { System.out.println("fillOtherIdentification: typing failed - " + String.valueOf(e.getMessage()).replaceAll("\\s+", " ").substring(0, Math.min(300, String.valueOf(e.getMessage()).length()))); }
+        } catch (Exception e) { String flat = String.valueOf(e.getMessage()).replaceAll("\\s+", " "); System.out.println("fillOtherIdentification: typing failed - " + flat.substring(0, Math.min(300, flat.length()))); }
         page.evaluate("(v) => { const e=[...document.querySelectorAll('[ng-model]')].find(x=>x.getAttribute('ng-model')==='Registration.ReferenceNo'); if(!e) return;"
                 + " try{ const c=angular.element(e).controller('ngModel'); if(c){ c.$setViewValue(v); c.$render(); } }catch(x){}"
                 + " try{ const sc=angular.element(e).scope(); sc.$evalAsync(()=>{ if(sc.Registration) sc.Registration.ReferenceNo=v; }); }catch(x){} }", value);
