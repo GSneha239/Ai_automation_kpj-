@@ -71,7 +71,9 @@ public class SupplierMaster extends DevHisBase {
                         + "postcode, Add), Submit and Save on the confirmation dialog.");
 
         String counter = System.getProperty("counter", COUNTER_FOR_MENU);
-        String stamp = String.format("%05d", Math.abs(System.nanoTime() % 100000));
+        // Stamped from the wall clock: System.nanoTime() ticks in 100 ns steps on this machine, so its remainders end in "00" and a code
+        // taken from them came from only ~1,000 values — too few for a master list that keeps every record ever saved.
+        String stamp = String.format("%05d", System.currentTimeMillis() % 100000);
         String code = System.getProperty("code", "SUP" + stamp);
         // The Name field is validated "letters only" (class validate[...,custom[onlyLetterSp]] —
         // verified live: typing digits shows "* Letters only" and blocks the field). So the unique
@@ -390,10 +392,11 @@ public class SupplierMaster extends DevHisBase {
                 ? "WHAT: the supplier cannot be saved. WHERE: the Supplier Master form — Submit "
                   + "(fnIUDpayable) raises its confirmation dialog, its Save is clicked, and the screen "
                   + "then answers \"" + toast + "\". WHY: the save requires a GENDER, and this form "
-                  + "renders NO gender control at all. Searched for one by model and by label, including "
-                  + "HIDDEN elements, across both tabs the form offers (Personal Information, Address "
-                  + "Information): " + sm.lastGender + ". So the mandatory field cannot be supplied from "
-                  + "this screen, and no supplier can be created here."
+                  + "has no gender control of its own — the Title box's SetGenderByTitle() copies the gender from "
+                  + "the chosen title's master data. Title chosen: " + sm.lastTitle + ". If the form's GenderID is "
+                  + "0/empty, no title in the list carries a gender (fix the data in Application Configuration > "
+                  + "Patient > Title Master). Searched for a gender control by model and by label, including HIDDEN "
+                  + "elements: " + sm.lastGender + "."
                 : toast == null || toast.isEmpty()
                 ? "No message appeared even after the confirmation dialog was accepted — "
                   + sm.lastSaveDiagnostics
@@ -431,7 +434,7 @@ public class SupplierMaster extends DevHisBase {
         addSummary("Contact block", sm.lastContact);
         addSummary("Result", ok ? toast
                 : genderBlocked
-                    ? "Not confirmed (\"" + toast + "\") — the form has NO Gender field to satisfy it"
+                    ? "Not confirmed (\"" + toast + "\") — the chosen Title carries no gender (form GenderID=" + sm.lastTitleGender + ")"
                     : "Not confirmed (\"" + toast + "\")");
     }
 }

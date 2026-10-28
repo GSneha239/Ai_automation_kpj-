@@ -157,7 +157,9 @@ public class Icd11ExtensionCodeMaster extends BasePage {
      * "already exists" toast submits genuinely different details.
      */
     public String fillDetails(int attempt) {
-        String code = "IX" + String.format("%05d", Math.abs((System.nanoTime() + attempt * 7919L) % 100000));
+        // Stamped from the wall clock: System.nanoTime() ticks in 100 ns steps on this machine, so its remainders end in "00" and a code
+        // taken from them came from only ~1,000 values — too few for a master list that keeps every record ever saved.
+        String code = "IX" + String.format("%05d", (System.currentTimeMillis() + attempt * 7919L) % 100000);
         lastCode = code;
         lastRemark = REMARKS[(int) (Math.abs(System.nanoTime() / 1000 + attempt) % REMARKS.length)]
                 + " " + Long.toString(System.currentTimeMillis(), 36).toUpperCase() + attempt;   // unique: never repeats

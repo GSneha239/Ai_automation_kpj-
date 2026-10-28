@@ -147,16 +147,21 @@ public class SubGroupMaster extends BasePage {
             page.locator("[data-s2='pick'] .select2-choice").first().click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000));
             // When a value is to be TYPED the list may hold no existing rows at all (the Sub Group list is empty for a new code),
             // so wait for the search box rather than for a row.
+            // A select2 that was filled earlier KEEPS its "select2-drop-active" class after it closes (hidden), so once the Sub Group Code has been
+            // chosen the Sub Group box opens a SECOND active drop and ".select2-drop-active .select2-input" resolves to the stale, invisible
+            // first one — fill() then waited its full 30 s for an element that never becomes visible. Only a drop that is actually showing counts.
             page.waitForFunction(typed != null
-                            ? "() => !!document.querySelector('.select2-drop-active .select2-input')"
-                            : "() => document.querySelectorAll('.select2-drop-active .select2-results li.select2-result-selectable').length > 0",
+                            ? "() => [...document.querySelectorAll('.select2-drop-active')].some(d=>(d.offsetWidth||d.offsetHeight) && d.querySelector('.select2-input'))"
+                            : "() => [...document.querySelectorAll('.select2-drop-active')].filter(d=>d.offsetWidth||d.offsetHeight)"
+                                    + ".some(d=>d.querySelectorAll('.select2-results li.select2-result-selectable').length > 0)",
                     null, new Page.WaitForFunctionOptions().setTimeout(8000));
             if (typed != null) {
-                page.locator(".select2-drop-active .select2-input").first().fill(typed);
+                page.locator(".select2-drop-active .select2-input:visible").first().fill(typed);
                 page.waitForTimeout(1500);
             }
             Object chosen = page.evaluate("([n, t]) => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                    + " const rows=[...document.querySelectorAll('.select2-drop-active .select2-results li.select2-result-selectable')]"
+                    + " const drop=[...document.querySelectorAll('.select2-drop-active')].find(d=>d.offsetWidth||d.offsetHeight);"
+                    + " const rows=(drop? [...drop.querySelectorAll('.select2-results li.select2-result-selectable')] : [])"
                     + ".filter(r=>!/^\\s*-*\\s*select/i.test(r.textContent||''));"
                     + " if(!rows.length) return '';"
                     + " const r=(t && rows.find(x=>norm(x.textContent).toLowerCase()===t.toLowerCase())) || rows[(n-1)%rows.length];"
@@ -164,7 +169,7 @@ public class SubGroupMaster extends BasePage {
             String text = chosen == null ? "" : chosen.toString();
             if (text.isEmpty() && typed != null) {
                 // The list offers no row for the typed text: accept it as a new value with Enter, then read back what the box holds.
-                page.locator(".select2-drop-active .select2-input").first().press("Enter");
+                page.locator(".select2-drop-active .select2-input:visible").first().press("Enter");
                 page.waitForTimeout(700);
                 Object shown = page.evaluate("(ng) => { const inp=document.querySelector(\"input[ng-model='\"+ng+\"']\"); if(!inp) return '';"
                         + " let c=inp.previousElementSibling; while(c && !/select2-container/.test(c.className||'')) c=c.previousElementSibling;"
@@ -200,7 +205,9 @@ public class SubGroupMaster extends BasePage {
         // run in step (row n of Sub Group Code is row n of Sub Group), so the pair stays consistent.
         // Every row in these lists already exists (86 in a row were refused with "Subgroupcode already exist!"), so type a NEW
         // unique code and name: the dropdown's search box offers whatever is typed as a choice of its own.
-        String stamp = String.format("%05d", Math.abs((System.nanoTime() + attempt * 7919L) % 100000));
+        // Stamped from the wall clock: System.nanoTime() ticks in 100 ns steps on this machine, so its remainders end in "00" and a code
+        // taken from them came from only ~1,000 values — too few for a master list that keeps every record ever saved.
+        String stamp = String.format("%05d", (System.currentTimeMillis() + attempt * 7919L) % 100000);
         String code = selectSelect2("subGroupCodeSelection", attempt + 1, "SG" + stamp);
         lastCode = code;
         String name = selectSelect2("subGroupNameSelection", attempt + 1, "Auto Sub Group " + stamp);

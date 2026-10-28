@@ -47,11 +47,14 @@ public class BirthCertificate extends BasePage {
         }
 
         // 1) via the menu
+        // Open "Nursing Station" only if it is closed (a second click on an open entry CLOSES it, and the sidebar is built lazily after login),
+        // then look the link up INSIDE that entry — an unscoped lookup is how this walk sometimes ended on the Patient Dashboard.
+        expandMenuEntry(null, "^\\s*nursing\\s*station\\s*$");
+        waitForAngular(800);
         page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                + " const a=[...document.querySelectorAll('a')].find(x=>/^\\s*nursing\\s*station\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null); if(a) a.click(); }");
-        waitForAngular(1200);
-        page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                + " const a=[...document.querySelectorAll('a[href]')].filter(x=>x.offsetParent!==null)"
+                + " const top=[...document.querySelectorAll('a')].find(x=>/^\\s*nursing\\s*station\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null);"
+                + " const scope=(top&&top.closest('li'))||document;"
+                + " const a=[...scope.querySelectorAll('a[href]')].filter(x=>x.offsetParent!==null)"
                 + "   .find(x=>/^birth\\s*certificate$/i.test(norm(x.textContent))"
                 + "        || /#\\/BirthCertificate/i.test(x.getAttribute('href')||''));"
                 + " if(a) a.click(); }");
@@ -338,7 +341,10 @@ public class BirthCertificate extends BasePage {
         // type a short MRN filter into it BEFORE ever clicking Search. Real patients on this environment
         // carry an "11"-prefixed MRN (the "10..." prefix used by this class's own FALLBACK_MRNS/DEFAULT_MRN
         // does not resolve here), so try that first.
-        for (String filter : new String[]{"11", "10", "12"}) {
+        // Every 2-digit fragment 10..99 is tried in turn (the popup matches the fragment against the MRN): "11" alone returns the newest
+        // 10-digit MRNs (11003390xx), the other fragments surface different patients, and the sweep stops once `max` MRNs are collected.
+        for (int n = 10; n <= 99 && found.size() < max; n++) {
+            String filter = String.valueOf(n);
             Object tagged = page.evaluate("(f) => {"
                     + " const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
                     + " const vis=e=>!!e && !!(e.offsetWidth||e.offsetHeight||e.getClientRects().length);"
@@ -365,7 +371,7 @@ public class BirthCertificate extends BasePage {
                     + " if(!b) return '(no Search in the popup)';"
                     + " b.click(); return 'popup Search clicked [ng-click='+(b.getAttribute('ng-click')||'-')+']'; }");
             System.out.println("BirthCertificate.discoverMrns[" + filter + "]: " + searched);
-            waitForAngular(2500);
+            waitForAngular(1600);
 
             Object hits = page.evaluate("(max) => {"
                     + " const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
@@ -374,9 +380,11 @@ public class BirthCertificate extends BasePage {
                     + " const root=dlg||document;"
                     + " const text=[...root.querySelectorAll('tr,.ui-grid-row')].filter(vis)"
                     + "   .map(t=>norm(t.textContent)).join(' ');"
-                    + " return [...new Set((text.match(/\\b1\\d{8}\\b/g)||[]))].slice(0,max); }", max);
-            if (hits instanceof java.util.List) for (Object o : (java.util.List<?>) hits) if (!found.contains(o.toString())) found.add(o.toString());
-            if (!found.isEmpty()) break;
+                    // 9- OR 10-digit MRNs: the environment's current patients are 10-digit (1100339xxx); the old pattern matched 9 digits only.
+                    + " return [...new Set((text.match(/\\b\\d{9,10}\\b/g)||[]))].slice(0,max); }", max);
+            if (hits instanceof java.util.List) for (Object o : (java.util.List<?>) hits) {
+                if (found.size() < max && !found.contains(o.toString())) found.add(o.toString());
+            }
         }
 
         if (found.isEmpty()) {
@@ -501,6 +509,192 @@ public class BirthCertificate extends BasePage {
         return lastBody;
     }
 
+    /**
+     * Fill the blanks of the <b>Birth Certificate</b> template that the editor is pre-loaded with.
+     *
+     * <p>Choosing the template loads a real certificate into the editor — "BIRTH CERTIFICATE" with eight lines ending in
+     * {@code _____________} (Registration No., Name of Child, Date of Birth, Place of Birth, Sex, Father's Name, Mother's Name, Date of
+     * Registration) and a Registrar signature line. Replacing all of that with one line of text (what this step used to do) prints a report
+     * that says nothing, so each blank is filled in place and the rest of the template is kept.</p>
+     *
+     * <p>The editor's content is also pushed into the Angular model ({@code DischargeSummarytextarea.textdata}): {@code setData()} +
+     * {@code updateElement()} only change the textarea, the model keeps the template as it was loaded, and Save posts the model.</p>
+     *
+     * @return {@code filled n of 8 blanks; model synced=true|false; text: ...}, or a string starting with "(" when nothing could be done
+     */
+    public String fillTemplateBlanks(String regNo, String child, String dob, String place, String sex, String father, String mother, String regDate) {
+        java.util.List<java.util.List<String>> pairs = java.util.List.of(
+                java.util.List.of("Registration No\\.", regNo),
+                java.util.List.of("Name of Child", child),
+                java.util.List.of("Date of Birth", dob),
+                java.util.List.of("Place of Birth", place),
+                java.util.List.of("Sex", sex),
+                java.util.List.of("Father(?:&rsquo;|\u2019|')s Name", father),
+                java.util.List.of("Mother(?:&rsquo;|\u2019|')s Name", mother),
+                java.util.List.of("Date of Registration", regDate));
+        Object r = page.evaluate("async (pairs) => {"
+                + " const sleep=ms=>new Promise(r=>setTimeout(r,ms));"
+                + " const ed=(window.CKEDITOR && CKEDITOR.instances)? CKEDITOR.instances[Object.keys(CKEDITOR.instances)[0]] : null;"
+                + " if(!ed) return '(no-editor)';"
+                + " let html=ed.getData();"
+                + " const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');"
+                + " let done=0;"
+                + " for(const [label,value] of pairs){"
+                + "   const rx=new RegExp('('+label+'(?:&nbsp;|\\\\s)*:(?:&nbsp;|\\\\s)*)_{3,}','i');"
+                + "   if(rx.test(html)){ html=html.replace(rx,(m,g)=>g+esc(value)); done++; } }"
+                + " if(!done) return '(no-blanks in the template body)';"
+                + " ed.setData(html); await sleep(500); ed.updateElement();"
+                + " const data=ed.getData(); const el=ed.element && ed.element.$;"
+                + " let synced='n/a (no model)';"
+                + " if(el){ const ng=el.getAttribute('ng-model'); const ctrl=angular.element(el).controller('ngModel'); const sc=angular.element(el).scope();"
+                + "   if(ng && ctrl && sc){ try{ sc.$apply(()=>ctrl.$setViewValue(data)); }catch(e){ ctrl.$setViewValue(data); try{ sc.$applyAsync(); }catch(x){} }"
+                + "     await sleep(300); synced=String(String(sc.$eval(ng))===data); } }"
+                + " const plain=data.replace(/<br\\s*\\/?>/gi,'\\n').replace(/<\\/p>/gi,'\\n').replace(/<[^>]+>/g,'').replace(/&nbsp;/g,' ').replace(/&rsquo;/g,\"'\");"
+                + " return 'filled '+done+' of '+pairs.length+' blanks; model synced='+synced+'; text: '+plain.replace(/\\s*\\n\\s*/g,' / ').replace(/\\s+/g,' ').trim().slice(0,520); }",
+                pairs);
+        lastBody = r == null ? "" : r.toString();
+        waitForAngular(600);
+        System.out.println("BirthCertificate: template blanks -> " + lastBody);
+        return lastBody;
+    }
+
+    /** The name of the patient attached to the form (the "mother" on the certificate), or "" when it cannot be read. */
+    public String attachedPatientName() {
+        String s = lastFormSearch == null ? "" : lastFormSearch;
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("FirstName=([^,|]+)").matcher(s);
+        if (m.find()) return m.group(1).trim();
+        // The lookup route fills PatientFullDtl = "Name : LINDA CARTER  MRN: 11..." instead of a FirstName field.
+        m = java.util.regex.Pattern.compile("Name\\s*:\\s*([^,|]*?)\\s+MRN").matcher(s);
+        return m.find() ? m.group(1).trim() : "";
+    }
+
+    /**
+     * {@code page.evaluate} that survives the page navigating underneath it. Saving a certificate for a real newborn patient makes the app move
+     * on (back to the list) while the next call is already in flight, and Playwright answers "Execution context was destroyed, most likely
+     * because of a navigation" — which is not a failure of the save. The call is repeated on the new page; any other error is raised.
+     */
+    private Object evalSafe(String js) {
+        for (int i = 0; i < 4; i++) {
+            try { return page.evaluate(js); }
+            catch (com.microsoft.playwright.PlaywrightException e) {
+                String m = String.valueOf(e.getMessage());
+                if (m.contains("Execution context was destroyed") || m.contains("navigation")) { page.waitForTimeout(1500); continue; }
+                throw e;
+            }
+        }
+        return null;
+    }
+
+    /** Which search fragment, and which patient, the lookup route ended up attaching (for the report). */
+    public String lastLookupNote = "";
+
+    /**
+     * Pick the patient the way a person does: through the screen's own <b>patient lookup</b> (the search icon beside the MRN box).
+     *
+     * <p>Recorded from a manual run: open the lookup, type a few digits of an MRN, click <b>Search</b>, click the select icon of a row
+     * ({@code SetSearchPatient(PR)}). That search is a different query from the form's own MRN box — it carries {@code IsNewBorn:true}, so it
+     * lists patients with newborn records — and the patient it attaches has an admission and newborn details. The form's MRN box instead
+     * asks for deceased patients only, answers "Patient Not Found!" for a full MRN, and for a short fragment attaches the first living
+     * patient it returns (an ordinary patient with no admission) — whose certificate prints as a BLANK report. So this route is the one
+     * that produces a certificate with content.</p>
+     *
+     * <p>Each fragment is tried in turn until a row can be picked and the patient actually attaches to the form's model.</p>
+     *
+     * @param fragments digits to type into the lookup's MRN box, e.g. "11", "33", ...
+     * @return the form's patient summary once a patient attached, or the last failure
+     */
+    public String pickPatientFromLookup(java.util.List<String> fragments) {
+        final String vis = "const vis=e=>!!e&&!!(e.offsetWidth||e.offsetHeight||e.getClientRects().length);";
+        StringBuilder tried = new StringBuilder();
+        String last = "";
+        for (String frag : fragments) {
+            try {
+                boolean open = Boolean.TRUE.equals(page.evaluate("() => {" + vis
+                        + " return [...document.querySelectorAll('.modal,.modal-content,[role=dialog]')].some(vis); }"));
+                if (!open) {
+                    Object tagged = page.evaluate("() => {" + vis
+                            + " const b=[...document.querySelectorAll(\"[ng-click*='openPopupScreen']\")].find(vis);"
+                            + " if(!b) return false; b.id='__bcLookupOpen'; return true; }");
+                    if (!Boolean.TRUE.equals(tagged)) { lastLookupNote = "(no patient-lookup button on the form)"; return lastLookupNote; }
+                    page.locator("#__bcLookupOpen").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000));
+                    page.evaluate("() => { const e=document.getElementById('__bcLookupOpen'); if(e) e.removeAttribute('id'); }");
+                    waitForAngular(2500);
+                }
+                // type the fragment into the lookup's MRN box, click Search
+                Object box = page.evaluate("() => {" + vis
+                        + " const dlg=[...document.querySelectorAll('.modal,.modal-content,[role=dialog]')].filter(vis)[0]||document;"
+                        + " const i=[...dlg.querySelectorAll('input')].filter(vis).find(x=>/mrno?$/i.test(x.getAttribute('ng-model')||''));"
+                        + " if(!i) return false; i.id='__bcLookupMrn'; return true; }");
+                if (!Boolean.TRUE.equals(box)) { tried.append(frag).append(" -> no MRN box in the lookup; "); continue; }
+                page.locator("#__bcLookupMrn").fill(frag, new com.microsoft.playwright.Locator.FillOptions().setTimeout(5000));
+                page.evaluate("() => { const e=document.getElementById('__bcLookupMrn'); if(e) e.removeAttribute('id'); }");
+                Object sb = page.evaluate("() => {" + vis
+                        + " const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                        + " const dlg=[...document.querySelectorAll('.modal,.modal-content,[role=dialog]')].filter(vis)[0]||document;"
+                        + " const b=[...dlg.querySelectorAll('button,a,input[type=button]')].filter(vis)"
+                        + "   .find(x=>/searchpatient\\s*\\(/i.test(x.getAttribute('ng-click')||'') || /^\\s*search\\s*$/i.test(norm(x.textContent)||x.value||''));"
+                        + " if(!b) return false; b.id='__bcLookupSearch'; return true; }");
+                if (!Boolean.TRUE.equals(sb)) { tried.append(frag).append(" -> no Search button in the lookup; "); continue; }
+                page.locator("#__bcLookupSearch").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000));
+                page.evaluate("() => { const e=document.getElementById('__bcLookupSearch'); if(e) e.removeAttribute('id'); }");
+
+                // wait for result rows (the answer can be several MB for a short fragment), then pick the first row
+                try {
+                    page.waitForFunction("() => [...document.querySelectorAll(\"[ng-click*='SetSearchPatient']\")].some(e=>e.offsetWidth||e.offsetHeight||e.getClientRects().length)",
+                            null, new Page.WaitForFunctionOptions().setTimeout(15000));
+                } catch (Exception noRows) { tried.append(frag).append(" -> no rows; "); continue; }
+                Object pick = page.evaluate("() => {" + vis
+                        + " const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                        + " const b=[...document.querySelectorAll(\"[ng-click*='SetSearchPatient']\")].find(vis); if(!b) return null;"
+                        + " b.id='__bcLookupPick'; const row=b.closest('tr,.ui-grid-row');"
+                        + " return row? norm(row.textContent).slice(0,90) : ''; }");
+                if (pick == null) { tried.append(frag).append(" -> no row to pick; "); continue; }
+                String rowText = String.valueOf(pick);
+                page.locator("#__bcLookupPick").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000));
+                page.evaluate("() => { const e=document.getElementById('__bcLookupPick'); if(e) e.removeAttribute('id'); }");
+                waitForAngular(3500);
+
+                last = readFormPatient();
+                lastFormSearch = last;
+                boolean ok = patientAttached();
+                tried.append(frag).append(ok ? " -> ATTACHED (row: " + rowText + ")" : " -> picked \"" + rowText + "\" but no patient bound").append("; ");
+                if (ok) {
+                    Object mrn = page.evaluate("() => {" + FORM_JS + " const e=byNg('BirthCertificate.MRNo'); return e? e.value : ''; }");
+                    workingMrn = mrn == null ? "" : mrn.toString().trim();
+                    lastLookupNote = "typed \"" + frag + "\" in the lookup, picked the first row (" + rowText + ")";
+                    mrnAttempts = tried.toString();
+                    System.out.println("BirthCertificate: lookup attached MRN " + workingMrn + " — " + lastLookupNote);
+                    return last;
+                }
+            } catch (Exception e) {
+                tried.append(frag).append(" -> ").append(String.valueOf(e.getMessage()).split("\n")[0]).append("; ");
+            }
+        }
+        lastLookupNote = "no patient could be picked from the lookup: " + tried;
+        mrnAttempts = tried.toString();
+        System.out.println("BirthCertificate: " + lastLookupNote);
+        return last.isEmpty() ? lastLookupNote : last;
+    }
+
+    /** What the form's model holds now, in the same words {@link #searchPatientOnForm} uses (so {@link #patientAttached()} can judge it). */
+    public String readFormPatient() {
+        Object r = page.evaluate("() => {" + FORM_JS + TOAST_ELS
+                + " const t=byNg('BirthCertificate1.Dischargeid');"
+                + " const msg=toastEls().map(x=>norm(x.textContent)).join(' | ');"
+                + " let patient='(no scope)';"
+                + " try { const e=byNg('BirthCertificate.MRNo');"
+                + "   const s=window.angular.element(e).scope();"
+                + "   const o=s && (s.BirthCertificate || s.BirthCertificate1);"
+                + "   if(o){ const keys=Object.keys(o).filter(k=>/name|patient|mrn|age|gender|id$/i.test(k) && !/^mrno$/i.test(k)"
+                + "        && o[k]!==null && o[k]!=='' && o[k]!==0 && typeof o[k]!=='object' && typeof o[k]!=='function');"
+                + "     patient = keys.length? keys.slice(0,8).map(k=>k+'='+String(o[k]).slice(0,24)).join(', ')"
+                + "                          : '(model has no patient fields set)'; } }"
+                + " catch(err) { patient='(scope read failed: '+err.message+')'; }"
+                + " return 'templateOptions='+(t?t.options.length:-1)+' | patient: '+patient"
+                + "   +(msg?' | msg='+msg:''); }");
+        return r == null ? "" : r.toString();
+    }
+
     /** Select <b>Department</b> then <b>Doctor</b> ({@code payableid} — the doctor list). */
     public String selectDepartmentAndDoctor() {
         Object r = page.evaluate("() => new Promise(async resolve => {" + FORM_JS
@@ -551,26 +745,28 @@ public class BirthCertificate extends BasePage {
 
         try { page.locator("#__bcSave").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000)); }
         catch (Exception e) { System.out.println("BirthCertificate.save: Save click failed - " + e.getMessage()); }
-        page.evaluate("() => { const e=document.getElementById('__bcSave'); if(e) e.removeAttribute('id'); }");
-        waitForAngular(800);
-        acceptSaveDialog();
-        waitForAngular(500);
+        try { evalSafe("() => { const e=document.getElementById('__bcSave'); if(e) e.removeAttribute('id'); }"); } catch (Exception ignore) { }
+        try { waitForAngular(800); } catch (Exception ignore) { }
+        try { acceptSaveDialog(); } catch (Exception ignore) { }
+        try { waitForAngular(500); } catch (Exception ignore) { }
 
         try {
             page.waitForFunction("() => (window.__bcToasts||[]).some(a=>/saved|success|added|updated|please|fill|enter|select|required|exist|error|failed/i.test(a))",
                     null, new Page.WaitForFunctionOptions().setTimeout(20000));
         } catch (Exception ignore) { page.waitForTimeout(2500); }
-        Object r = page.evaluate("() => { const prior=window.__bcPrior||[];"
-                + " const a=(window.__bcToasts||[]).filter(x=>!prior.includes(x));"
+        // The toasts captured by the observer, plus whatever is on screen NOW (the observer is lost if the page navigated after Save).
+        Object r = evalSafe("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();" + TOAST_ELS
+                + " const prior=window.__bcPrior||[];"
+                + " const a=(window.__bcToasts||[]).concat(toastEls().map(x=>norm(x.textContent))).filter(x=>x && !prior.includes(x));"
                 + " return a.find(x=>/(saved|added|updated)\\s*success|success/i.test(x)) || a.find(x=>x) || ''; }");
-        waitForAngular(400);
+        try { waitForAngular(400); } catch (Exception ignore) { }
         String toast = r == null ? "" : r.toString().trim();
 
         // A silent Save tells us nothing on its own — capture the surrounding state so the report can say
         // WHY: did the form close (saved without a toast), is a validation dialog up, were toasts seen and
         // filtered, or did the click simply do nothing?
         if (toast.isEmpty()) {
-            Object diag = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+            Object diag = evalSafe("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
                     + " const seen=(window.__bcToasts||[]).join(' ; ');"
                     + " const prior=(window.__bcPrior||[]).join(' ; ');"
                     + " const modal=[...document.querySelectorAll('.modal,.modal-dialog,.jAlert,[role=dialog],.sweet-alert')]"
@@ -622,7 +818,22 @@ public class BirthCertificate extends BasePage {
      * @param tabsBefore how many tabs existed before Save was clicked
      */
     public String captureReport(int tabsBefore, int waitMs) {
-        com.kpj.pages.ReportCheck rc = com.kpj.pages.ReportCheck.after(page, tabsBefore, waitMs,
+        // The report opens as a PDF in a NEW tab. It is judged on the file itself, read from inside the browser (PdfReport): the check this
+        // used to make (ReportCheck) downloaded the file through a separate network client, which fails on this site's certificate chain
+        // ("unable to verify the first certificate"), and then measured a SCREENSHOT of Chrome's PDF viewer — which cannot see inside the
+        // viewer and is white however good the report is. That reported a blank report while a person opening it by hand got the full
+        // certificate (letterhead, "BIRTH CERTIFICATE", the template's lines, serial number).
+        com.kpj.pages.PdfReport.Result pr = com.kpj.pages.PdfReport.capture(page, tabsBefore, waitMs);
+        if (pr.url != null && !pr.url.isEmpty()) {
+            lastReportUrl = pr.url;
+            lastReportDiagnostics = pr.diagnostics;
+            lastReportFile = "";
+            lastReportPng = pr.png;      // page 1 of the PDF rendered to an image (or the tab's screenshot when it is an HTML error page)
+            reportBlank = pr.blank;
+            return lastReportDiagnostics;
+        }
+        // No new tab: the report may be embedded in the page (iframe/embed/object) — the older check still knows how to find that.
+        com.kpj.pages.ReportCheck rc = com.kpj.pages.ReportCheck.after(page, tabsBefore, 3000,
                 "Nursing Station - Birth Certificate - generated report.png");
         lastReportUrl = rc.url;
         lastReportDiagnostics = rc.diagnostics;

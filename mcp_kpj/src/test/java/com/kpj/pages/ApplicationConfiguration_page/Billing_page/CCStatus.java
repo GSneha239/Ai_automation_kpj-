@@ -57,16 +57,20 @@ public class CCStatus extends BasePage {
                 page.waitForFunction("() => [...document.querySelectorAll('a')].some(a=>/application\\s*config/i.test((a.textContent||'')) && a.offsetParent!==null)",
                         null, new Page.WaitForFunctionOptions().setTimeout(15000));
             } catch (Exception ignore) { }
-            page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const a=[...document.querySelectorAll('a')].find(x=>/application\\s*config/i.test(norm(x.textContent)) && x.offsetParent!==null); if(a) a.click(); }");
-            waitForAngular(1200);
-            // EXACT "Billing" — a prefix match can expand a different (similarly named) menu.
-            page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const a=[...document.querySelectorAll('a')].find(x=>/^\\s*billing\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null); if(a) a.click(); }");
-            waitForAngular(1000);
-            // EXACT text match ONLY — a bare href-contains fallback previously picked a DIFFERENT, similarly
-            // spelled menu item on this same submenu (see CancellationReason.nav's "Receipt Cancellation" trap).
+            // Expand each level only if it is not already open (a second click on an open entry CLOSES it — and this loop runs up to three
+            // times), and look "Billing" up INSIDE Application Configuration: "Billing" is also a top-level module, listed before it, and an
+            // unscoped lookup clicks that one instead and ends the run on the Patient Dashboard.
+            expandMenuEntry(null, "^\\s*application\\s*config(uration)?\\s*$");
+            expandMenuEntry("^\\s*application\\s*config(uration)?\\s*$", "^\\s*billing\\s*$");
+            waitForAngular(800);
+            // EXACT text match ONLY, inside Application Configuration > Billing — a bare href-contains fallback previously picked a
+            // DIFFERENT, similarly spelled menu item on this same submenu (see CancellationReason.nav's "Receipt Cancellation" trap).
             Object href = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                    + " const links=[...document.querySelectorAll('a[href]')];"
-                    + " const a = links.find(x=>/^\\s*cc\\s*status\\s*$/i.test(norm(x.textContent)));"
+                    + " const top=[...document.querySelectorAll('a')].find(x=>/^\\s*application\\s*config(uration)?\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null);"
+                    + " const topLi=(top&&top.closest('li'))||document;"
+                    + " const bill=[...topLi.querySelectorAll('a')].find(x=>/^\\s*billing\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null);"
+                    + " const scope=(bill&&bill.closest('li'))||topLi;"
+                    + " const a = [...scope.querySelectorAll('a[href]')].find(x=>/^\\s*cc\\s*status\\s*$/i.test(norm(x.textContent)));"
                     + " if(!a) return ''; a.id='__ccsMenu'; return a.getAttribute('href')||'link'; }");
             if (href == null || href.toString().isEmpty()) { System.out.println("CCStatus.nav: menu link not found (attempt " + (attempt + 1) + ")"); continue; }
             if (href.toString().startsWith("#")) menuHref = href.toString();
@@ -132,9 +136,15 @@ public class CCStatus extends BasePage {
      * "already exists" toast submits genuinely different details.
      */
     public String fillDetails(int attempt) {
-        String code = "CS" + String.format("%05d", Math.abs((System.nanoTime() + attempt * 7919L) % 100000));
+        // Stamped from the wall clock: System.nanoTime() ticks in 100 ns steps on this machine, so its remainders end in "00" and a code
+        // taken from them came from only ~1,000 values — too few for a master list that keeps every record ever saved.
+        String code = "CS" + String.format("%05d", (System.currentTimeMillis() + attempt * 7919L) % 100000);
         lastCode = code;
-        lastRemark = REMARKS[(int) (Math.abs(System.nanoTime() / 1000 + attempt) % REMARKS.length)];
+        // The Remark is UNIQUE per run: the shared QA environment keeps every record ever saved, so a bare name from the pool collides
+        // with earlier runs for good. A name from the pool + the run time (+ the retry number) never repeats.
+        String remarkStamp = java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyMMddHHmmss"));
+        lastRemark = REMARKS[(int) (Math.abs(System.nanoTime() / 1000 + attempt) % REMARKS.length)]
+                + " " + remarkStamp + (attempt > 0 ? "-" + attempt : "");
         Object r = page.evaluate("(a) => { const A=window.angular;" + FIND_FIELDS
                 + " const set=(e,v)=>{ if(!e) return '(no field)'; const c=A.element(e).controller('ngModel'); e.value=v; if(c){c.$setViewValue(v);c.$render();} e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true})); return v; };"
                 + " const cd=set(codeEl, a.code); const rm=set(remEl, a.remark);"

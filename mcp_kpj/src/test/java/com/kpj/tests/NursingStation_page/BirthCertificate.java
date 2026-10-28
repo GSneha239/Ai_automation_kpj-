@@ -160,8 +160,23 @@ public class BirthCertificate extends DevHisBase {
             }
         }
 
+        // The way a person picks the patient (recorded from a manual run): open the screen's patient LOOKUP, type a few digits of an MRN,
+        // click Search, click the select icon of a row. That search asks for patients WITH NEWBORN RECORDS (IsNewBorn:true), and the patient it
+        // attaches has an admission and newborn details — so Save prints a certificate WITH content. The form's own MRN box is the wrong
+        // tool here: it asks for deceased patients only ("Patient Not Found!" for a full MRN) and for a short fragment it attaches the first
+        // living patient it gets, an ordinary one with no admission, whose certificate prints as a blank page.
+        boolean viaFragment = false;
         if (!attached) {
-            java.util.List<String> discovered = bc.discoverMrns(6);
+            java.util.List<String> fragments = new java.util.ArrayList<>();
+            for (String f : new String[]{"11", "33", "12", "13"}) fragments.add(f);
+            for (int n = 10; n <= 99; n++) if (!fragments.contains(String.valueOf(n))) fragments.add(String.valueOf(n));
+            searchResult = bc.pickPatientFromLookup(fragments);
+            attached = bc.patientAttached();
+            viaFragment = attached;
+        }
+
+        if (!attached) {
+            java.util.List<String> discovered = bc.discoverMrns(30);
             addSummary("MRNs offered by the patient lookup", discovered.isEmpty() ? "(none found)" : discovered.toString());
             if (!discovered.isEmpty()) {
                 searchResult = bc.searchPatientTryingMrns(discovered);
@@ -175,7 +190,10 @@ public class BirthCertificate extends DevHisBase {
                 "Enter an MRN and click the search icon (SearchPatientByMRNo), trying the candidates in "
                         + "turn until a patient attaches",
                 "The patient is attached to the certificate",
-                attached ? "MRN " + mrn + " attached. " + searchResult
+                attached ? (viaFragment
+                                ? "The patient was picked from the screen's own lookup, as a person does — " + bc.lastLookupNote + " — and attached "
+                                  + "(MRN " + mrn + "; a full MRN typed into the form's own box is refused by its deceased-only query): " + searchResult
+                                : "MRN " + mrn + " attached. " + searchResult)
                          : "No patient attached with any MRN. Tried: " + bc.mrnAttempts
                            + ". Last result: " + searchResult,
                 attached ? "PASS" : "FAIL");
@@ -218,12 +236,28 @@ public class BirthCertificate extends DevHisBase {
                 "Both are entered", dobPlace, dobOk ? "PASS" : "FAIL");
 
         // 8) Form template body (CKEditor)
-        String bodyRes = bc.enterTemplateBody(bodyText);
-        boolean bodyOk = !bodyRes.startsWith("(");
+        // Choosing the template loads a real "BIRTH CERTIFICATE" into the editor with eight blanks (Registration No., Name of Child, Date of
+        // Birth, Place of Birth, Sex, Father's Name, Mother's Name, Date of Registration). Those blanks are filled in place — replacing the
+        // whole template with one line of text printed a report with nothing on it. -DbodyText= still replaces the body outright.
+        boolean customBody = System.getProperty("bodyText") != null;
+        String bodyRes;
+        String motherName = bc.attachedPatientName().isEmpty() ? "Auto Mother Test" : bc.attachedPatientName();
+        if (customBody) {
+            bodyRes = bc.enterTemplateBody(bodyText);
+        } else {
+            String regNo = "BC" + String.format("%06d", System.currentTimeMillis() % 1000000);
+            String today = java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"));
+            bodyRes = bc.fillTemplateBlanks(regNo, childName, dob, placeOfBirth, bc.lastGender, fatherName, motherName, today);
+            if (bodyRes.startsWith("(no-blanks")) {
+                bodyRes = bc.enterTemplateBody(bodyText) + " — the template has no blanks to fill, so the text was written instead";
+            }
+        }
+        boolean bodyOk = !bodyRes.startsWith("(") && (customBody || bodyRes.contains("model synced=true") || bodyRes.contains("so the text was written instead"));
         step(page, "Enter details in the form template body",
-                "Type into the certificate body (a CKEditor, not a textarea)",
-                "The template body holds the text",
-                bodyOk ? "Body written via " + bodyRes : "Could not write the body " + bodyRes,
+                "Fill the certificate body (a CKEditor, not a textarea): Registration No., Name of Child, Date of Birth, Place of Birth, Sex, "
+                        + "Father's Name, Mother's Name, Date of Registration",
+                "The template body holds the details and the form's data carries them",
+                bodyOk ? "PASSES: " + bodyRes : "FAILS — the body was not written or did not reach the form's data: " + bodyRes,
                 bodyOk ? "PASS" : "FAIL");
 
         // 9) Department + doctor
@@ -263,7 +297,9 @@ public class BirthCertificate extends DevHisBase {
         String reportInfo = bc.captureReport(tabsBefore, 15000);
         addSummary("Report", reportInfo);
         boolean reportOk = bc.reportProduced() && !bc.reportBlank;
-        step(page, "Save generates the certificate report",
+        // The report opens in ANOTHER tab: step(page, ...) would photograph the app tab behind it. lastReportPng is the report tab itself
+        // (blank or not), so it is attached to this step and shows in the test report.
+        stepWithShot(bc.lastReportPng, "Save generates the certificate report",
                 "After Save, the birth certificate report is generated",
                 "A report opens and carries the certificate's content",
                 (reportOk
@@ -284,5 +320,11 @@ public class BirthCertificate extends DevHisBase {
         addSummary("DOB / Place", dob + " / " + placeOfBirth);
         addSummary("Department / Doctor", bc.lastDepartment + " / " + bc.lastDoctor);
         addSummary("Result", ok ? toast : "Not confirmed (\"" + toast + "\")");
+    }
+
+    /** Records a step with the given picture (the report tab), or with the app tab when no picture could be taken. */
+    private void stepWithShot(byte[] png, String name, String desc, String expected, String actual, String status) {
+        if (png != null && png.length > 0) step(png, name, desc, expected, actual, status);
+        else step(page, name, desc, expected, actual, status);
     }
 }

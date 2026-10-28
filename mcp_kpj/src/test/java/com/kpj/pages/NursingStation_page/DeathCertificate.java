@@ -73,11 +73,14 @@ public class DeathCertificate extends BasePage {
                     null, new Page.WaitForFunctionOptions().setTimeout(30000));
         } catch (Exception ignore) { }
 
+        // Open "Nursing Station" only if it is closed (a second click on an open entry CLOSES it, and the sidebar is built lazily after login),
+        // then look the link up INSIDE that entry — an unscoped lookup is how this walk could end on the Patient Dashboard.
+        expandMenuEntry(null, "^\\s*nursing\\s*station\\s*$");
+        waitForAngular(800);
         page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                + " const a=[...document.querySelectorAll('a')].find(x=>/^\\s*nursing\\s*station\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null); if(a) a.click(); }");
-        waitForAngular(1200);
-        page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                + " const a=[...document.querySelectorAll('a[href]')].filter(x=>x.offsetParent!==null)"
+                + " const top=[...document.querySelectorAll('a')].find(x=>/^\\s*nursing\\s*station\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null);"
+                + " const scope=(top&&top.closest('li'))||document;"
+                + " const a=[...scope.querySelectorAll('a[href]')].filter(x=>x.offsetParent!==null)"
                 + "   .find(x=>/^death\\s*certificate$/i.test(norm(x.textContent))"
                 + "        || /#\\/DeathCertificate/i.test(x.getAttribute('href')||''));"
                 + " if(a) a.click(); }");
@@ -270,6 +273,237 @@ public class DeathCertificate extends BasePage {
         return lastBody;
     }
 
+    /**
+     * {@code page.evaluate} that survives the page navigating underneath it (Save moves the app on while the next call is already in flight:
+     * "Execution context was destroyed, most likely because of a navigation" — not a failure of the save). Repeated on the new page.
+     */
+    private Object evalSafe(String js) {
+        for (int i = 0; i < 4; i++) {
+            try { return page.evaluate(js); }
+            catch (com.microsoft.playwright.PlaywrightException e) {
+                String m = String.valueOf(e.getMessage());
+                if (m.contains("Execution context was destroyed") || m.contains("navigation")) { page.waitForTimeout(1500); continue; }
+                throw e;
+            }
+        }
+        return null;
+    }
+
+    // ---- patient: the screen's own lookup ----------------------------------
+
+    /** What the lookup route ended up doing, for the report. */
+    public String lastLookupNote = "";
+
+    /** The patient fields the form's model holds right now: name, gender, age, admission id, patient id, MRN ("" when unreadable). */
+    public java.util.Map<String, String> readFormFields() {
+        java.util.Map<String, String> out = new java.util.LinkedHashMap<>();
+        Object r = page.evaluate("() => {" + JS
+                + " const e=byField('MRNo'); if(!e) return null;"
+                + " const s=A.element(e).scope();"
+                + " const o=(s && (s.DeathCertificate || s.DeathCertificate1 || s.BirthCertificate || s.BirthCertificate1)) || {};"
+                + " const full=String(o.PatientFullDtl||'');"
+                + " const g=re=>{ const m=full.match(re); return m? norm(m[1]) : ''; };"
+                + " return { name: g(/Name\\s*:\\s*(.*?)\\s+MRN/i) || String(o.FirstName||''),"
+                + "   gender: g(/Gen\\w*\\s*:\\s*([A-Za-z-]+)/i) || String(o.Gender||''),"
+                + "   age: g(/Age\\s*:\\s*(.*?)\\s+Passport/i) || String(o.PatientAge||''),"
+                + "   admid: String(o.admid||0), patientid: String(o.patientid||0), mrn: e.value||'' }; }");
+        if (r instanceof java.util.Map) for (java.util.Map.Entry<?, ?> en : ((java.util.Map<?, ?>) r).entrySet())
+            out.put(String.valueOf(en.getKey()), en.getValue() == null ? "" : String.valueOf(en.getValue()).trim());
+        return out;
+    }
+
+    /** The form's patient summary, in the same words {@link #searchByMrn} uses (so {@link #patientAttached()} can judge it). */
+    public String readFormPatient() {
+        Object r = page.evaluate("() => {" + JS + TOAST_ELS
+                + " const t=byField('Dischargeid');"
+                + " const msg=toastEls().map(x=>norm(x.textContent)).join(' | ');"
+                + " let patient='(no scope)';"
+                + " try { const e=byField('MRNo'); const s=window.angular.element(e).scope();"
+                + "   const o=s && (s.DeathCertificate || s.DeathCertificate1 || s.BirthCertificate || s.BirthCertificate1);"
+                + "   if(o){ const keys=Object.keys(o).filter(k=>/name|patient|mrn|age|gender|id$/i.test(k) && !/^mrno$/i.test(k)"
+                + "        && o[k]!==null && o[k]!=='' && o[k]!==0 && typeof o[k]!=='object' && typeof o[k]!=='function');"
+                + "     patient = keys.length? keys.slice(0,8).map(k=>k+'='+String(o[k]).slice(0,24)).join(', ')"
+                + "                          : '(model has no patient fields set)'; } }"
+                + " catch(err) { patient='(scope read failed: '+err.message+')'; }"
+                + " return 'templateOptions='+(t?t.options.length:-1)+' | patient: '+patient"
+                + "   +(msg?' | msg='+msg:''); }");
+        return r == null ? "" : r.toString();
+    }
+
+    /**
+     * Open the lookup (the search icon beside the MRN box), type {@code fragment} in its MRN box, click Search and click the select icon of
+     * row {@code row}. Returns the row's text, or {@code null} when there is no such row (or no rows at all).
+     */
+    private String lookupPick(String fragment, int row) {
+        final String vis = "const vis=e=>!!e&&!!(e.offsetWidth||e.offsetHeight||e.getClientRects().length);";
+        boolean open = Boolean.TRUE.equals(page.evaluate("() => {" + vis
+                + " return [...document.querySelectorAll('.modal,.modal-content,[role=dialog]')].some(vis); }"));
+        if (!open) {
+            Object tagged = page.evaluate("() => {" + vis
+                    + " const b=[...document.querySelectorAll(\"[ng-click*='openPopupScreen']\")].find(vis);"
+                    + " if(!b) return false; b.id='__dcLookupOpen'; return true; }");
+            if (!Boolean.TRUE.equals(tagged)) return null;
+            page.locator("#__dcLookupOpen").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000));
+            page.evaluate("() => { const e=document.getElementById('__dcLookupOpen'); if(e) e.removeAttribute('id'); }");
+            waitForAngular(2500);
+        }
+        Object box = page.evaluate("() => {" + vis
+                + " const dlg=[...document.querySelectorAll('.modal,.modal-content,[role=dialog]')].filter(vis)[0]||document;"
+                + " const i=[...dlg.querySelectorAll('input')].filter(vis).find(x=>/mrno?$/i.test(x.getAttribute('ng-model')||''));"
+                + " if(!i) return false; i.id='__dcLookupMrn'; return true; }");
+        if (!Boolean.TRUE.equals(box)) return null;
+        page.locator("#__dcLookupMrn").fill(fragment, new com.microsoft.playwright.Locator.FillOptions().setTimeout(5000));
+        page.evaluate("() => { const e=document.getElementById('__dcLookupMrn'); if(e) e.removeAttribute('id'); }");
+        Object sb = page.evaluate("() => {" + vis
+                + " const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                + " const dlg=[...document.querySelectorAll('.modal,.modal-content,[role=dialog]')].filter(vis)[0]||document;"
+                + " const b=[...dlg.querySelectorAll('button,a,input[type=button]')].filter(vis)"
+                + "   .find(x=>/searchpatient\\s*\\(/i.test(x.getAttribute('ng-click')||'') || /^\\s*search\\s*$/i.test(norm(x.textContent)||x.value||''));"
+                + " if(!b) return false; b.id='__dcLookupSearch'; return true; }");
+        if (!Boolean.TRUE.equals(sb)) return null;
+        page.locator("#__dcLookupSearch").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000));
+        page.evaluate("() => { const e=document.getElementById('__dcLookupSearch'); if(e) e.removeAttribute('id'); }");
+        try {
+            page.waitForFunction("() => [...document.querySelectorAll(\"[ng-click*='SetSearchPatient']\")].some(e=>e.offsetWidth||e.offsetHeight||e.getClientRects().length)",
+                    null, new Page.WaitForFunctionOptions().setTimeout(15000));
+        } catch (Exception noRows) { return null; }
+        Object pick = page.evaluate("(n) => {" + vis
+                + " const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                + " const b=[...document.querySelectorAll(\"[ng-click*='SetSearchPatient']\")].filter(vis)[n]; if(!b) return null;"
+                + " b.id='__dcLookupPick'; const r=b.closest('tr,.ui-grid-row'); return r? norm(r.textContent).slice(0,90) : ''; }", row);
+        if (pick == null) return null;
+        page.locator("#__dcLookupPick").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000));
+        page.evaluate("() => { const e=document.getElementById('__dcLookupPick'); if(e) e.removeAttribute('id'); }");
+        waitForAngular(3500);
+        return String.valueOf(pick);
+    }
+
+    /**
+     * Pick the patient the way a person does: through the screen's own <b>patient lookup</b> (search icon beside the MRN box) — type a few
+     * digits, Search, click a row's select icon. The form's own MRN box answers "Patient Not Found!" for most MRNs and, for a short
+     * fragment, attaches the first living patient it gets; the lookup is the route that works for any listed patient.
+     *
+     * <p>The certificate report is built from the patient's ADMISSION, so rows are tried in turn (up to {@code maxRows}) until the form holds a
+     * patient with an admission ({@code admid > 0}). If none of those rows has one, the first row is picked again so the flow can still
+     * go on, and {@link #lastLookupNote} says so.</p>
+     */
+    public String pickPatientFromLookup(java.util.List<String> fragments, int maxRows) {
+        StringBuilder tried = new StringBuilder();
+        for (String frag : fragments) {
+            boolean anyRow = false;
+            for (int row = 0; row < maxRows; row++) {
+                String text;
+                try { text = lookupPick(frag, row); }
+                catch (Exception e) { tried.append(frag).append('#').append(row).append(" -> ").append(String.valueOf(e.getMessage()).split("\n")[0]).append("; "); break; }
+                if (text == null) { if (row == 0) tried.append(frag).append(" -> no rows; "); break; }
+                anyRow = true;
+                lastFormSearch = readFormPatient();
+                java.util.Map<String, String> f = readFormFields();
+                int adm = 0;
+                try { adm = Integer.parseInt(f.getOrDefault("admid", "0")); } catch (Exception ignore) { }
+                boolean ok = patientAttached();
+                tried.append(frag).append('#').append(row).append(" -> ").append(ok ? "attached, admid=" + adm : "no patient bound").append(" (").append(text).append("); ");
+                if (ok && adm > 0) {
+                    lastLookupNote = "typed \"" + frag + "\" in the lookup and picked row " + (row + 1) + " (" + text + "), a patient with an admission (admid " + adm + ")";
+                    System.out.println("DeathCertificate: lookup attached " + f.get("mrn") + " — " + lastLookupNote);
+                    return lastFormSearch;
+                }
+            }
+            if (anyRow) {
+                // Rows exist but none carries an admission: fall back to the first row so the rest of the flow has a patient.
+                try {
+                    String text = lookupPick(frag, 0);
+                    lastFormSearch = readFormPatient();
+                    lastLookupNote = "typed \"" + frag + "\" in the lookup; none of the first " + maxRows + " rows has an admission, so row 1 was used"
+                            + (text == null ? "" : " (" + text + ")") + " — its report may print without content";
+                } catch (Exception e) { lastLookupNote = "lookup fallback failed: " + String.valueOf(e.getMessage()).split("\n")[0]; }
+                System.out.println("DeathCertificate: " + lastLookupNote);
+                return lastFormSearch;
+            }
+        }
+        lastLookupNote = "no patient could be picked from the lookup: " + tried;
+        System.out.println("DeathCertificate: " + lastLookupNote);
+        return lastLookupNote;
+    }
+
+    // ---- template body ------------------------------------------------------
+
+    /**
+     * Fill the blanks of the <b>Death Certificate</b> template the editor is loaded with.
+     *
+     * <p>Choosing the template loads a real certificate into a CKEditor: "DEATH CERTIFICATE" with fifteen lines ending in {@code ________}
+     * (Government of, Registration No., Name of Deceased, Sex, Age, Date / Time / Place / Cause of Death, Nationality, Occupation, Address,
+     * Name of Father, Name of Mother, Date of Registration) and a Registrar line. Replacing all of that with one line of text prints a report
+     * that says nothing, so each blank is filled in place and the rest is kept. This screen shares its controller with Birth Certificate and
+     * carries SEVERAL editors, so the one holding the "DEATH CERTIFICATE" text is chosen by its content — not "all of them".</p>
+     *
+     * <p>The chosen editor's data is also pushed into its Angular model ({@code setData()} + {@code updateElement()} only change the textarea;
+     * Save posts the model).</p>
+     *
+     * @param values 15 values in template order: government, regNo, name, sex, age, dateOfDeath, timeOfDeath, place, cause, nationality,
+     *               occupation, address, father, mother, dateOfRegistration
+     * @return {@code filled n of 15 blanks; model synced=...; text: ...}, or a string starting with "(" when nothing could be done
+     */
+    public String fillTemplateBlanks(String... values) {
+        String[] labels = {"Government of", "Registration No\\.", "Name of Deceased", "Sex", "Age", "Date of Death", "Time of Death",
+                "Place of Death", "Cause of Death", "Nationality", "Occupation", "Address", "Name of Father", "Name of Mother",
+                "Date of Registration"};
+        java.util.List<java.util.List<String>> pairs = new java.util.ArrayList<>();
+        for (int i = 0; i < labels.length && i < values.length; i++) pairs.add(java.util.List.of(labels[i], values[i] == null ? "" : values[i]));
+        Object r = page.evaluate("async (pairs) => {"
+                + " const sleep=ms=>new Promise(r=>setTimeout(r,ms));"
+                + " if(!(window.CKEDITOR && CKEDITOR.instances)) return '(no-editor)';"
+                + " const eds=Object.keys(CKEDITOR.instances).map(k=>CKEDITOR.instances[k]);"
+                + " const ed=eds.find(e=>/death\\s*certificate/i.test(String(e.getData()).replace(/<[^>]+>/g,' ')))"
+                + "   || eds.slice().sort((a,b)=>(String(b.getData()).match(/_{3,}/g)||[]).length-(String(a.getData()).match(/_{3,}/g)||[]).length)[0];"
+                + " if(!ed) return '(no-editor)';"
+                + " let html=ed.getData();"
+                + " const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');"
+                + " let done=0;"
+                + " for(const [label,value] of pairs){"
+                + "   const rx=new RegExp('('+label+'(?:&nbsp;|\\\\s)*:?(?:&nbsp;|\\\\s)*)_{3,}','i');"
+                + "   if(rx.test(html)){ html=html.replace(rx,(m,g)=>g+esc(value)); done++; } }"
+                + " if(!done) return '(no-blanks in the template body)';"
+                + " ed.setData(html); await sleep(500); ed.updateElement();"
+                + " const data=ed.getData(); const el=ed.element && ed.element.$;"
+                + " let synced='n/a (no model)';"
+                + " if(el){ const ng=el.getAttribute('ng-model'); const ctrl=angular.element(el).controller('ngModel'); const sc=angular.element(el).scope();"
+                + "   if(ng && ctrl && sc){ try{ sc.$apply(()=>ctrl.$setViewValue(data)); }catch(e){ ctrl.$setViewValue(data); try{ sc.$applyAsync(); }catch(x){} }"
+                + "     await sleep(300); synced=String(String(sc.$eval(ng))===data); } }"
+                + " const plain=data.replace(/<br\\s*\\/?>/gi,'\\n').replace(/<\\/p>/gi,'\\n').replace(/<[^>]+>/g,'').replace(/&nbsp;/g,' ').replace(/&amp;/g,'&');"
+                + " return 'filled '+done+' of '+pairs.length+' blanks; model synced='+synced+'; text: '+plain.replace(/\\s*\\n\\s*/g,' / ').replace(/\\s+/g,' ').trim().slice(0,640); }",
+                pairs);
+        lastBody = r == null ? "" : r.toString();
+        waitForAngular(600);
+        System.out.println("DeathCertificate: template blanks -> " + lastBody);
+        return lastBody;
+    }
+
+    // ---- the report Save generates -----------------------------------------
+
+    public String lastReportUrl = "", lastReportDiagnostics = "";
+    public byte[] lastReportPng = null;
+    public boolean reportBlank = true;
+
+    /**
+     * The report opens as a PDF in a NEW tab and is judged on the file itself, read from inside the browser ({@code PdfReport}): the check
+     * this used to make ({@code ReportCheck}) downloaded the file through a separate client that fails on this site's certificate chain and
+     * then measured a SCREENSHOT of Chrome's PDF viewer — which cannot see inside the viewer and is white however good the report is.
+     * {@link #lastReportPng} is page 1 of the PDF rendered to an image, so the report shows in the test report.
+     */
+    public String captureReport(int tabsBefore, int waitMs) {
+        com.kpj.pages.PdfReport.Result pr = com.kpj.pages.PdfReport.capture(page, tabsBefore, waitMs);
+        if (pr.url != null && !pr.url.isEmpty()) {
+            lastReportUrl = pr.url; lastReportDiagnostics = pr.diagnostics; lastReportPng = pr.png; reportBlank = pr.blank;
+            return lastReportDiagnostics;
+        }
+        com.kpj.pages.ReportCheck rc = com.kpj.pages.ReportCheck.after(page, tabsBefore, 3000, "Nursing Station - Death Certificate - generated report.png");
+        lastReportUrl = rc.url; lastReportDiagnostics = rc.diagnostics; lastReportPng = rc.png; reportBlank = rc.blank;
+        return lastReportDiagnostics;
+    }
+
+    public boolean reportProduced() { return lastReportUrl != null && !lastReportUrl.isEmpty(); }
+
     /** Select <b>Department</b> then <b>Doctor</b>. */
     public String selectDepartmentAndDoctor() {
         Object r = page.evaluate("() => new Promise(async resolve => {" + JS
@@ -320,23 +554,25 @@ public class DeathCertificate extends BasePage {
 
         try { page.locator("#__dcSave").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000)); }
         catch (Exception e) { System.out.println("DeathCertificate.save: Save click failed - " + e.getMessage()); }
-        page.evaluate("() => { const e=document.getElementById('__dcSave'); if(e) e.removeAttribute('id'); }");
-        waitForAngular(800);
-        acceptSaveDialog();
-        waitForAngular(500);
+        try { evalSafe("() => { const e=document.getElementById('__dcSave'); if(e) e.removeAttribute('id'); }"); } catch (Exception ignore) { }
+        try { waitForAngular(800); } catch (Exception ignore) { }
+        try { acceptSaveDialog(); } catch (Exception ignore) { }
+        try { waitForAngular(500); } catch (Exception ignore) { }
 
         try {
             page.waitForFunction("() => (window.__dcToasts||[]).some(a=>/saved|success|added|updated|please|fill|enter|select|required|exist|error|failed/i.test(a))",
                     null, new Page.WaitForFunctionOptions().setTimeout(20000));
         } catch (Exception ignore) { page.waitForTimeout(2500); }
 
-        Object r = page.evaluate("() => { const prior=window.__dcPrior||[];"
-                + " const a=(window.__dcToasts||[]).filter(x=>!prior.includes(x));"
+        // The toasts the observer caught, plus whatever is on screen NOW (the observer is lost if the page navigated after Save).
+        Object r = evalSafe("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();" + TOAST_ELS
+                + " const prior=window.__dcPrior||[];"
+                + " const a=(window.__dcToasts||[]).concat(toastEls().map(x=>norm(x.textContent))).filter(x=>x && !prior.includes(x));"
                 + " return a.find(x=>/(saved|added|updated)\\s*success|success/i.test(x)) || a.find(x=>x) || ''; }");
         String toast = r == null ? "" : r.toString().trim();
 
         if (toast.isEmpty()) {
-            Object diag = page.evaluate("() => { const seen=(window.__dcToasts||[]).join(' ; ');"
+            Object diag = evalSafe("() => { const seen=(window.__dcToasts||[]).join(' ; ');"
                     + " const invalid=[...document.querySelectorAll('.ng-invalid, .has-error')]"
                     + "   .filter(e=>e.offsetParent!==null && e.tagName!=='FORM').length;"
                     + " return 'url='+location.hash+' invalidFields='+invalid"

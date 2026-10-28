@@ -54,8 +54,11 @@ public class SupplierMaster extends BasePage {
         try { page.waitForFunction("() => window.angular", null,
                 new Page.WaitForFunctionOptions().setTimeout(20000)); } catch (Exception ignore) { }
 
-        clickMenu("^\\s*application\\s*configuration\\s*$");
-        clickMenu("^\\s*inventory\\s*$");
+        // Expand each level only if it is not already open (a second click on an open entry CLOSES it), and look "Inventory" up INSIDE
+        // Application Configuration — "Inventory" is also a top-level module, listed before it, and an unscoped lookup opens that one instead.
+        expandMenuEntry(null, "^\\s*application\\s*config(uration)?\\s*$");
+        expandMenuEntry("^\\s*application\\s*config(uration)?\\s*$", "^\\s*inventory\\s*$");
+        waitForAngular(800);
         lastMenu = describeMenu();
 
         // Anchored to the WHOLE label, and hidden anchors are included on purpose: these menu links sit in
@@ -321,11 +324,45 @@ public class SupplierMaster extends BasePage {
      * can only arrive through this prefix.</p>
      */
     public String selectTitle() {
-        lastTitle = pickExact(M + "PrefixId", "__smTitle",
+        // The gender is copied from the title's OWN master data: the Title box's ng-change is SetGenderByTitle(), which sets payable.GenderID
+        // from the matching entry of drpPrefix. A title whose master record carries no gender (GenderID 0) leaves GenderID empty and the save
+        // answers "Please Select Gender!" — and in this environment all 85 seeded titles (Cik, Encik, Madam, Miss, Mrs, Puan, Tuan ...) have
+        // GenderID 0, while only the title records left behind by the Title Master runs carry one (GenderID 3). So the title is chosen by what
+        // its data says, not by its name: a Male/Female title first (preferring a plain name), then any title that carries a gender.
+        Object plan = page.evaluate("(rx) => {" + JS
+                + " const sel=[...document.querySelectorAll(\"select[ng-model='payable.PrefixId']\")].filter(vis)[0]; if(!sel) return null;"
+                + " let list=[]; try{ list=angular.element(sel).scope().drpPrefix||[]; }catch(e){}"
+                + " const genderOf=o=>{ const id=parseInt(String(o.value).replace(/\\D/g,''),10);"
+                + "   const p=list.find(x=>Number(x.PrefixID)===id); return p? (Number(p.GenderID)||0) : 0; };"
+                + " const reals=[...sel.options].filter(o=>o.value && !/^-*\\s*select/i.test(norm(o.text)))"
+                + "   .map(o=>({t:norm(o.text), g:genderOf(o)}));"
+                + " const named=x=>new RegExp(rx,'i').test(x.t);"
+                + " const pick=reals.find(x=>named(x)&&(x.g===1||x.g===2)) || reals.find(x=>x.g===1||x.g===2)"
+                + "   || reals.find(x=>named(x)&&x.g>0) || reals.find(x=>x.g>0) || reals.find(named) || reals[0];"
+                + " return pick? {text:pick.t, gender:pick.g, withGender:reals.filter(x=>x.g>0).length, total:reals.length} : null; }",
                 "^(mr|ms|mrs|miss|madam|encik|puan|cik|tuan)\\.?$");
+        String want = "";
+        String how = "";
+        if (plan instanceof java.util.Map) {
+            @SuppressWarnings("unchecked")
+            java.util.Map<String, Object> m = (java.util.Map<String, Object>) plan;
+            want = String.valueOf(m.get("text"));
+            how = " | GenderID=" + m.get("gender") + " in the title's own data (" + m.get("withGender") + " of " + m.get("total")
+                    + " titles carry a gender)";
+        }
+        String rx = want.isEmpty() ? "" : "^" + want.replaceAll("[.*+?^${}()|\\[\\]\\\\]", "\\\\$0") + "$";
+        lastTitle = pickExact(M + "PrefixId", "__smTitle", rx);
+        // What the form itself ended up holding after SetGenderByTitle ran.
+        Object g = page.evaluate("() => { const sel=[...document.querySelectorAll(\"select[ng-model='payable.PrefixId']\")][0];"
+                + " try{ return String(angular.element(sel).scope().payable.GenderID); }catch(e){ return '?'; } }");
+        lastTitleGender = g == null ? "?" : g.toString();
+        lastTitle = lastTitle + how + " | form's payable.GenderID=" + lastTitleGender;
         System.out.println("SupplierMaster: Title = " + lastTitle);
         return lastTitle;
     }
+
+    /** The gender the form held after the Title was chosen ("0" / "" / "undefined" when the title carries none). */
+    public String lastTitleGender = "";
 
     /** Enter the <b>Name</b> ({@code payable.FirstName}). */
     public String enterName(String name) {

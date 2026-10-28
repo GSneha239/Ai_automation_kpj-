@@ -172,9 +172,14 @@ public class ImageManagement extends BasePage {
      * toast submits genuinely different details; once the pool is exhausted a number is appended.
      */
     public String fillCodeAndRemark(int attempt) {
-        String code = "IM" + String.format("%05d", Math.abs((System.nanoTime() + attempt * 7919L) % 100000));
+        // Stamped from the wall clock: System.nanoTime() ticks in 100 ns steps on this machine, so its remainders end in "00" and a code
+        // taken from them came from only ~1,000 values — too few for a master list that keeps every record ever saved.
+        String code = "IM" + String.format("%05d", (System.currentTimeMillis() + attempt * 7919L) % 100000);
         lastCode = code;
-        lastRemark = REMARKS[attempt % REMARKS.length] + (attempt >= REMARKS.length ? " " + (attempt / REMARKS.length + 1) : "");
+        // The Remark is UNIQUE per run: the shared QA environment keeps every record ever saved, so a bare pool name collides with earlier
+        // runs for good. A name from the pool + the run time (+ the retry number) never repeats.
+        String remarkStamp = java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyMMddHHmmss"));
+        lastRemark = REMARKS[attempt % REMARKS.length] + " " + remarkStamp + (attempt > 0 ? "-" + attempt : "");
         Object r = page.evaluate("(a) => { const A=window.angular;" + FIND_FIELDS
                 + " const set=(e,v)=>{ if(!e) return '(no field)'; const c=A.element(e).controller('ngModel'); e.value=v; if(c){c.$setViewValue(v);c.$render();} e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true})); return v; };"
                 + " const cd=set(codeEl, a.code); const rm=set(remEl, a.remark);"

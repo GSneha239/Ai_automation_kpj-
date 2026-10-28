@@ -55,8 +55,11 @@ public class StockAdjustmentReasonMaster extends BasePage {
         try { page.waitForFunction("() => window.angular", null,
                 new Page.WaitForFunctionOptions().setTimeout(20000)); } catch (Exception ignore) { }
 
-        clickMenu("^\\s*application\\s*configuration\\s*$");
-        clickMenu("^\\s*inventory\\s*$");
+        // Expand each level only if it is not already open (a second click on an open entry CLOSES it), and look "Inventory" up INSIDE
+        // Application Configuration — "Inventory" is also a top-level module, listed before it, and an unscoped lookup opens that one instead.
+        expandMenuEntry(null, "^\\s*application\\s*config(uration)?\\s*$");
+        expandMenuEntry("^\\s*application\\s*config(uration)?\\s*$", "^\\s*inventory\\s*$");
+        waitForAngular(800);
         lastMenu = describeMenu();
 
         // Anchored to the whole label. A loose match on "generic" would take the first menu entry that

@@ -149,7 +149,9 @@ public class MedicationTimeMaster extends BasePage {
      * short number is appended so the retry is still guaranteed unique.
      */
     public String fillDetails(int attempt) {
-        String code = "MT" + String.format("%05d", Math.abs((System.nanoTime() + attempt * 7919L) % 100000));
+        // Stamped from the wall clock: System.nanoTime() ticks in 100 ns steps on this machine, so its remainders end in "00" and a code
+        // taken from them came from only ~1,000 values — too few for a master list that keeps every record ever saved.
+        String code = "MT" + String.format("%05d", (System.currentTimeMillis() + attempt * 7919L) % 100000);
         lastCode = code;
         // Unique per run (a fixed pool is exhausted for good on the shared QA env), kept within 30 characters.
         String suffix = " " + code.substring(2);
