@@ -130,10 +130,13 @@ echo [1/3] Ensuring Playwright Chromium is installed (first run downloads it) ..
 java -cp "%JAR%" com.microsoft.playwright.CLI install chromium
 
 type nul > "%OUTDIR%\.runmarker"
+REM  Post-run analysis bookkeeping: one 0/1 line per test JVM is appended to .run-exit right after it launches (see below).
+if exist "%OUTDIR%\.run-exit" del /q "%OUTDIR%\.run-exit" >nul 2>nul
 
 echo.
 echo [2/3] Running %FLOWLABEL% on %ENVKEY% as a %NATLABEL% patient ...
 java %DEVHIS_OPTS% %NATOPTS% -Ddevhis.outdir=%OUTDIR% -jar "%JAR%" %FLOWS%
+(if errorlevel 1 (echo 1) else if not errorlevel 0 (echo 1) else (echo 0)) >> "%OUTDIR%\.run-exit"
 
 echo.
 echo [3/3] Building the failed-steps report ...
@@ -153,6 +156,10 @@ if "%FAILEXIT%"=="0" (
   echo   RESULT           : SOME STEPS FAILED  ^(see FAILED_STEPS.html^)
 )
 echo ============================================================
+REM  Automatic post-run analysis of THIS pass's fresh results (analysis + proposal only; never applies). Each pass has its own
+REM  output folder and run marker, so the Malaysian and foreign passes are analysed separately, once each. The exit code below still
+REM  comes from FAILEXIT. Switch off: set DEVHIS_POSTRUN=off.  See POST-RUN-HEALING.txt.
+call "%~dp0postrun-hook.bat" "%OUTDIR%" "batch-core-%OUTDIR%" "%JAR%"
 REM  The per-environment wrapper runs this twice (Malaysian, then foreign) and pauses once at the end —
 REM  a pause here would stop the run dead between the two passes.
 if not defined CORE_NOPAUSE pause

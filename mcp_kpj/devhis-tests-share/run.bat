@@ -81,6 +81,8 @@ java -cp "%JAR%" com.microsoft.playwright.CLI install chromium
 
 REM --- Mark the run start so the report only counts THIS run's flows ---
 type nul > "%OUTDIR%\.runmarker"
+REM  Post-run analysis bookkeeping: one 0/1 line per test JVM is appended to .run-exit right after it launches (see below).
+if exist "%OUTDIR%\.run-exit" del /q "%OUTDIR%\.run-exit" >nul 2>nul
 
 echo.
 echo [2/3] Running flows ...
@@ -110,12 +112,14 @@ if "%~1"=="" (
     echo.
     echo ---- module: %%M ----
     java %DEVHIS_OPTS% -Ddevhis.outdir=%OUTDIR% -jar "%JAR%" -p %%M -n ".*"
+    (if errorlevel 1 (echo 1) else if not errorlevel 0 (echo 1) else (echo 0)) >> "%OUTDIR%\.run-exit"
   )
 ) else (
   REM --fail-if-no-tests: without it a MIS-TYPED flow name makes the launcher print its help text, run
   REM nothing, and the script still finished with "ALL STEPS PASSED" on 0 steps - a green result for a run
   REM that never happened. Now a name that matches nothing is an error.
   java %DEVHIS_OPTS% -Ddevhis.outdir=%OUTDIR% -jar "%JAR%" --fail-if-no-tests -c com.kpj.tests.%~1
+  (if errorlevel 1 (echo 1) else if not errorlevel 0 (echo 1) else (echo 0)) >> "%OUTDIR%\.run-exit"
   REM BOTH tests are needed. "if errorlevel 1" only matches codes >= 1, and the launcher answers a bad
   REM selector with -1, which slipped straight through and let the run finish green on 0 steps.
   REM "if not errorlevel 0" is true only for NEGATIVE codes, so together they catch any non-zero exit.
@@ -161,5 +165,8 @@ if "%FAILEXIT%"=="0" (
   echo   RESULT           : SOME STEPS FAILED  ^(see FAILED_STEPS.html^)
 )
 echo ============================================================
+REM  Automatic post-run analysis of THIS run's fresh results (analysis + proposal only; never applies). Always returns; the exit
+REM  code below still comes from FAILEXIT. A full run is 12 JVMs but ONE marker, so it is analysed once. Switch off: set DEVHIS_POSTRUN=off.
+call "%~dp0postrun-hook.bat" "%OUTDIR%" "batch-run" "%JAR%"
 pause
 endlocal ^& exit /b %FAILEXIT%

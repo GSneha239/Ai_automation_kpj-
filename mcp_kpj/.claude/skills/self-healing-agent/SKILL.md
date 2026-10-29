@@ -5,6 +5,8 @@ description: Menu/router for two logically separate agents in this project - the
 
 # Self-Healing Agent (launcher)
 
+> **Automatic post-run analysis (additive).** Supported test runs now start ONE `PostRunCoordinator` analysis of their own fresh results when they finish (Failure Analysis -> eligibility -> `propose`, then STOP). It never applies anything, never replaces the explicit `@agent heal` flow below, and its LLM fallback is off unless `DEVHIS_POSTRUN_LLM=on`. Kill switch: `DEVHIS_POSTRUN=off` / `-Ddevhis.postrun=off`. A pending proposal it prints is approved exactly like one from `@agent heal` (the `apply-pending` step below, bound to the printed hash). Coverage and the unsupported entry points: `devhis-tests-share/POST-RUN-HEALING.txt`.
+
 This skill is the `@agent` entry point for THREE Java entry points in `com.kpj.heal`:
 
 1. **Failure Analysis Agent** (`FailureAnalysisAgent`) — detect → analyze → categorize into a business-facing category → recommend an owner → **generate a report**. Never touches a source file, never proposes an applied patch beyond read-only analysis, never asks for approval. This is the DEFAULT, safe action for a bare test name or "all".
@@ -87,10 +89,12 @@ This: runs the test fresh (the identical, unchanged Surefire invocation); detect
 
 If the test was **already run this session with fresh, representative data**, and the user has explicitly said re-running it would be redundant, add `--skip-run` to `-Dexec.args` (e.g. `"...ClassName --skip-run"`) to continue from the most recently recorded run instead. Only do this on an explicit request — the default is always a fresh run.
 
-**Parse the orchestrator's terminal output — it always ends in exactly one of these four markers:**
+**Parse the orchestrator's terminal output — it always ends in exactly one of these markers:**
 
 | Marker | Meaning | What you do |
 |---|---|---|
+| `WORKFLOW_COMPLETE: TEST_RUN_FAILED` | The fresh Maven run exited non-zero (or could not be launched): the build/run itself broke, so there is no result from this run | Report the Maven problem shown above the marker. Nothing was analyzed — never fall back to older results. Do **not** retry with `--skip-run` to get around it. |
+| `WORKFLOW_COMPLETE: NO_FRESH_RESULTS` | The run exited cleanly but wrote no new result under this command's output folder (the tests wrote elsewhere — `-Ddevhis.outdir` / `DEVHIS_OUTDIR` ≠ this output folder) | Tell the user the two output folders must be the same; nothing was analyzed. Do **not** analyze the older results in that folder. |
 | `WORKFLOW_COMPLETE: NO_FAILURES` | Test ran and passed — no FAILED step was recorded | Report that the test passed; the workflow stops here. Do **not** invoke Failure Analysis or Self-Healing yourself — there's nothing for either to analyze. |
 | `WORKFLOW_COMPLETE: FAILURE_ANALYSIS_ONLY` | Failure Analysis ran; no failed step is `Self-Healing Eligible: YES` | Report, for each failed step: the step name, category, recommended owner, eligibility (NO) + the one-line reason, any Dropdown/Locator diagnostic evidence in the report, and the report paths printed. State plainly why healing did not proceed. Do **not** invoke `SelfHealingAgent` yourself — the orchestrator already determined it isn't eligible. |
 | `PENDING_HEAL_FILE: <path>` | Eligible, and `SelfHealingAgent propose` produced a candidate that already passed every pre-approval safety gate | Relay the FULL proposal in chat using the response checklist below, then ask directly whether to apply it, and wait. |
@@ -100,13 +104,28 @@ If the test was **already run this session with fresh, representative data**, an
 
 **Step 3 — apply-pending (you run this yourself, only after a clear, unambiguous chat approval) — the existing, unchanged mechanism, and the ONLY apply path:**
 ```
-mvn -q compile exec:java -Dexec.mainClass=com.kpj.heal.SelfHealingAgent -Dexec.args="apply-pending <the PENDING_HEAL_FILE path> approved"
+mvn -q compile exec:java -Dexec.mainClass=com.kpj.heal.SelfHealingAgent -Dexec.args="apply-pending <the PENDING_HEAL_FILE path> approved <the PROPOSAL_HASH printed by propose>"
 ```
-or, if the user declined:
+**The approval is bound to the proposal's hash.** `propose` prints `PROPOSAL_HASH: <64 hex>` (a SHA-256 over every field of the proposal plus the exact source file and failure evidence it was made from). Show the human the first 12 characters with the proposal, and pass the FULL hash of THAT proposal (copied from THAT proposal's own `propose` output, never from an earlier one) as the word after `approved`. `apply-pending` refuses — writing nothing, taking no backup — if the hash is missing or belongs to a different proposal, if the pending file was edited, if the target source file or the failure evidence has changed since the proposal, or if the protected-resource policy, quality guard, semantic validation, loop protection or attempt budget no longer permit it. A refusal is NOT a failure to retry around: report the printed reason, and if the proposal is stale, re-run the test and request a new proposal. Never fabricate or reuse a hash.
+or, if the user declined (no hash needed):
 ```
 mvn -q compile exec:java -Dexec.mainClass=com.kpj.heal.SelfHealingAgent -Dexec.args="apply-pending <the PENDING_HEAL_FILE path> declined"
 ```
 `approved` runs the exact same backup → apply → compile → re-run → verify → keep-or-revert pipeline the old interactive prompt used, then regenerates that test's individual/healing/summary/index reports and prints their paths. `declined` writes nothing at all — the pending file is consumed either way (deleted after resolution) so it can never be re-applied later by accident. Do not implement or invoke any other apply mechanism.
+
+**Reading the `apply-pending approved` outcome.** It ends with `SelfHealingAgent (apply-pending): final result = <status>`. Report exactly that status; never describe an outcome the output did not print:
+
+| Final result | Meaning | What you do |
+|---|---|---|
+| `KEPT` | The patched test was re-run and a fresh PASS was recorded for the target step, with no new downstream failure. The change stays. | Report KEPT, the file changed, and the report paths printed. |
+| `REVERTED` | Compile failed, the re-run still failed, a new failure appeared, or there was no positive PASS evidence — and the original file was restored AND verified byte-for-byte. | Report the printed reason, that the original file was restored, and that manual investigation is needed. Do not propose the same fix again. |
+| `RESTORE_FAILED` | The rollback could NOT be verified: the source file **may still contain the patch**. | Say so plainly, as the first line. Relay the printed `RESTORE_FAILED` line and the backup path from it. Do not edit the file yourself and do not start another heal for it. Tell the user to restore it from that backup, then run `SelfHealingAgent verify-restore <sourceFile> [outDir]` (read-only; it prints `RESTORE_STATUS: RECOVERED`, `UNRESOLVED` or `NO_RECORD`) and relay its result. Healing for that file may continue only after `RECOVERED`. |
+| `NOT_APPLIED` | Nothing was written: the human declined, or the apply-time checks refused it (the output then also prints `REFUSED - <reason>` and "nothing was changed and no backup was taken"). | Report the printed reason; the source file is untouched. For a refusal the step is not exhausted, so a fresh proposal can be requested once the cause (changed file, stale evidence) is dealt with. |
+| `REJECTED_VERIFICATION_FAILED` | Only after `apply-pending ... rejected [reason]`: the human said this exact candidate must never be offered again. Nothing was written. | Report that it was recorded as rejected and will not be re-offered; a genuinely new candidate may still be proposed later. |
+
+A `REFUSED` message can also appear on its own, before any final result, when the hash is missing or wrong or the pending file or source changed since `propose`; treat that exactly as a refusal (nothing changed), never as a failure to retry around.
+
+After any of these, the individual / healing / summary / index reports are regenerated, and a **unified report** for the test is written to `<outDir>/unified-report/` (the output prints `Unified report: <path>`; it only reads existing artifacts and never overwrites an earlier report). Always give the user both the Failure Analysis report paths and the unified report path.
 
 **If the test has more failing steps**, repeat from Step 1 for that same test (using `--skip-run` since it was just run and nothing about it has changed) — the attempt budget and loop-protection persist across these calls (in a small per-test session file under `test-output/self-healing/session/`), so they still can't be bypassed by asking again.
 
@@ -173,6 +192,9 @@ Never let a Java stack trace or raw Maven failure reach the user as the whole an
 | **Category: Missing Test Data / Test Data Issue / Application Bug** | Explain the recommended owner (Manual Tester/QA or Developer) and that `Self-Healing Eligible` is NO by design — no automation code change should be attempted. |
 | **No healing candidate found (during a real `heal` run)** | Neither the deterministic rules nor (if enabled) the LLM fallback found a confident fix — needs human triage. |
 | **Patch rejected / regression detected / patch reverted** | State the reason and that the backup was restored; nothing was left half-applied. |
+| **`RESTORE_FAILED` after a rollback** | The file may still contain the patch — see "Reading the `apply-pending approved` outcome" above. Give the backup path and `verify-restore`; never edit the file or heal it again until `RESTORE_STATUS: RECOVERED`. |
+| **A test run was killed / interrupted** | There is no final PASS/FAIL result and nothing may be analysed or healed from it. Inspect the folder read-only with `mvn -q compile exec:java -Dexec.mainClass=com.kpj.heal.PostRunCoordinator -Dexec.args="--recover <outDir>"` and report its `RECOVER_COMPLETE:` status (`INTERRUPTED_NO_RESULTS`, `INTERRUPTED_PARTIAL_RESULTS`, `UNANALYSED_COMPLETED_RUN`, `ALREADY_ANALYSED`, `NO_RUN_RECORD`). Never present in-flight failure files as a test result. |
+| **A `VERDICT:` line appears under a failed step** | Failure Analysis cross-checked what the script looks for against what the live page showed. Relay the verdict exactly and keep its wording ("likely", never certain): `SCRIPT LIKELY OUT OF DATE` (a similar control exists under a new label — the script needs a person-confirmed update), `APPLICATION OR STATE LIKELY` (the control is not on the page at all — route to development / check the account or record state, a script edit will not help), or `SCRIPT LOCATOR OK` (the script found its target; look at what happened after). None of these is Self-Healing Eligible; never propose or apply a change from a verdict alone. |
 | **Attempt budget exhausted** | State the configured `maxAttempts`, shared across the whole run. |
 
 ## Safety (unchanged from the core agent — never override these)

@@ -125,10 +125,13 @@ echo [1/3] Ensuring Playwright Chromium is installed (first run downloads it) ..
 java -cp "%JAR%" com.microsoft.playwright.CLI install chromium
 
 type nul > "%OUTDIR%\.runmarker"
+REM  Post-run analysis bookkeeping: one 0/1 line per test JVM is appended to .run-exit right after it launches (see below).
+if exist "%OUTDIR%\.run-exit" del /q "%OUTDIR%\.run-exit" >nul 2>nul
 
 echo.
 echo [2/3] Running %MODULE% flows on %ENVKEY% ...
 java %DEVHIS_OPTS% -Ddevhis.outdir=%OUTDIR% -jar "%JAR%" -p %PKG% -n ".*"
+(if errorlevel 1 (echo 1) else if not errorlevel 0 (echo 1) else (echo 0)) >> "%OUTDIR%\.run-exit"
 
 echo.
 echo [3/3] Building the failed-steps report ...
@@ -149,5 +152,8 @@ if "%FAILEXIT%"=="0" (
   echo   RESULT           : SOME STEPS FAILED  ^(see FAILED_STEPS.html^)
 )
 echo ============================================================
+REM  Automatic post-run analysis of THIS run's fresh results (analysis + proposal only; never applies). Always returns; the exit
+REM  code below still comes from FAILEXIT. Switch off: set DEVHIS_POSTRUN=off.  See POST-RUN-HEALING.txt.
+call "%~dp0postrun-hook.bat" "%OUTDIR%" "batch-module-%MODKEY%-%ENVKEY%" "%JAR%"
 pause
 endlocal ^& exit /b %FAILEXIT%

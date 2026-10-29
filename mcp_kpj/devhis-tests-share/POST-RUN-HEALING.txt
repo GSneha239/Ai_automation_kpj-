@@ -1,0 +1,135 @@
+========================================================================
+ AUTOMATIC POST-RUN FAILURE ANALYSIS  (and Self-Healing PROPOSALS)
+========================================================================
+
+WHAT IT DOES
+  After a supported test run finishes, ONE analysis is started automatically for THAT run's fresh results:
+
+      test run  ->  reports built  ->  post-run hook
+                ->  checks: exit status, fresh result files, run scope
+                ->  Failure Analysis  ->  per-failure eligibility check
+                ->  Self-Healing PROPOSAL for eligible failures only
+                ->  STOP, waiting for a human
+
+  It prints the proposal file path and the full 64-character approval hash, and then stops.
+
+WHAT IT NEVER DOES
+  - It never runs a test, opens a browser or connects to any environment (DevHIS, KLG, DSH, KS, NHIS Test).
+  - It never applies a patch, takes a backup, approves anything, or changes a source file.
+    Applying a proposal is a separate, explicit step that only a human starts (apply-pending <file> approved <full hash>);
+    that step keeps all its existing safeguards (backup, compile, re-test, KEEP or verified ROLLBACK).
+  - It never changes the test run's own results or exit code. If it cannot run, it says why and returns.
+  - It never prints, stores or passes on credentials (DEVHIS_OPTS values are not read by the batch hook).
+
+SWITCHES
+  Kill switch (any one of these):
+      set DEVHIS_POSTRUN=off                  (Command Prompt, before running a .bat)
+      -Ddevhis.postrun=off                    (Maven / RunAll / any JVM)
+      -Ddevhis.postrun=off inside DEVHIS_OPTS (the batch runners' JVM options - the analysis process reads only that exact token)
+  LLM fallback:   OFF in the automatic path, even if LLM_ENABLED / LLM_ENDPOINT / LLM_API_KEY are set, so failure details are never
+                  sent to an external provider just because a test run finished.
+                  To allow it deliberately:  set DEVHIS_POSTRUN_LLM=on  (or -Ddevhis.postrun.llm=on)  AND configure LLM_* as usual.
+                  The manual @agent commands are unaffected by this setting.
+
+FRESHNESS RULES (why stale or foreign results are never analysed)
+  - Only result files written DURING the run count (from the run marker's timestamp to the end of the run).
+  - Result files older than the run are ignored; files written AFTER the run ended mean another run is writing to the same folder:
+    MISMATCHED_OUTPUT.  Results for tests outside the run's scope: MISMATCHED_OUTPUT.
+  - A test whose rows also sit in an older result file is rejected rather than mixed.
+  - A missing, empty or old result is NEVER treated as a pass.  A non-zero test-JVM exit with no fresh result: TEST_RUN_FAILED.
+  - Failure-detail files (failures\*.txt) older than the run are not attached to this run's failures.
+  - Test classes are resolved by fully qualified class name from the unique test id - never by an ambiguous simple name.
+
+FAILURE EVIDENCE - WHAT IS AND IS NOT AVAILABLE
+  The analysis reports, per test, how many failed steps have captured page-state evidence (failures\<testId>_N.txt written during
+  this run).  The shaded jar built before the failure-capture code was added writes none: for such runs the output states
+  "NOT captured by the run that produced these results" and the classification rests on the recorded step text only.  It never
+  implies evidence was captured when it was not.  (This work did not rebuild or replace the shaded jar.)
+
+OUTCOMES (printed as POSTRUN_COMPLETE: <outcome>)
+  PENDING_PROPOSAL      an eligible failure produced a proposal; path + hash printed; waiting for approval
+  NO_PENDING_PROPOSAL   eligible, but no sufficiently supported candidate: manual investigation
+  FAILURE_ANALYSIS_ONLY failures exist but none is eligible (environment, authentication, data, business rule, ...)
+  NO_FAILURES           fresh results record no failed step
+  TEST_RUN_FAILED       a test JVM exited non-zero and wrote no fresh result
+  NO_FRESH_RESULTS      nothing was written during this run (or freshness cannot be proven)
+  MISMATCHED_OUTPUT     results belong to another run / outside the scope
+  POSTRUN_SKIPPED: DISABLED | NO_SOURCE_TREE | NO_MAVEN | NESTED | INVALID_CONTEXT
+  POSTRUN_ALREADY_DONE  this run was already analysed by another trigger (never analysed twice)
+  INTERNAL_ERROR        the analysis itself failed; the test results and exit code are unaffected
+
+REQUIREMENTS
+  The project source tree next to this folder (pom.xml and src\test\java) and Maven (mvn) on PATH.  Someone who only has the jar
+  and the scripts gets "POSTRUN_SKIPPED: NO_SOURCE_TREE" - the tests run exactly as before.
+
+OUTPUT LOCATIONS (inside the run's own output folder; nothing is added anywhere else)
+  <OUTDIR>\.run-exit                              exit code (0/1) of each test JVM, written by the runner
+  <OUTDIR>\self-healing\post-run\<run>.lock        the one-analysis-per-run lock
+  <OUTDIR>\self-healing\post-run\<run>.result.txt  what the analysis concluded
+  <OUTDIR>\failure-analysis\...                    the Failure Analysis reports (as with @agent report)
+  <OUTDIR>\self-healing\pending\...                proposals awaiting a human decision
+
+========================================================================
+ COVERAGE - SUPPORTED AND NOT SUPPORTED  (this is NOT universal coverage)
+========================================================================
+
+SUPPORTED (automatic, on by default)
+  1. Every script that goes through  devhis-tests-share\module-runner.bat   (53 wrappers):
+       run-<module>-<env>.bat for modules ancillary, appconfig, appointment, billing, emergency, inventory, investigation, ip,
+       nursing, op, ot, sysconfig, telemedicine  x  environments devhis, dsh, klg, nhistest;  and run-flow-nhistest.bat.
+       (This includes run-ip-devhis.bat, run-ip-dsh.bat, run-ip-klg.bat, run-ip-nhistest.bat.)
+  2. Every script that goes through  devhis-tests-share\core-flows-runner.bat   (5 wrappers: run-core-flows-<env>.bat).
+       Each of its two passes (Malaysian, foreign) has its own output folder and is analysed once, separately.
+  3. Every script that goes through  devhis-tests-share\run.bat   (run.bat itself, run-klg.bat, run-dsh.bat, run-nhistest.bat).
+       A full run is 12 JVMs but ONE run marker: it is analysed once.
+  4. Direct Maven/Surefire:   mvn test [-Dtest=...]   - a JUnit listener (PostRunListener) starts one analysis after the plan
+       finishes, scoped to the exact flow classes that ran.  Synthetic suites (mvn -Pheal-synthetic test) never trigger it.
+       (Output folder: -Ddevhis.outdir, else DEVHIS_OUTDIR, else test-output.  A folder set only in config.properties is not seen;
+        the freshness check then finds nothing new and says so instead of analysing the wrong folder.)
+  5. mvn exec:java -Dexec.mainClass=com.kpj.RunAll   (once, at the end of RunAll).
+  6. The existing manual commands:  @agent heal <Test> / @agent heal all  (HealingWorkflowOrchestrator) - unchanged.  The agents'
+       own Maven runs carry DEVHIS_POSTRUN=off so they never start a second automatic analysis.
+
+NOT SUPPORTED YET (no automatic analysis; the tests still run exactly as before)
+  - The five legacy standalone runners, left unchanged on purpose for this phase:
+        run-ip.bat   run-op.bat   run-appconfig.bat   run-emergency.bat   run-op-ip-emergency.bat   (and run-op-ip-emergency-dsh.bat)
+  - The Executables\ folder: a drifted copy of these scripts (its module-runner.bat and run.bat differ, and run-flow-nhistest.bat
+    is missing).  It is not changed and not integrated.
+  - Direct   java -jar mcp-kpj-1.0.0-shaded.jar ...   (and any command that calls the jar or ConsoleLauncher without a runner).
+  - Per-class  main()  runs  (mvn exec:java -Dexec.mainClass=com.kpj.tests.<...>, about 378 classes) and the IDE run button.
+  - playwright-ts\  (the separate TypeScript Playwright suite).
+  - A run that is killed or interrupted (Ctrl-C, closed window): the post-run step is never reached, so NO automatic analysis happens.
+    It is no longer silent, though: inspect the output folder (READ-ONLY, writes and analyses nothing) with
+        mvn -q compile exec:java -Dexec.mainClass=com.kpj.heal.PostRunCoordinator -Dexec.args="--recover <output folder>"
+    which names it as NO_RUN_RECORD, INTERRUPTED_NO_RESULTS, INTERRUPTED_PARTIAL_RESULTS (incomplete: never analysed),
+    UNANALYSED_COMPLETED_RUN (finished but never analysed; prints the exact command to analyse it) or ALREADY_ANALYSED.
+  - Machines that only have the jar and scripts (no source tree / no Maven): the hook prints POSTRUN_SKIPPED and does nothing.
+  - The shaded jar was NOT rebuilt.  Runs made with the current jar work, but it does not capture detailed failure evidence
+    (see above).  Rebuilding is a separate, explicit step (mvn -Pshaded -DskipTests package) that should first back up the old jar.
+
+TEST SELECTION BY FULLY QUALIFIED CLASS NAME (changed)
+  Every test the agents launch - the orchestrator's test run, the apply-pending re-run and the impacted read-only regression runs -
+  is now selected with  -Dtest=<fully qualified class name>  (for example -Dtest=com.kpj.tests.Ip.InPatients.OccupancyList), never a
+  simple name.  Three simple names occur twice in the test tree (ItemFactorizationTemplate, Payor, Transfer) and every test class
+  shares its simple name with a page class, so a simple name could re-run the wrong class; a real-Maven synthetic test proves the
+  qualified name selects exactly one of two same-named classes.  The automatic post-run path itself runs no Maven and also resolves
+  classes by fully qualified name.
+
+SCRIPT OR APPLICATION? THE FULL CROSS-CHECK (new)
+  For a failed step that no more specific rule explains, Failure Analysis now compares three things instead of looking at only one:
+    1. what the failing Page Object method LOOKS FOR (button / link labels, ng-click handlers read from its source),
+    2. what the live page ACTUALLY SHOWED when the step failed (the buttons and click handlers captured at failure time and again a few
+       seconds later),
+    3. what the step reported.
+  and prints an explicit verdict on the console and in the report (a line starting "VERDICT:"):
+    SCRIPT LIKELY OUT OF DATE       the page has none of the labels the script wants, but a similarly named control (for example "Print" for
+                                    "Print Barcode"): the feature probably still exists under a new label.  Category: Automation Script Issue.
+    APPLICATION OR STATE LIKELY     nothing the script wants, and nothing like it, is on a page that did render: the control was removed by the
+                                    application or is hidden by permission / record state.  Category: Application Bug (confirm with a person).
+    SCRIPT LOCATOR OK               the control the script looks for IS on the page, so the locator is not the problem; the failure came after
+                                    (the application's response, the data, or timing).  Category: Button/UI Failure.
+  It only ever runs AFTER every more specific rule (missing data, data mismatch, dropdown, application error, ...) has had its say, so no
+  existing classification changes.  It is analysis only: it never produces a patch, every verdict is worded "likely", and none of them makes
+  a step Self-Healing Eligible - a similar label is evidence of a rename, not proof of the same function, so a person must confirm.
+  Known limit: the failure capture keeps at most 60 click handlers per page, so "handler not seen" is only reported as evidence, and it
+  says so when the capture is full.  It also assumes the captured page is the page the script searched.

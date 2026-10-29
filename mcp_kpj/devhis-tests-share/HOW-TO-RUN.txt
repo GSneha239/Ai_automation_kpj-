@@ -2,6 +2,11 @@
  DevHIS Playwright Test Runner - How to run (for a teammate)
 ========================================================================
 
+ NEW - automatic post-run analysis: after a run through module-runner.bat / core-flows-runner.bat / run.bat (and every run-*.bat that
+ uses them) an analysis of THAT run's fresh results starts by itself and stops at a proposal for a human. It needs the project source
+ tree and Maven; without them it just says so. Switch off:  set DEVHIS_POSTRUN=off
+ Which scripts are and are NOT covered: see POST-RUN-HEALING.txt.
+
 You received these files (keep them together in ONE folder, e.g. C:\devhis-tests\):
    - mcp-kpj-1.0.0-shaded.jar    (the whole test suite in one file)
    - run.bat                     (a helper script)
