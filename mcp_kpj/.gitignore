@@ -29,3 +29,7 @@ logs/
 
 # Generated Maven file
 dependency-reduced-pom.xml
+# Local safety backups and generated Playwright (TypeScript) run output
+.backups/
+playwright-ts/playwright-report/
+playwright-ts/test-results/

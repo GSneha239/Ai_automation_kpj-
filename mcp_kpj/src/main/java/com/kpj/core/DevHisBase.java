@@ -531,6 +531,8 @@ public abstract class DevHisBase {
         }
         steps.add(new String[]{String.valueOf(shotCount), name, desc, expected, Reasons.appendTo(actual), status, b64});
         System.out.printf("  %2d [%-6s] %s%n", shotCount, status, name);
+        if ("FAIL".equalsIgnoreCase(status)) writeFailureDetail(p, shotCount, name, desc, expected, actual);
+        appendHistory(status, name);
     }
     /** Convenience: step on the primary page. */
     public void step(String name, String desc, String expected, String actual, String status) {
@@ -651,6 +653,129 @@ public abstract class DevHisBase {
         } catch (Exception ignore) {}
         steps.add(new String[]{String.valueOf(shotCount), "ERROR", "Unexpected error during the test",
                 "Test completes", Reasons.appendTo("FAILED: " + e.getMessage()), "FAIL", b64});
+        writeFailureDetail(page, shotCount, "ERROR", "Unexpected error during the test", "Test completes", "FAILED: " + e.getMessage());
+        appendHistory("FAIL", "ERROR");
+    }
+
+    // ---- self-healing agent support ---------------------------------------
+    // Best-effort capture, FAIL steps only: URL + a small live-DOM summary, written as a sidecar file so
+    // com.kpj.heal.SelfHealingAgent can diagnose a failure without needing the (already-closed) browser.
+    // Wrapped so it can NEVER affect this test's own pass/fail outcome or timing.
+
+    /** How long to wait, on a FAIL step only, before taking the SECOND ("settled") DOM capture — long enough
+     *  for a slow Angular digest/cascade to finish, short enough not to meaningfully lengthen a failing run. */
+    private static final int FAILURE_SETTLE_DELAY_MS = 3000;
+
+    /** Visible button texts, select ng-model -> currently selected option text, section/panel headings,
+     *  visible elements' ng-click handlers (V2), and each select's FULL live option-text list (V2).
+     *
+     *  <p>The heading selector includes {@code a}: several of this codebase's anchored panel/section-title
+     *  regexes ({@code PatchProposer.RAW_PANEL_TITLE_REGEX}'s target shape, e.g. {@code
+     *  HospitalLocation.navigateViaMenu()}'s {@code /^\s*location\s*$/i}) are applied to menu-LINK elements,
+     *  not just {@code .panel-title}/{@code h3-h5}/{@code legend} — without {@code a} here, that rule would
+     *  never see live evidence for those cases at all and could never propose a fix for them.</p> */
+    private static String captureDomSummary(Page p) {
+        try {
+            Object r = p.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                    + " const buttons=[...document.querySelectorAll('button')].filter(b=>b.offsetParent!==null)"
+                    + "   .map(b=>norm(b.innerText)).filter(t=>t).slice(0,60);"
+                    + " const selects=[...document.querySelectorAll('select[ng-model]')].slice(0,40).map(s=>{"
+                    + "   const o=s.options[s.selectedIndex]; return (s.getAttribute('ng-model')||'')+':'+norm(o?o.text:''); });"
+                    + " const heads=[...document.querySelectorAll('.panel-title,.panel-heading,.box-title,h3,h4,h5,legend,a')]"
+                    + "   .filter(e=>e.offsetParent!==null).map(e=>norm(e.textContent)).filter(t=>t&&t.length<60).slice(0,40);"
+                    + " const clicks=[...document.querySelectorAll('button,a,[ng-click]')].filter(e=>e.offsetParent!==null)"
+                    + "   .map(e=>e.getAttribute('ng-click')||'').filter(t=>t).slice(0,60);"
+                    + " const selectOpts=[...document.querySelectorAll('select[ng-model]')].slice(0,40).map(s=>{"
+                    + "   const opts=[...s.options].map(o=>norm(o.text)).filter(t=>t).slice(0,60).join('~');"
+                    + "   return (s.getAttribute('ng-model')||'')+':'+opts; });"
+                    + " return {buttons, selects, heads, clicks, selectOpts}; }");
+            if (!(r instanceof Map)) return "";
+            @SuppressWarnings("unchecked") Map<String, Object> m = (Map<String, Object>) r;
+            return "buttons=" + joinList(m.get("buttons"), "|") + "\n"
+                 + "selects=" + joinList(m.get("selects"), ";") + "\n"
+                 + "headings=" + joinList(m.get("heads"), "|") + "\n"
+                 + "ngclicks=" + joinList(m.get("clicks"), "|") + "\n"
+                 + "selectopts=" + joinList(m.get("selectOpts"), ";");
+        } catch (Exception e) {
+            return ""; // best-effort only — never let DOM capture break the test
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static String joinList(Object listObj, String sep) {
+        if (!(listObj instanceof List)) return "";
+        StringBuilder sb = new StringBuilder();
+        for (Object o : (List<Object>) listObj) {
+            String s = String.valueOf(o).replace("\n", " ").replace("\r", " ").replace(sep, " ").trim();
+            if (s.isEmpty()) continue;
+            if (sb.length() > 0) sb.append(sep);
+            sb.append(s);
+        }
+        return sb.toString();
+    }
+
+    /** Re-keys a captureDomSummary() block ("buttons=..\nselects=..\nheadings=..") with the given prefix. */
+    private static String prefixDomKeys(String domBlock, String prefix) {
+        if (domBlock == null || domBlock.isEmpty()) return "";
+        StringBuilder sb = new StringBuilder();
+        for (String line : domBlock.split("\n", -1)) {
+            if (line.isEmpty()) continue;
+            sb.append(prefix).append(line).append('\n');
+        }
+        return sb.toString();
+    }
+
+    /**
+     * V2 capability 4 — appends ONE line ("status\tstepName") to test-output/failures/history-&lt;testId&gt;.tsv
+     * for every step (PASS/FAIL/MANUAL alike), across however many runs this test has had. Unlike the
+     * per-run HTML/TSV report (which is overwritten each run), this file accumulates, so
+     * {@code com.kpj.heal.FailureHistory} can tell a step that ALWAYS fails apart from one that sometimes
+     * passes and sometimes fails — the signature of an intermittent/timing flake rather than a permanent
+     * break. Append-only, best-effort, and — like the FAIL-only capture above — must never affect this
+     * test's own pass/fail outcome.
+     */
+    private void appendHistory(String status, String name) {
+        try {
+            Path failuresDir = reportDir.getParent() != null ? reportDir.getParent().resolve("failures") : Paths.get("failures");
+            Files.createDirectories(failuresDir);
+            String safeTestId = testId.replaceAll("[^A-Za-z0-9._-]", "_");
+            Files.writeString(failuresDir.resolve("history-" + safeTestId + ".tsv"),
+                    clean(status) + "\t" + clean(name) + "\n",
+                    StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+        } catch (Exception ignore) { /* history is best-effort; must never break the test */ }
+    }
+
+    /**
+     * Writes test-output/failures/&lt;testId&gt;_&lt;stepNum&gt;.txt (key=value lines) for a FAIL step:
+     * URL, an immediate ("T0") DOM summary, and — after {@link #FAILURE_SETTLE_DELAY_MS} — a second,
+     * "settled" DOM summary (settled_buttons / settled_selects / settled_headings). The settled capture is
+     * what lets the self-healing agent tell a timing race (field empty at T0, populated moments later)
+     * apart from a genuine locator/workflow change (still absent/empty at both captures).
+     */
+    private void writeFailureDetail(Page p, int stepNum, String name, String desc, String expected, String actual) {
+        try {
+            Path failuresDir = reportDir.getParent() != null ? reportDir.getParent().resolve("failures") : Paths.get("failures");
+            Files.createDirectories(failuresDir);
+            String url = "";
+            try { if (p != null) url = p.url(); } catch (Exception ignore) { }
+            String dom = p != null ? captureDomSummary(p) : "";
+            String settledDom = "";
+            try {
+                if (p != null) { p.waitForTimeout(FAILURE_SETTLE_DELAY_MS); settledDom = captureDomSummary(p); }
+            } catch (Exception ignore) { /* settled capture is best-effort on top of best-effort */ }
+            String safeTestId = testId.replaceAll("[^A-Za-z0-9._-]", "_");
+            StringBuilder sb = new StringBuilder();
+            sb.append("testId=").append(clean(testId)).append('\n');
+            sb.append("page=").append(clean(rTitle.isBlank() ? testId : rTitle)).append('\n');
+            sb.append("step=").append(clean(name)).append('\n');
+            sb.append("desc=").append(clean(desc)).append('\n');
+            sb.append("expected=").append(clean(expected)).append('\n');
+            sb.append("actual=").append(clean(actual)).append('\n');
+            sb.append("url=").append(clean(url)).append('\n');
+            sb.append(dom).append('\n');
+            sb.append(prefixDomKeys(settledDom, "settled_"));
+            Files.writeString(failuresDir.resolve(safeTestId + "_" + stepNum + ".txt"), sb.toString());
+        } catch (Exception ignore) { /* capture is best-effort; must never break the test */ }
     }
 
     /**
