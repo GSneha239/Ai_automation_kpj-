@@ -34,6 +34,7 @@ import com.microsoft.playwright.Playwright;
 public class RunAll {
     public static void main(String[] args) {
         System.setProperty("login", "auto"); // never block on manual login in a batch run
+        long postRunStart = System.currentTimeMillis(); // for the post-run analysis: only results written after this are this run's
         boolean shared = !"isolated".equalsIgnoreCase(System.getProperty("browser", "shared"));
 
         List<DevHisBase> tests = List.of(
@@ -45,6 +46,11 @@ public class RunAll {
         int passed = shared ? runShared(tests) : runIsolated(tests);
         // Each test writes its own timestamped report under test-output/reports/ (no consolidated report).
         System.out.println("\n==== RunAll complete: " + passed + "/" + tests.size() + " completed ====");
+        // Automatic post-run Failure Analysis for this run only (analysis + propose; never applies anything). RunAll runs the flows
+        // directly rather than through JUnit, so the Maven listener cannot also fire; the coordinator's run lock guards it regardless.
+        // Switch off with -Ddevhis.postrun=off or DEVHIS_POSTRUN=off.
+        com.kpj.heal.PostRunCoordinator.triggerFor("runall", postRunStart, List.of(passed == tests.size() ? 0 : 1),
+                tests.stream().map(t -> t.getClass().getName()).toList());
     }
 
     /** One browser window for all tests; login persists; popup tabs tidied between tests. */

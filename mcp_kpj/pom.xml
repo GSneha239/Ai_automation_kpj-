@@ -32,6 +32,14 @@
             <version>5.10.2</version>
             <scope>test</scope>
         </dependency>
+        <!-- JUnit Platform launcher API: compile-time only, for PostRunListener (the post-run trigger for direct `mvn test`). Surefire
+             supplies the same artifact at run time. Version matches the junit-jupiter 5.10.2 platform. -->
+        <dependency>
+            <groupId>org.junit.platform</groupId>
+            <artifactId>junit-platform-launcher</artifactId>
+            <version>1.10.2</version>
+            <scope>test</scope>
+        </dependency>
         <!-- Apache PDFBox: rasterize server-generated PDF reports (e.g. the MRD file label) to PNG.
              Chromium's native PDF viewer screenshots as a blank gray page, so we render the PDF's first
              page ourselves and embed that image in the HTML report. -->
@@ -64,6 +72,12 @@
                     <testFailureIgnore>true</testFailureIgnore>
                     <forkCount>1</forkCount>
                     <reuseForks>true</reuseForks>
+                    <!-- Arms com.kpj.heal.PostRunListener for a direct `mvn test`: after the plan finishes it starts ONE post-run
+                         Failure Analysis (analysis + propose only; never applies). Switch off with -Ddevhis.postrun=off or
+                         DEVHIS_POSTRUN=off. See devhis-tests-share/POST-RUN-HEALING.txt. -->
+                    <systemPropertyVariables>
+                        <devhis.postrun.trigger>maven</devhis.postrun.trigger>
+                    </systemPropertyVariables>
                 </configuration>
             </plugin>
             <!-- One-time Playwright browser install:  mvn compile exec:java -Dexec.mainClass=com.microsoft.playwright.CLI -Dexec.args="install chromium" -->
@@ -83,6 +97,28 @@
            Run:    java -jar target/mcp-kpj-1.0.0-shaded.jar -c com.kpj.tests.Emergency_page.EmergencyListView
          ======================================================================================== -->
     <profiles>
+        <!-- SAFE synthetic run of the Self-Healing agent's own tests (src/test/java/com/kpj/heal) and NOTHING else.
+             A bare `mvn test` matches every *Test class, including the real browser tests under com/kpj/tests
+             (AppointmentListTest, BookAppointmentTest, RegistrationTest, ...), which log in to DevHIS and create or
+             cancel data. This profile limits Surefire to the synthetic classes. It is opt-in and changes nothing
+             when it is not activated:   mvn -Pheal-synthetic test
+             (An explicit -Dtest=... still overrides the includes, as it always does.) -->
+        <profile>
+            <id>heal-synthetic</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <configuration>
+                            <includes>
+                                <include>com/kpj/heal/*Test.java</include>
+                            </includes>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
         <profile>
             <id>shaded</id>
             <dependencies>
