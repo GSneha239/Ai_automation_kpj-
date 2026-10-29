@@ -189,7 +189,8 @@ public class PatientFeedback extends DevHisBase {
                   + String.join("; ", errored) + " — an app defect with those templates, not a test problem) "
                 : "";
         String actual = retryNote + (toast == null || toast.isEmpty() ? "No toast appeared"
-                : (ok ? toast : "Save not confirmed — server returned: \"" + toast + "\""));
+                : (ok ? toast : "Save not confirmed — server returned: \"" + toast + "\""))
+                + "  [answers: " + fb.lastAnswer + "]  [the server's answer to the last Save: " + fb.lastSaveHttp + "]";
         step(page, "Click Save & success toast", "Click Save (IUDPatientFeedbackDetail); wait for the success toast",
                 "'... saved successfully' toast",
                 (ok ? "PASSES because the screen answered with a success message: "

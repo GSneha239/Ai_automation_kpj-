@@ -573,6 +573,30 @@ public class Admission extends BasePage {
      * @return the fields it had to fix ("" when everything was already bound)
      */
     public String bindEmptyMandatorySelects() {
+        // A dependent list (Ref Entity Name, after Ref Entity Type is chosen) is filled by a server call a moment AFTER its parent
+        // changes. A single pass judged it "(no options)" at once and never looked again, so Save then refused the empty mandatory box
+        // ("Please fill in all the mandatory fields!" / "Please Select Ref Entity !" — seen in two IP Admission / Preadmission runs on
+        // 2026-10-29 while a third had the list in time). So an empty list is given up to three more passes, ~2 s apart.
+        StringBuilder all = new StringBuilder();
+        String s = "";
+        for (int pass = 0; pass < 4; pass++) {
+            s = bindOnce();
+            if (!s.isEmpty()) { if (all.length() > 0) all.append(" ; "); all.append(s); }
+            if (!s.contains("(no options)")) break;
+            waitForAngular(2000);
+        }
+        String result = all.toString();
+        if (!result.isEmpty()) {
+            System.out.println("bindEmptyMandatorySelects: " + result);
+            com.kpj.core.Reasons.add("mandatory dropdown(s) had no value after the fill - " + result
+                    + (s.contains("(no options)") ? " ['(no options)' = that list is EMPTY on this environment]" : " [bound to the first option]"));
+            waitForAngular(900);
+        }
+        return result;
+    }
+
+    /** One pass over the visible mandatory dropdowns that hold no value: bind each to its first real option (Encounter Type: the inpatient one). */
+    private String bindOnce() {
         Object r = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
                 + " const A=window.angular; const $=window.jQuery;"
                 + " const labelOf=e=>{ let n=e.closest('.form-group,.form-line,.row,.col-sm-2,.col-sm-3,.col-sm-4,.col-sm-6,.col-md-2,.col-md-3,.col-md-4,.col-md-6,td,div');"
@@ -602,9 +626,7 @@ public class Admission extends BasePage {
                 + "    try{A.element(e).triggerHandler('change');}catch(x){} if($){try{$(e).trigger('change');}catch(x){}}"
                 + "    out.push(lab.replace(/\\*/g,'').trim()+'='+(chosen(e)||'(did not bind)')); });"
                 + " return out.join(', '); }");
-        String s = r == null ? "" : r.toString();
-        if (!s.isEmpty()) { System.out.println("bindEmptyMandatorySelects: " + s); com.kpj.core.Reasons.add("mandatory dropdown(s) had no value after the fill - " + s + (s.contains("(no options)") ? " ['(no options)' = that list is EMPTY on this environment]" : " [bound to the first option]")); waitForAngular(900); }
-        return s;
+        return r == null ? "" : r.toString();
     }
 
     /**
@@ -1235,21 +1257,38 @@ public class Admission extends BasePage {
      * v2026.10.27.307 ("Please Enter Reason of Admission Payment Type/ Financial Class!"). Whether it is a dropdown or a text box, it is
      * filled only when empty: a dropdown takes its first real option (through its own change handling), a text box a short reason.
      * Returns what was done, or "" when the box is absent or already holds a value.
+     *
+     * <p>Public because the Preadmission flow reaches this same form through "Admission" and never called it: every patient there was
+     * refused with "Please Enter Reason of Admission Payment Type/ Financial Class!" (build v2026.10.29.342). The box is found by its
+     * model {@code Admission.ReasonOfAdmission}; if the model name has changed it is found by its LABEL — the first visible box that
+     * follows the "Reason of Admission" label — and the model it turned out to carry is named in the result, so the report shows it.</p>
      */
-    private String fillReasonOfAdmissionIfEmpty() {
+    public String fillReasonOfAdmissionIfEmpty() {
         Object r = page.evaluate("() => { const A=window.angular; const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                + " const e=[...document.querySelectorAll('select,input,textarea')].find(x=>(x.getAttribute('ng-model')||'')==='Admission.ReasonOfAdmission');"
+                + " const vis=x=>!!x && !!(x.offsetWidth||x.offsetHeight||x.getClientRects().length);"
+                + " let e=[...document.querySelectorAll('select,input,textarea')].find(x=>(x.getAttribute('ng-model')||'')==='Admission.ReasonOfAdmission');"
+                + " let via='';"
+                + " if(!e){"
+                + "   const lab=[...document.querySelectorAll('label')].find(l=>/reason\\s*of\\s*admission/i.test(norm(l.textContent)) && vis(l));"
+                + "   if(lab){"
+                + "     e=(lab.htmlFor && document.getElementById(lab.htmlFor)) || [...document.querySelectorAll('select,input,textarea')]"
+                + "       .find(x=>(lab.compareDocumentPosition(x)&Node.DOCUMENT_POSITION_FOLLOWING) && vis(x) && !/^(hidden|checkbox|radio)$/i.test(x.type||''));"
+                + "     if(e) via=' [found by its label, ng-model='+(e.getAttribute('ng-model')||'?')+']'; } }"
                 + " if(!e) return '';"
                 + " if(e.tagName==='SELECT'){ const real=o=>o.value && !/^-*\\s*select\\s*-*$/i.test(norm(o.textContent));"
                 + "   const cur=e.options[e.selectedIndex]; if(cur && real(cur)) return '';"
                 + "   const i=[...e.options].findIndex(real); if(i<0) return '(dropdown has no options)';"
                 + "   e.selectedIndex=i; e.dispatchEvent(new Event('change',{bubbles:true})); try{ A.element(e).triggerHandler('change'); }catch(x){}"
                 + "   const $=window.jQuery; if($){ try{ $(e).trigger('change'); }catch(x){} }"
-                + "   return 'dropdown = '+norm(e.options[e.selectedIndex].textContent); }"
-                + " if((e.value||'').trim()) return '';"
-                + " const v='Auto reason of admission'; const c=A.element(e).controller('ngModel'); e.focus(); e.value=v; if(c){ c.$setViewValue(v); c.$render(); }"
+                + "   return 'dropdown = '+norm(e.options[e.selectedIndex].textContent)+via; }"
+                // Judge the box by its MODEL as well as its text: a later step (re-binding Department / Doctor) can reset the model while
+                // the typed text stays on screen, and Save then refuses the "empty" field although a scan of the page sees text in it.
+                + " const c=A.element(e).controller('ngModel'); const mv=c?String(c.$modelValue==null?'':c.$modelValue).trim():String(e.value||'').trim();"
+                + " const shown=(e.value||'').trim();"
+                + " if(shown && mv) return '';"
+                + " const v='Auto reason of admission'; e.focus(); e.value=v; if(c){ c.$setViewValue(v); c.$render(); }"
                 + " e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true})); e.dispatchEvent(new Event('blur',{bubbles:true}));"
-                + " return 'text = '+v; }");
+                + " return 'text = '+v+via+(shown && !mv ? ' [the box showed text but its model was empty - entered again]' : ''); }");
         return r == null ? "" : r.toString();
     }
 

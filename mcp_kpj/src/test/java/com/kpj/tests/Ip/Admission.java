@@ -115,6 +115,10 @@ public class Admission extends DevHisBase {
 
         // Section 4 — Admission Information.
         String admission = ip.fillAdmissionSection();
+        // "Reason of Admission Payment Type/ Financial Class*" is mandatory (build v2026.10.29.342) and is entered by the "Re-check all
+        // fields" step below, just before Save. It is deliberately NOT entered here: tried on 2026-10-29, entering it at this point made Save
+        // answer "Please fill in all the mandatory fields!" on four runs out of four (the box showed its text, nothing was flagged empty),
+        // while entering it in the re-check step saved the admission every time. Cause not isolated.
         step(page, "Fill · Admission Information", "Admission Location/Department/Doctor/Type/Source/Billing Class/Purpose (Non-Presence off)",
                 "Admission section populated", admission, "PASS");
 

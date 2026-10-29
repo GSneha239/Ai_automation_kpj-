@@ -109,7 +109,7 @@ public class ItemFactorizationTemplate extends DevHisBase {
                     step(page, "Screenshot of the report (full page, all data)", "Capture the report tab",
                             "The report with all its data is captured", "Report screenshot could not be taken", "FAIL");
                 }
-                // Does the report show the item that was selected? (The report's address carries a fixed ID=1, so it may not.)
+                // Does the report show the item that was selected? It does not: the report's ID is the row's POSITION in the list, not its record id.
                 String pdfText = ift.reportPdfText();
                 String wanted = expectedItem.split(" \\| ")[0].replaceAll("[^A-Za-z0-9]", "").toLowerCase();
                 boolean pdfRead = !pdfText.isEmpty();
@@ -119,7 +119,9 @@ public class ItemFactorizationTemplate extends DevHisBase {
                         !pdfRead ? "The report text could not be read from " + ift.reportPage.url()
                                  : (matches ? "PASSES: the report contains the selected item. Report text: " + pdfText.substring(0, Math.min(300, pdfText.length()))
                                             : "FAILS: the selected item \"" + expectedItem.split(" \\| ")[0] + "\" (row \"" + rowText
-                                              + "\") is NOT in the report, which shows other data. Report address: " + ift.reportPage.url()
+                                              + "\") is NOT in the report, which shows other data. CAUSE (app defect, checked live 2026-10-29 on rows 1-7): Print puts the row's POSITION"
+                                              + " in the list into the report address as its ID (row 1 -> ID=1, row 2 -> ID=2 ...) instead of the record's own id, so it opens a different"
+                                              + " transaction's report. Report address: " + ift.reportPage.url()
                                               + ". Report text: " + pdfText.substring(0, Math.min(300, pdfText.length()))),
                         matches ? "PASS" : "FAIL");
                 try { ift.reportPage.close(); } catch (Exception ignore) { }

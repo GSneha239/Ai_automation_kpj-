@@ -88,6 +88,14 @@ public class OrderSet extends DevHisBase {
                 "An ICD-11 Diagnosis is selected", icd, icdOk ? "PASS" : "FAIL");
         addSummary("ICD-11 Diagnosis", os.lastIcd11Diagnosis);
 
+        // 4c) A SERVICE. On build v2026.10.29.342 Submit answers "Please Add Services!" until one is in List of Services.
+        String svc = os.addService();
+        boolean svcOk = svc != null && svc.startsWith("Service added");
+        step(page, "Add a service", "Service tab -> Add Services -> pick a Group -> Search -> tick a service -> Add",
+                "The service is in the List of Services", svc, svcOk ? "PASS" : "FAIL");
+        addSummary("Service", svcOk ? os.lastServiceCode + " | " + os.lastServiceName + " (group " + os.lastServiceGroup + ")" : "(none added)");
+        os.showDefinitionTab();   // Submit re-enters Code and Remark, which sit on the first tab
+
         // 5) Submit — retry with different Code/Remark on "already exists"; any OTHER (non-success) toast
         // stops the loop and FAILs the step naming the exact message returned.
         String toast = "";

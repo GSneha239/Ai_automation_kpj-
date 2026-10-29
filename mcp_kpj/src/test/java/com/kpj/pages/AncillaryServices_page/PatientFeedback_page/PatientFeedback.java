@@ -465,9 +465,67 @@ public class PatientFeedback extends BasePage {
 
     // ---- save --------------------------------------------------------------
 
+    /** What the server answered to the last Save (every API call that is not background polling) — a success toast alone does not say a row was stored. */
+    public String lastSaveHttp = "";
+
     /** Click <b>Save</b> ({@code IUDPatientFeedbackDetail()}) and return the toast ("" if none). */
     public String saveAndGetToast() {
+        final java.util.List<String> http = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+        java.util.function.Consumer<com.microsoft.playwright.Response> onResp = r -> {
+            String u = r.url().toLowerCase();
+            if (r.request().method().equals("POST") && u.contains("/api/") && !u.contains("getinternalmsgcount") && !u.contains("admindashboard")
+                    && !u.contains("commondropdown") && !u.contains("userrolemenu") && !u.contains("/fetch")) {
+                String body = "";
+                try { body = r.text(); } catch (Exception ignore) { }
+                http.add(r.url().substring(u.indexOf("/api/")) + " answered HTTP " + r.status() + (body.isBlank() ? "" : " " + body.replaceAll("\\s+", " ").substring(0, Math.min(170, body.replaceAll("\\s+", " ").length()))));
+            }
+        };
+        page.onResponse(onResp);
+        try { return saveAndGetToastInner(); }
+        finally {
+            try { page.offResponse(onResp); } catch (Exception ignore) { }
+            lastSaveHttp = http.isEmpty() ? "(no API call was seen)" : String.join(" ; ", http);
+            System.out.println("PatientFeedback save HTTP => " + lastSaveHttp);
+        }
+    }
+
+    /** What was typed into the feedback editor before the last Save (or why nothing was). */
+    public String lastAnswer = "";
+
+    /**
+     * A feedback template is a rich-text form: the questions are listed as plain text in a CKEditor and the person ANSWERS by typing
+     * under them. The test used to Save the template untouched — the server answered "saved successfully" but no row ever reached the
+     * list. So answers are typed after the questions, the way a user does: click into the editor, jump to the end, type.
+     */
+    private String answerFeedback() {
+        try {
+            page.waitForFunction("() => window.CKEDITOR && Object.values(CKEDITOR.instances||{}).some(i=>i.status==='ready')",
+                    null, new Page.WaitForFunctionOptions().setTimeout(15000));
+        } catch (Exception e) { return "(no editor on the form — nothing to answer)"; }
+        String stamp = java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("ddMMyyHHmmss"));
+        String text = " ANSWERS: 1) Very easy. 2) Very attentive. 3) Yes, I would recommend it. [auto test " + stamp + "]";
+        try {
+            Object tagged = page.evaluate("() => { const f=[...document.querySelectorAll('iframe.cke_wysiwyg_frame')].find(x=>x.offsetWidth||x.offsetHeight||x.getClientRects().length);"
+                    + " if(!f) return false; f.id='__pfFrame'; return true; }");
+            if (!Boolean.TRUE.equals(tagged)) return "(no visible editor frame — nothing to answer)";
+            com.microsoft.playwright.Locator body = page.frameLocator("#__pfFrame").locator("body");
+            body.click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000));
+            page.keyboard().press("Control+End");
+            page.keyboard().type(text, new com.microsoft.playwright.Keyboard.TypeOptions().setDelay(5));
+            page.evaluate("() => { const e=document.getElementById('__pfFrame'); if(e) e.removeAttribute('id'); }");
+        } catch (Exception e) { return "(typing into the editor failed: " + String.valueOf(e.getMessage()).replace("\n", " ") + ")"; }
+        waitForAngular(700);
+        Object in = page.evaluate("(t) => { const ed=Object.values(CKEDITOR.instances).find(i=>i.status==='ready');"
+                + " const plain=h=>String(h).replace(/<[^>]*>/g,' ').replace(/&nbsp;/g,' ').replace(/\\s+/g,' ').trim();"
+                + " return !!ed && plain(ed.getData()).includes(plain(t)); }", text);
+        return Boolean.TRUE.equals(in) ? "typed \"" + text.trim() + "\" after the questions (the editor holds it)"
+                                       : "(typed, but the editor does not hold the answers)";
+    }
+
+    private String saveAndGetToastInner() {
         waitForToastsToClear();
+        lastAnswer = answerFeedback();
+        System.out.println("PatientFeedback answers => " + lastAnswer);
 
         Object tagged = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
                 + ARM_TOASTS

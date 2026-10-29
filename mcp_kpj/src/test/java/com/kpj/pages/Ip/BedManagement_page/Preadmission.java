@@ -1129,7 +1129,10 @@ public class Preadmission extends BasePage {
         // expanded (as it is after the Admission screen) blindly clicking IP collapses it and the Preadmission link
         // disappears — then the direct-hash fallback below is bounced to the Patient Dashboard by the app.
         boolean pa = false;
-        for (int step = 0; step < 4 && !pa; step++) {
+        // The sidebar is built lazily after login: straight after it there is no "IP" entry yet. Giving up then sent the direct-route
+        // fallback to a typed hash, which the app bounces to the Patient Dashboard ("Reserve - Open Preadmission" failed that way). So a
+        // missing IP entry is waited for — up to ~14 s — instead of ending the walk.
+        for (int step = 0; step < 10 && !pa; step++) {
             Object next = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const vis=x=>x.offsetParent!==null;"
                     + " document.querySelectorAll('#__preadmMenu,#__ipMenuTab').forEach(e=>e.removeAttribute('id'));"
                     + " const pa=[...document.querySelectorAll('a')].find(x=>/^\\s*pre[-\\s]?admission\\s*$/i.test(norm(x.textContent)) && vis(x));"
@@ -1142,7 +1145,7 @@ public class Preadmission extends BasePage {
             if ("preadmission".equals(what)) { pa = true; break; }
             if ("ip".equals(what)) {
                 try { page.locator("#__ipMenuTab").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000)); } catch (Exception e) { System.out.println("Preadmission.nav: IP click failed - " + e.getMessage()); }
-            } else if ("no IP menu".equals(what)) { break; }
+            } else if ("no IP menu".equals(what)) { waitForAngular(1500); continue; }
             waitForAngular(900);
         }
         if (pa) {
