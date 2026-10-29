@@ -83,11 +83,21 @@ public class OpdCharges extends BasePage {
      * — it defaults to Search By = OPD, Visit Date = today. Returns distinct MRNs from the results grid, closing
      * the popup afterwards. The actual visit load still goes through {@link #searchByMrn}, matching the real steps.
      */
-    public java.util.List<String> candidateOpdMrnsFromPopup(int max) {
+    public java.util.List<String> candidateOpdMrnsFromPopup(int max) { return candidateOpdMrnsFromPopup(max, false); }
+
+    /**
+     * As {@link #candidateOpdMrnsFromPopup(int)}; with {@code anyVisitDate} the picker's default "Visit Date = today"
+     * filter is switched off first (HIS Demo, 26/10/2026: no OPD visit today, so the default search answers
+     * "Record not found").
+     */
+    public java.util.List<String> candidateOpdMrnsFromPopup(int max, boolean anyVisitDate) {
         java.util.List<String> out = new java.util.ArrayList<>();
         page.evaluate("() => { const b=[...document.querySelectorAll('[ng-click]')].find(x=>/OpenPopupScreen/.test(x.getAttribute('ng-click')||'') && x.offsetParent!==null); if(b) b.click(); }");
-        try { page.waitForFunction("() => [...document.querySelectorAll('.modal')].some(m=>m.offsetParent!==null)", null, new Page.WaitForFunctionOptions().setTimeout(8000)); } catch (Exception ignore) { }
+        // Corrected 26/10/2026: the popup is a position:fixed .modal, whose offsetParent is ALWAYS null, so the old
+        // offsetParent wait never saw it open and always ran out its full 8s.
+        try { page.waitForFunction(POPUP_SHOWN_JS, null, new Page.WaitForFunctionOptions().setTimeout(8000)); } catch (Exception ignore) { }
         waitForAngular(700);
+        if (anyVisitDate) setPopupVisitDateFilter(false);
         page.evaluate("() => { const b=[...document.querySelectorAll('.modal [ng-click]')].find(x=>/SearchPatient\\(0\\)/.test(x.getAttribute('ng-click')||'') && x.offsetParent!==null); if(b) b.id='__popSearch'; }");
         try { page.locator("#__popSearch").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000)); } catch (Exception ignore) { }
         page.evaluate("() => { const e=document.getElementById('__popSearch'); if(e) e.removeAttribute('id'); }");
@@ -326,5 +336,149 @@ public class OpdCharges extends BasePage {
                 + " const b=[...box.querySelectorAll('button,a')].find(x=>/^(ok|close|no|cancel)$/i.test(norm(x.textContent)) && x.getBoundingClientRect().width>0);"
                 + " if(b) b.click(); return msg; }");
         return r == null ? "" : r.toString().trim();
+    }
+
+    // =====================================================================================================
+    //  SECTION SUPPORT — used by tests.Billing_page.OpdChargesSections (added 26/10/2026, mapped live on HIS
+    //  Demo). Read-only: nothing below saves, validates or cancels anything. The section helpers themselves
+    //  live in ChargesScreenSections (shared with the charges screens); this class adds the OPD-only parts:
+    //  the patient picker and the OP Visit No. list.
+    // =====================================================================================================
+
+    /** JS predicate: the Patient Search popup is open. A Bootstrap modal keeps its size while fading out, so
+     *  "open" = has the {@code in} class, is displayed, and has a rendered box. */
+    static final String POPUP_SHOWN_JS = "() => [...document.querySelectorAll('.modal')].some(m=>{ const r=m.getBoundingClientRect();"
+            + " return m.classList.contains('in') && getComputedStyle(m).display!=='none' && r.width>0 && r.height>0; })";
+
+    private ChargesScreenSections sections;
+
+    /** The shared section helpers, configured for OPD Charges. */
+    public ChargesScreenSections sections() {
+        if (sections == null) sections = new ChargesScreenSections(page, ChargesScreenSections.Config.OPD);
+        return sections;
+    }
+
+    public boolean popupShown() { return Boolean.TRUE.equals(page.evaluate(POPUP_SHOWN_JS)); }
+
+    /** Tick / untick the popup's "Visit Date" filter (default: ticked, today). */
+    private void setPopupVisitDateFilter(boolean on) {
+        page.evaluate("(on) => { const m=[...document.querySelectorAll('.modal.in')].pop(); if(!m) return;"
+                + " const cb=m.querySelector(\"input[type=checkbox][ng-model='PatientData.ChkVisitDate']\"); if(cb && cb.checked!==on) cb.click(); }", on);
+        waitForAngular(300);
+    }
+
+    /** Close the Patient Search popup (its own Close / x, ng-click CloseModel) and wait until it is really hidden. */
+    public boolean closePatientPopup() {
+        for (int i = 0; i < 2 && popupShown(); i++) {
+            page.evaluate("() => { const m=[...document.querySelectorAll('.modal.in')].pop(); if(!m) return;"
+                    + " const b=[...m.querySelectorAll('[ng-click]')].find(x=>/CloseModel/.test(x.getAttribute('ng-click')||'') && x.getBoundingClientRect().width>0); if(b) b.click(); }");
+            try { page.waitForFunction("() => !(" + POPUP_SHOWN_JS + ")()", null, new Page.WaitForFunctionOptions().setTimeout(4000)); } catch (Exception ignore) { }
+        }
+        waitForAngular(400);
+        return !popupShown();
+    }
+
+    /**
+     * Open the picker, search (OPD filter as defaulted; {@code anyVisitDate} drops the Visit Date = today filter),
+     * and read the results. Leaves the popup OPEN so a row can be selected. Returns
+     * {filter, alert, heads, rows, mrns, sample}.
+     */
+    public java.util.Map<String, Object> searchInPatientPopup(boolean anyVisitDate) {
+        java.util.Map<String, Object> out = new java.util.LinkedHashMap<>();
+        if (!popupShown()) {
+            page.evaluate("() => { const b=[...document.querySelectorAll('[ng-click]')].find(x=>/OpenPopupScreen/.test(x.getAttribute('ng-click')||'') && x.offsetParent!==null); if(b) b.id='__opcPicker'; }");
+            try { page.locator("#__opcPicker").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000)); } catch (Exception ignore) { }
+            page.evaluate("() => { const e=document.getElementById('__opcPicker'); if(e) e.removeAttribute('id'); }");
+            try { page.waitForFunction(POPUP_SHOWN_JS, null, new Page.WaitForFunctionOptions().setTimeout(8000)); } catch (Exception ignore) { }
+            waitForAngular(700);
+        }
+        setPopupVisitDateFilter(!anyVisitDate);
+        out.put("filter", page.evaluate("() => { const m=[...document.querySelectorAll('.modal.in')].pop(); if(!m) return '(no popup)';"
+                + " const r=[...m.querySelectorAll(\"input[type=radio][ng-model='PatientData.OPD_IPD']\")].find(x=>x.checked);"
+                + " const cb=m.querySelector(\"input[ng-model='PatientData.ChkVisitDate']\"); const vf=m.querySelector(\"input[ng-model='PatientData.VisitFromDate']\");"
+                + " return 'Search By '+(r?((r.closest('label')||r.parentElement).textContent||'').trim():'?')+(cb&&cb.checked?', Visit Date '+(vf?vf.value:'?'):', any visit date'); }"));
+        sections().clearAlerts();
+        page.evaluate("() => { const m=[...document.querySelectorAll('.modal.in')].pop(); const b=m&&[...m.querySelectorAll('[ng-click]')].find(x=>/SearchPatient\\(0\\)/.test(x.getAttribute('ng-click')||'')); if(b) b.id='__opcPopSearch'; }");
+        try { page.locator("#__opcPopSearch").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000)); } catch (Exception ignore) { }
+        page.evaluate("() => { const e=document.getElementById('__opcPopSearch'); if(e) e.removeAttribute('id'); }");
+        try {
+            page.waitForFunction("() => (window.__csAlerts||[]).length>0 || [...document.querySelectorAll('.modal.in tbody tr')].some(r=>r.querySelector('[ng-click*=SetSearchPatient]') && r.getBoundingClientRect().height>0)",
+                    null, new Page.WaitForFunctionOptions().setTimeout(15000));
+        } catch (Exception ignore) { }
+        waitForAngular(800);
+        out.put("alert", String.join(" | ", sections().alerts()));
+        out.putAll(asMap(page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const m=[...document.querySelectorAll('.modal.in')].pop(); if(!m) return {heads:[], rows:0, mrns:[], sample:[]};"
+                + " const rows=[...m.querySelectorAll('tbody tr')].filter(r=>r.querySelector('[ng-click*=SetSearchPatient]') && r.getBoundingClientRect().height>0);"
+                + " const t=rows[0]&&rows[0].closest('table'); const heads=t?[...t.querySelectorAll('thead th')].map(h=>norm(h.textContent)).filter(Boolean):[];"
+                + " const mi=heads.findIndex(h=>/^MRN$/i.test(h));"
+                + " const mrn=r=>{ const c=r.cells[mi]; return c?norm(c.textContent):''; };"
+                + " return {heads, rows:rows.length, mrns:[...new Set(rows.map(mrn).filter(Boolean))],"
+                + "   sample:rows.slice(0,3).map(r=>[...r.cells].map(c=>norm(c.textContent)).filter(Boolean).slice(0,6).join(' | '))}; }")));
+        return out;
+    }
+
+    /** In the open picker, select the result row for {@code mrn} (its SetSearchPatient button, a real click).
+     *  Returns {selected, popupStayedOpen, popupClosedByTest}. */
+    public java.util.Map<String, Object> selectInPatientPopup(String mrn) {
+        java.util.Map<String, Object> out = new java.util.LinkedHashMap<>();
+        Object tagged = page.evaluate("(mrn) => { const m=[...document.querySelectorAll('.modal.in')].pop(); if(!m) return false;"
+                + " const r=[...m.querySelectorAll('tbody tr')].find(r=>r.querySelector('[ng-click*=SetSearchPatient]') && r.getBoundingClientRect().height>0"
+                + "   && [...r.cells].some(c=>(c.textContent||'').trim()===mrn));"
+                + " if(!r) return false; r.querySelector('[ng-click*=SetSearchPatient]').id='__opcPickRow'; return true; }", mrn);
+        out.put("selected", Boolean.TRUE.equals(tagged));
+        if (Boolean.TRUE.equals(tagged)) {
+            try { page.locator("#__opcPickRow").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000)); } catch (Exception ignore) { }
+            page.evaluate("() => { const e=document.getElementById('__opcPickRow'); if(e) e.removeAttribute('id'); }");
+            try {
+                page.waitForFunction("(mrn) => { try{ const p=angular.element(document.querySelector(\"[ng-model='PatientDetails.MRNo']\")).scope().PatientDetails||{};"
+                        + " return String(p.MRNo)===mrn && Number(p.visitadmissionid||0)>0; }catch(e){ return false; } }", mrn, new Page.WaitForFunctionOptions().setTimeout(15000));
+            } catch (Exception ignore) { }
+            waitForAngular(2500);
+        }
+        boolean open = popupShown();
+        out.put("popupStayedOpen", open);
+        out.put("popupClosedByTest", open && closePatientPopup());
+        return out;
+    }
+
+    /** OP Visit No. options (real ones) and the selected one. */
+    public java.util.Map<String, Object> visitOptions() {
+        return asMap(page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const e=document.querySelector(\"select[ng-model='PatientDetails.OPDNo']\");"
+                + " if(!e) return {options:[], selected:'(no OP Visit No. list)'};"
+                + " const opts=[...e.options].filter(o=>norm(o.textContent) && !/^-*\\s*select/i.test(norm(o.textContent))).map(o=>norm(o.textContent));"
+                + " return {options:opts, selected: e.selectedOptions[0] ? norm(e.selectedOptions[0].textContent) : ''}; }"));
+    }
+
+    /**
+     * Find a patient whose OP visit can take charges: MRNs from the picker (any visit date), each loaded with the
+     * MRN search; the first one whose OP Visit No. list holds a visit and raised no warning wins.
+     * Returns {mrn, visit, tried} — mrn "" when none qualifies (the caller reports BLOCKED).
+     */
+    public java.util.Map<String, Object> findPatientWithOpenOpVisit(int maxCandidates) {
+        java.util.Map<String, Object> out = new java.util.LinkedHashMap<>();
+        java.util.List<String> tried = new java.util.ArrayList<>();
+        java.util.Map<String, Object> res = searchInPatientPopup(true);
+        closePatientPopup();
+        Object mrnsObj = res.get("mrns");
+        java.util.List<String> mrns = new java.util.ArrayList<>();
+        if (mrnsObj instanceof java.util.List) for (Object o : (java.util.List<?>) mrnsObj) mrns.add(String.valueOf(o));
+        out.put("mrn", ""); out.put("visit", "");
+        for (String m : mrns.subList(0, Math.min(maxCandidates, mrns.size()))) {
+            String alert = sections().searchByMrn(m);
+            java.util.Map<String, Object> v = visitOptions();
+            Object opts = v.get("options");
+            boolean hasVisit = opts instanceof java.util.List && !((java.util.List<?>) opts).isEmpty() && !String.valueOf(v.get("selected")).isEmpty();
+            tried.add(m + (hasVisit ? " -> " + v.get("selected") : " -> no OP visit in the list") + (alert.isEmpty() ? "" : " [" + alert + "]"));
+            if (hasVisit && alert.isEmpty()) { out.put("mrn", m); out.put("visit", String.valueOf(v.get("selected"))); break; }
+        }
+        out.put("tried", tried);
+        return out;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static java.util.Map<String, Object> asMap(Object r) {
+        java.util.Map<String, Object> out = new java.util.LinkedHashMap<>();
+        if (r instanceof java.util.Map) out.putAll((java.util.Map<String, Object>) r);
+        return out;
     }
 }
