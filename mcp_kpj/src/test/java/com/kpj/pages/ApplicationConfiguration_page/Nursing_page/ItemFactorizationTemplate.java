@@ -295,7 +295,7 @@ public class ItemFactorizationTemplate extends BasePage {
                 + "   let resp; try { resp=await fetch(fixedUrl, {method:'POST', credentials:'include', headers:{'Content-Type':'application/json;charset=utf-8'}, body:capturedBody}); }"
                 + "   catch(e){ return {err:'replayed request threw: '+e.message}; }"
                 + "   if(!resp.ok){ const t=await resp.text().catch(()=>''); return {err:'replayed request still failed: HTTP '+resp.status+' '+t.slice(0,200)}; }"
-                + "   const items=await resp.json(); const item=(items||[])[0]; if(!item) return {err:'', empty:true};"
+                + "   const items=await resp.json(); const item=(items||[])[0]; if(!item) return {err:'', empty:true, url:fixedUrl};"
                 + "   o.itemSelected({item}); try{s.$apply&&s.$apply();}catch(e){}"
                 + "   return {name:item.ItemName||'', code:item.ItemCode||''};"
                 + " }); }", query);
@@ -303,7 +303,16 @@ public class ItemFactorizationTemplate extends BasePage {
         if (m == null) return "";
         Object err = m.get("err");
         if (err != null && !err.toString().isEmpty()) { itemNameError = err.toString(); return ""; }
-        if (Boolean.TRUE.equals(m.get("empty"))) { itemNameError = "no items matched \"" + query + "\""; return ""; }
+        if (Boolean.TRUE.equals(m.get("empty"))) {
+            // The search is made for ONE store. Seen 2026-10-29 (build v2026.10.29.342): the New form has no Store control and does not take the
+            // Store chosen on the list, so the app's own request carries StoreID=0 — nothing can match, and Submit later says "Please Select Store!".
+            java.util.regex.Matcher sm = java.util.regex.Pattern.compile("StoreID=(\\d+)", java.util.regex.Pattern.CASE_INSENSITIVE)
+                    .matcher(String.valueOf(m.getOrDefault("url", "")));
+            String storeId = sm.find() ? sm.group(1) : "?";
+            itemNameError = "no items matched \"" + query + "\" — the app's own request carried StoreID=" + storeId
+                    + ("0".equals(storeId) ? " (the New form has no Store control and does not take the Store chosen on the list, so no store is in force)" : "");
+            return "";
+        }
         String name = String.valueOf(m.getOrDefault("name", ""));
         lastItemName = name;
         return name;

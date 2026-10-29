@@ -352,6 +352,118 @@ public class OrderSet extends BasePage {
     /** What the save call actually returned over HTTP (status + URL + body) — for diagnosing a bare "Error!". */
     public String lastSaveHttp = "";
 
+    // ---- services (build v2026.10.29.342: Submit answers "Please Add Services!" until at least one is added) ----
+
+    public String lastServiceCode = "", lastServiceName = "", lastServiceGroup = "";
+
+    /** Click a visible tab/link by its exact text ("Service", "Order Set Definition"); the sidebar also has a hidden "Service" link, so only visible ones count. */
+    private boolean clickTab(String exactText) {
+        Object tagged = page.evaluate("(t) => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                + " const vis=e=>!!e && !!(e.offsetWidth||e.offsetHeight||e.getClientRects().length);"
+                + " document.querySelectorAll('#__osTab').forEach(e=>e.removeAttribute('id'));"
+                + " const a=[...document.querySelectorAll('a,button')].filter(vis).find(x=>norm(x.textContent)===t); if(!a) return false; a.id='__osTab'; return true; }", exactText);
+        if (!Boolean.TRUE.equals(tagged)) return false;
+        try { page.locator("#__osTab").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000)); }
+        catch (Exception e) { System.out.println("OrderSet.clickTab(" + exactText + "): " + String.valueOf(e.getMessage()).replace("\n", " ").replaceAll("\\s+", " ")); return false; }
+        page.evaluate("() => { const e=document.getElementById('__osTab'); if(e) e.removeAttribute('id'); }");
+        waitForAngular(800);
+        return true;
+    }
+
+    /** Back to the first tab, where Code / Remark / Diagnosis live (Submit re-enters Code and Remark from there). */
+    public boolean showDefinitionTab() { return clickTab("Order Set Definition"); }
+
+    /**
+     * Add ONE service: <b>Service</b> tab → <b>Add Services</b> ({@code fnIUDServices()}) → pick a <b>Group</b> → <b>Search</b>
+     * ({@code fnSearch()}) → tick the first result ({@code Ser.ChkServiceList}) → <b>Add</b> ({@code fnAdd()}); the dialog closes and the
+     * service lands in "List of Services" (Service Code | Service Name | Delete).
+     *
+     * <p>A name search on its own returns nothing and an empty search returns nothing; a GROUP search does ("Bed" lists 52 services). The
+     * Group list carries leftovers ("Corporate Panel 261013114126"), so clean groups are tried in turn until one returns rows.</p>
+     *
+     * @return "Service added: CODE | NAME (group G)" or the reason none could be added
+     */
+    public String addService() {
+        // The form's FIRST button is "Add Services", so an Enter key pressed in a text box (the diagnosis searches) can open the Services
+        // dialog by itself — it was found open, over the first tab, when this step began. It would block the tab click, so close it first
+        // and then go in the way a user does: Service tab, Add Services.
+        boolean strayDialog = Boolean.TRUE.equals(page.evaluate("() => { const b=document.querySelector(\"button[ng-click='fnSearch()']\"); return !!b && !!(b.offsetWidth||b.offsetHeight||b.getClientRects().length); }"));
+        if (strayDialog) {
+            try { page.locator(".modal button[ng-click='resetForm()']").filter(new com.microsoft.playwright.Locator.FilterOptions().setHasText("Close")).first().click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000)); }
+            catch (Exception e) { System.out.println("OrderSet.addService: closing the stray Services dialog failed - " + String.valueOf(e.getMessage()).replace("\n", " ")); }
+            waitForAngular(1200);
+            System.out.println("OrderSet.addService: a Services dialog was already open (probably opened by an Enter key in a diagnosis box) — closed it first");
+        }
+        if (!clickTab("Service")) {
+            Object seen = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const vis=e=>!!e && !!(e.offsetWidth||e.offsetHeight||e.getClientRects().length);"
+                    + " return [...new Set([...document.querySelectorAll('a,button')].filter(vis).map(x=>norm(x.textContent)).filter(t=>t&&t.length<40))].slice(0,40).join(' | ')+'  [url '+location.hash+']'; }");
+            return "(the Service tab was not found; visible links/buttons: " + seen + ")";
+        }
+        try { page.locator("button[ng-click='fnIUDServices()']").first().click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000)); }
+        catch (Exception e) { return "(Add Services button could not be clicked: " + e.getMessage().split("\n")[0] + ")"; }
+        try {
+            page.waitForFunction("() => { const b=document.querySelector(\"button[ng-click='fnSearch()']\"); return !!b && !!(b.offsetWidth||b.offsetHeight||b.getClientRects().length); }",
+                    null, new Page.WaitForFunctionOptions().setTimeout(12000));
+        } catch (Exception e) { return "(the Add Services dialog did not open)"; }
+        waitForAngular(800);
+
+        String tried = "";
+        for (int g = 0; g < 8; g++) {
+            Object grp = page.evaluate("async (n) => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                    + " const e=document.querySelector(\"select[ng-model='Services.GroupId']\"); if(!e) return '';"
+                    + " const clean=t=>!/\\d{4,}/.test(t);"
+                    + " const opts=[...e.options].filter(o=>o.value && !/^-*\\s*select\\s*-*$/i.test(norm(o.textContent)) && clean(norm(o.textContent)));"
+                    + " const o=opts[n]; if(!o) return '';"
+                    + " e.selectedIndex=[...e.options].indexOf(o); e.dispatchEvent(new Event('change',{bubbles:true}));"
+                    + " try{ window.angular.element(e).triggerHandler('change'); }catch(x){}"
+                    + " await new Promise(r=>setTimeout(r,1200)); return norm(o.textContent); }", g);
+            String group = grp == null ? "" : grp.toString();
+            if (group.isEmpty()) break;
+            try { page.locator("button[ng-click='fnSearch()']").first().click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000)); }
+            catch (Exception e) { return "(Search could not be clicked: " + e.getMessage().split("\n")[0] + ")"; }
+            try {
+                page.waitForFunction("() => [...document.querySelectorAll(\"input[ng-model='Ser.ChkServiceList']\")].some(c=>c.offsetWidth||c.offsetHeight||c.getClientRects().length)",
+                        null, new Page.WaitForFunctionOptions().setTimeout(7000));
+            } catch (Exception noRows) { tried += group + " -> no services; "; continue; }
+            lastServiceGroup = group;
+
+            Object row = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                    + " const vis=e=>!!e && !!(e.offsetWidth||e.offsetHeight||e.getClientRects().length);"
+                    + " const cb=[...document.querySelectorAll(\"input[ng-model='Ser.ChkServiceList']\")].filter(vis)[0]; if(!cb) return null;"
+                    + " cb.id='__osSvcTick'; const r=cb.closest('tr,.ui-grid-row'); const cells=[...(r?r.querySelectorAll('td,.ui-grid-cell'):[])].map(c=>norm(c.textContent)).filter(x=>x);"
+                    + " return JSON.stringify({code:cells[0]||'',name:cells[1]||'',text:norm(r?r.textContent:'').slice(0,100)}); }");
+            if (row == null) { tried += group + " -> rows but no checkbox; "; continue; }
+            lastServiceCode = strOf(String.valueOf(row), "code");
+            lastServiceName = strOf(String.valueOf(row), "name");
+            try { page.locator("#__osSvcTick").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000)); }
+            catch (Exception e) { return "(the service tick could not be clicked: " + e.getMessage().split("\n")[0] + ")"; }
+            waitForAngular(600);
+            boolean ticked = Boolean.TRUE.equals(page.evaluate("() => { const e=document.getElementById('__osSvcTick'); return !!e && e.checked; }"));
+            page.evaluate("() => { const e=document.getElementById('__osSvcTick'); if(e) e.removeAttribute('id'); }");
+            if (!ticked) { tried += group + " -> tick did not stick; "; continue; }
+            try { page.locator("button[ng-click='fnAdd()']").first().click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000)); }
+            catch (Exception e) { return "(the dialog's Add could not be clicked: " + e.getMessage().split("\n")[0] + ")"; }
+            waitForAngular(1500);
+            // the dialog closes and the service is in "List of Services"
+            Object listed = page.evaluate("(c) => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                    + " const vis=e=>!!e && !!(e.offsetWidth||e.offsetHeight||e.getClientRects().length);"
+                    + " const open=[...document.querySelectorAll('.modal,.modal-content,[role=dialog]')].filter(vis).length;"
+                    + " const t=[...document.querySelectorAll('table')].filter(vis).find(x=>/service\\s*code/i.test(norm((x.querySelector('thead')||{}).textContent||'')) && !/select/i.test(norm((x.querySelector('thead')||{}).textContent||'')));"
+                    + " const rows=t?[...t.querySelectorAll('tbody tr')].map(r=>[...r.querySelectorAll('td')].map(d=>norm(d.textContent))).filter(x=>x.some(y=>y)):[];"
+                    + " const mine=rows.find(r=>r[0]===c);"
+                    + " return JSON.stringify({open:open,rows:rows.length,mine:mine?mine.join(' | '):''}); }", lastServiceCode);
+            String l = String.valueOf(listed);
+            if (l.contains("\"mine\":\"\"")) return "(the service was ticked and Add pressed but it is not in List of Services: " + l + ")";
+            return "Service added: " + lastServiceCode + " | " + lastServiceName + " (group " + group + ") — List of Services now shows it";
+        }
+        return "(no Group returned any service" + (tried.isEmpty() ? "" : ": " + tried) + ")";
+    }
+
+    private static String strOf(String json, String key) {
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("\"" + key + "\":\"((?:[^\"\\\\]|\\\\.)*)\"").matcher(json == null ? "" : json);
+        return m.find() ? m.group(1) : "";
+    }
+
     /**
      * PROBE — the visible field ng-models (tag, type, placeholder, nearby label) plus the visible button labels.
      * Included in the FAIL text so a miss is diagnosable without another run.

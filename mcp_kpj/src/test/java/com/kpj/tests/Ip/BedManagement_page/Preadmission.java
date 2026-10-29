@@ -405,8 +405,14 @@ public class Preadmission extends DevHisBase {
                 "Payor is set to Self", payor, payorOk ? "PASS" : "MANUAL");
 
         String admission = ip.fillAdmissionSection();
-        step(page, tag + " · Admission Information", "Admission Location/Department/Doctor/Type/Source/Billing Class/Purpose",
-                "Admission section populated", admission, "PASS");
+        // "Reason of Admission Payment Type/ Financial Class*" is mandatory on this form (build v2026.10.29.342): without it every Save is
+        // refused with "Please Enter Reason of Admission Payment Type/ Financial Class!". Plain IP > Admission fills it in its own
+        // recheck; this flow never did, so every patient was refused. Fill it, and say what was done.
+        String reason = ip.fillReasonOfAdmissionIfEmpty();
+        if (reason == null || reason.isEmpty()) reason = "(box not found, or it already held a value)";
+        step(page, tag + " · Admission Information", "Admission Location/Department/Doctor/Type/Source/Billing Class/Purpose, and Reason of Admission Payment Type/ Financial Class",
+                "Admission section populated and the Reason of Admission box holds a value",
+                admission + " | Reason of Admission Payment Type/ Financial Class: " + reason, "PASS");
 
         // Same as the plain IP > Admission flow (com.kpj.tests.Ip.Admission): just select Room Type + Ward,
         // deliberately NOT scanning the census grid for a specific vacant bed. That scan walks every Bed Class x
