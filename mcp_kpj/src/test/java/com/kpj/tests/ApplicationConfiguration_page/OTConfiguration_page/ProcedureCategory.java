@@ -46,7 +46,9 @@ public class ProcedureCategory extends DevHisBase {
                 "&#9888; Creates a REAL procedure category: enter Code and Remark, then Submit.");
 
         String counter = System.getProperty("counter", COUNTER_FOR_MENU);
-        String stamp = String.format("%05d", Math.abs(System.nanoTime() % 100000));
+        // Stamped from the wall clock: System.nanoTime() ticks in 100 ns steps on this machine, so its remainders end in "00" and a
+        // code repeats; the shared QA environment keeps every record ever saved. "PCG" + 12 digits = 15, the Code box's maximum.
+        String stamp = java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("ddMMyyHHmmss"));
         String code = System.getProperty("code", "PCG" + stamp);
         String remark = System.getProperty("remark", "Auto procedure category " + stamp);
         // Distinct from the remark on purpose: the form carries two description boxes, and identical

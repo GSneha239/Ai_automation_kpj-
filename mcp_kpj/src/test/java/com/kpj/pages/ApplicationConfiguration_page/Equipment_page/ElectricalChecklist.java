@@ -55,15 +55,23 @@ public class ElectricalChecklist extends BasePage {
         try { page.waitForFunction("() => window.angular", null,
                 new Page.WaitForFunctionOptions().setTimeout(20000)); } catch (Exception ignore) { }
 
-        clickMenu("^\\s*application\\s*configuration\\s*$");
-        clickMenu("^\\s*equipment\\s*$");
+        // Each level is opened only if it is closed (a second click on an open entry CLOSES it) and the next one is looked up
+        // INSIDE its parent's li: the sidebar is built lazily after login, so a blind first-match click walked past the
+        // closed module and ended on the dashboard.
+        expandMenuEntry(null, "^\\s*application\\s*config(uration)?\\s*$");
+        expandMenuEntry("^\\s*application\\s*config(uration)?\\s*$", "^\\s*equipment\\s*$");
+        waitForAngular(800);
         lastMenu = describeMenu();
 
         // Anchored to the whole label. A loose match on "generic" would take the first menu entry that
         // merely contains the word — the scaffolding trap that once ran an entire Compliance flow
         // against Complaint Type and reported PASS against the wrong screen's fields.
         Object href = page.evaluate("() => {" + JS
-                + " const a=[...document.querySelectorAll('a[href]')]"
+                + " const top=[...document.querySelectorAll('a')].find(x=>/^\\s*application\\s*config(uration)?\\s*$/i.test(norm(x.textContent)) && vis(x));"
+                + " const topLi=(top&&top.closest('li'))||document;"
+                + " const eq=[...topLi.querySelectorAll('a')].find(x=>/^\\s*equipment\\s*$/i.test(norm(x.textContent)) && vis(x));"
+                + " const scope=(eq&&eq.closest('li'))||topLi;"
+                + " const a=[...scope.querySelectorAll('a[href]')]"
                 + "   .find(x=>/^\\s*electrical\\s*check\\s*list\\s*$/i.test(norm(x.textContent)));"
                 + " if(!a) return ''; a.id='__elcMenu'; return a.getAttribute('href')||''; }");
         lastRoute = href == null ? "" : href.toString();

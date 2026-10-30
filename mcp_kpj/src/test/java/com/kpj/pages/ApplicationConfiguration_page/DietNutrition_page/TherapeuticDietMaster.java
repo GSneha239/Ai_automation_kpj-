@@ -16,7 +16,7 @@ public class TherapeuticDietMaster extends BasePage {
 
     public String route = "", lastCode = "", lastRemark = "";
 
-    /** Realistic therapeutic-diet names, not "Auto therapeutic diet &lt;code&gt;" filler — cycled per retry attempt. */
+    /** Readable therapeutic-diet names used as the BASE of the Remark (a unique time stamp is always appended in {@link #fillDetails}). */
     private static final String[] REMARKS = {
             "Diabetic Diet", "Renal Diet", "Low Sodium Diet", "High Protein Diet", "Low Fat Diet",
             "Gluten Free Diet", "Soft Diet", "Liquid Diet", "Low Fiber Diet", "Cardiac Diet"
@@ -70,9 +70,13 @@ public class TherapeuticDietMaster extends BasePage {
             System.out.println("fillDetails DEBUG visible fields: " + dbg);
             System.out.println("fillDetails DEBUG url: " + page.url());
         }
-        String code = "TD" + String.format("%06d", Math.abs((System.nanoTime() + attempt * 7919L) % 1000000));
+        // Wall-clock stamps, shifted by the attempt: System.nanoTime() ticks in 100 ns steps on this machine, so its remainders repeat, and
+        // the shared QA environment keeps every record ever saved. The Remark keeps a readable diet name as its base but is ALWAYS stamped —
+        // this screen refuses only a repeated Code, so an unstamped "Diabetic Diet" was silently saved as a second "Diabetic Diet" (001 has it).
+        java.time.LocalDateTime now = java.time.LocalDateTime.now().plusSeconds(attempt);
+        String code = "TD" + now.format(java.time.format.DateTimeFormatter.ofPattern("ddHHmmss"));
         lastCode = code;
-        lastRemark = REMARKS[attempt % REMARKS.length] + (attempt >= REMARKS.length ? " " + (attempt / REMARKS.length + 1) : "");
+        lastRemark = REMARKS[attempt % REMARKS.length] + " " + now.format(java.time.format.DateTimeFormatter.ofPattern("yyMMddHHmmss"));
         Object r = page.evaluate("(a) => { const A=window.angular;" + FIND_FIELDS
                 + " const set=(e,v)=>{ if(!e) return '(no field)'; const c=A.element(e).controller('ngModel'); e.value=v; if(c){c.$setViewValue(v);c.$render();} e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true})); return v; };"
                 + " const cd=set(codeEl,a.code); const rm=set(remEl,a.remark);"

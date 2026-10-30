@@ -61,7 +61,8 @@ public class PatientFeedback extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Ancillary Services - Patient Feedback", "Ancillary Services > Patient Feedback",
+        // The report title follows the screen's own heading ("Patient Feedback List"); the menu path stays as the sidebar names it.
+        meta("Ancillary Services - Patient Feedback List", "Ancillary Services > Patient Feedback",
                 "&#9888; Creates a REAL patient feedback record: Add, search the patient by MRN, "
                         + "select the feedback template, Save.");
 

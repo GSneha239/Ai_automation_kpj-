@@ -87,6 +87,20 @@ public class PayableWaiver extends BasePage {
         return 0;
     }
 
+    /**
+     * The ordinal of the next Department option AFTER {@code after} whose text is not in {@code exclude}; -1 when none is left.
+     * "Waiver already exist" is decided per Department (six different Doctors of one Department were all refused), so a retry must move
+     * on to a Department that has no waiver yet rather than to the next Doctor of the same one.
+     */
+    public int nextDepartmentIndexAvoiding(java.util.Set<String> exclude, int after) {
+        int count = optionCount("waiver.DepartmentID");
+        for (int i = after + 1; i < count; i++) {
+            String candidate = peekNth("waiver.DepartmentID", i);
+            if (!candidate.isEmpty() && !exclude.contains(candidate)) return i;
+        }
+        return -1;
+    }
+
     /** The text of the {@code index}-th real option, without selecting it. */
     private String peekNth(String ngModel, int index) {
         Object t = page.evaluate("([m,n]) => { const s=[...document.querySelectorAll('select')].find(x=>(x.getAttribute('ng-model')||'')===m);"

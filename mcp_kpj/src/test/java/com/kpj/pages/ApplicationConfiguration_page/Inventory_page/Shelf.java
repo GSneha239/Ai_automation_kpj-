@@ -55,15 +55,23 @@ public class Shelf extends BasePage {
         try { page.waitForFunction("() => window.angular", null,
                 new Page.WaitForFunctionOptions().setTimeout(20000)); } catch (Exception ignore) { }
 
-        clickMenu("^\\s*application\\s*configuration\\s*$");
-        clickMenu("^\\s*inventory\\s*$");
+        // "Inventory" is ALSO a top-level module, listed before Application Configuration: an unscoped first-match click opened that
+        // one (Pharmacy Dashboard, Current Item Stock …) and left Application Configuration closed. Each level is therefore opened
+        // only if it is closed, and the next one is looked up INSIDE its parent's li.
+        expandMenuEntry(null, "^\\s*application\\s*config(uration)?\\s*$");
+        expandMenuEntry("^\\s*application\\s*config(uration)?\\s*$", "^\\s*inventory\\s*$");
+        waitForAngular(800);
         lastMenu = describeMenu();
 
         // Anchored to the whole label. A loose match on "generic" would take the first menu entry that
         // merely contains the word — the scaffolding trap that once ran an entire Compliance flow
         // against Complaint Type and reported PASS against the wrong screen's fields.
         Object href = page.evaluate("() => {" + JS
-                + " const a=[...document.querySelectorAll('a[href]')]"
+                + " const top=[...document.querySelectorAll('a')].find(x=>/^\\s*application\\s*config(uration)?\\s*$/i.test(norm(x.textContent)) && vis(x));"
+                + " const topLi=(top&&top.closest('li'))||document;"
+                + " const inv=[...topLi.querySelectorAll('a')].find(x=>/^\\s*inventory\\s*$/i.test(norm(x.textContent)) && vis(x));"
+                + " const scope=(inv&&inv.closest('li'))||topLi;"
+                + " const a=[...scope.querySelectorAll('a[href]')]"
                 + "   .find(x=>/^\\s*shelf\\s*$/i.test(norm(x.textContent)));"
                 + " if(!a) return ''; a.id='__shfMenu'; return a.getAttribute('href')||''; }");
         lastRoute = href == null ? "" : href.toString();

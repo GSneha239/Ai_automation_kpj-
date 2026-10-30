@@ -138,6 +138,45 @@ public class RegistrationPage extends BasePage {
         public String kinLine() { return kinTitle + " " + kinName + " (" + kinRel + ") | Malaysian | NRIC " + kinNric + " | Mobile " + kinMobile; }
     }
 
+    /** Queue numbers already typed on this form — a refused save must never be retried with one of them again. */
+    public final java.util.Set<String> triedQueueNos = new java.util.LinkedHashSet<>();
+    public String lastQueueNo = "";
+
+    /** A random 3-digit queue number (100-999) that has not been tried yet; once all 900 have been tried the list starts over. */
+    private String nextUntriedQueueNo() {
+        if (triedQueueNos.size() >= 900) triedQueueNos.clear();
+        String q;
+        do { q = String.valueOf(100 + (int) (Math.random() * 900)); } while (triedQueueNos.contains(q));
+        return q;
+    }
+
+    /** The server's refusal when another patient already holds the typed Queue No. ("This queue number is already assigned. Please enter a different queue number."). */
+    public static boolean queueNumberTaken(String toast) {
+        String t = toast == null ? "" : toast.toLowerCase();
+        return t.contains("queue number") && (t.contains("already") || t.contains("assigned") || t.contains("different"));
+    }
+
+    /**
+     * Type a DIFFERENT random 3-digit Queue No. into the visit form (never one already tried on this form), for a save the server refused because
+     * the number is taken. The form keeps everything else, so Save can simply be run again.
+     *
+     * @return the new queue number
+     */
+    public String changeQueueNumber() {
+        String q = nextUntriedQueueNo();
+        triedQueueNos.add(q);
+        lastQueueNo = q;
+        try { page.locator("input[ng-model='Visit.TokenNo']").first().fill(q); }
+        catch (Exception e) {
+            System.out.println("changeQueueNumber: Queue No. fill failed - " + e.getMessage().split("\n")[0] + " - falling back to scope write");
+            page.evaluate("(qn) => { const b=[...document.querySelectorAll('button')].find(x=>x.getAttribute('ng-click')==='IUDRegistration();' && x.offsetParent!==null);"
+                    + " let s = b ? angular.element(b).scope() : angular.element(document.querySelector('#txtFirstName')).scope();"
+                    + " s.$apply(function(){ let x=s; for(let i=0;i<10&&x;i++){ if(x.Visit){ x.Visit.TokenNo=qn; break; } x=x.$parent; } }); }", q);
+        }
+        waitForAngular(400);
+        return q;
+    }
+
     /** Outcome of the Save step. */
     public static class SaveOutcome {
         public boolean saved;
@@ -1338,7 +1377,10 @@ public class RegistrationPage extends BasePage {
         // Queue No. — a real typed value into the visible field (ng-model Visit.TokenNo), per request, rather
         // than writing the scope directly. A random 3-digit number, same spirit as the Login ID elsewhere: cheap
         // to make distinct without needing to know what queue numbers are already taken.
-        String queueNo = String.valueOf(100 + (int) (Math.random() * 900));
+        // A 3-digit queue number (100-999), a different one each time this form is filled: the server refuses a number that is already assigned
+        // ("This queue number is already assigned. Please enter a different queue number."), and the test then redoes the registration with another.
+        String queueNo = nextUntriedQueueNo();
+        triedQueueNos.add(queueNo); lastQueueNo = queueNo;
         try { page.locator("input[ng-model='Visit.TokenNo']").first().fill(queueNo); }
         catch (Exception e) {
             System.out.println("fillVisitInformation: Queue No. fill failed - " + e.getMessage() + " - falling back to scope write");
@@ -1347,6 +1389,11 @@ public class RegistrationPage extends BasePage {
                     + " s.$apply(function(){ let x=s; for(let i=0;i<10&&x;i++){ if(x.Visit){ x.Visit.TokenNo=qn; break; } x=x.$parent; } }); }", queueNo);
         }
         waitForAngular(400);
+        try {
+            Object qs = page.evaluate("() => { const e=document.querySelector(\"input[ng-model='Visit.TokenNo']\"); if(!e) return 'no Queue No. box'; let m=''; try{ const s=angular.element(e).scope(); m=String(s.Visit&&s.Visit.TokenNo)+' | iseditQueueNo='+s.iseditQueueNo; }catch(x){}"
+                    + " return 'visible='+!!(e.offsetWidth||e.offsetHeight)+' disabled='+e.disabled+' maxlength='+e.maxLength+' box value=\"'+e.value+'\" | model Visit.TokenNo='+m; }");
+            System.out.println("fillVisitInformation: Queue No. typed " + lastQueueNo + " -> " + qs);
+        } catch (Exception ignore) { }
         page.evaluate("()=>{const c=[...document.querySelectorAll('input[type=checkbox]')].find(x=>x.getAttribute('ng-model')==='Visit.IsCashPayment');if(c&&!c.checked)c.click();}");
     }
     /**
@@ -2647,7 +2694,7 @@ public class RegistrationPage extends BasePage {
                 // (KinDetailsList); re-filling the kin FORM makes it "partial" and the Save then re-validates it
                 // ('Please Enter Kin Name / Select Nationality for NOK'). An empty kin form + a grid row saves fine.
                 + "   if(x.Registration && typeof x.Registration==='object' && !seenR.has(x.Registration)){ seenR.add(x.Registration); const reg=x.Registration; reg.PassportExpirydate='31/12/2045'; for(const k in snap){ if(k.indexOf('Registration.')===0 && k.indexOf('Kin')<0 && k.indexOf('NOK')<0) reg[k.slice(13)]=snap[k]; } }"
-                + "   if(x.Visit && typeof x.Visit==='object' && !seenV.has(x.Visit)){ seenV.add(x.Visit); const vis=x.Visit; vis.TokenNo='1'; vis.SaveBtnEnable=1; for(const k in snap){ if(k.indexOf('Visit.')===0) vis[k.slice(6)]=snap[k]; } }"
+                + "   if(x.Visit && typeof x.Visit==='object' && !seenV.has(x.Visit)){ seenV.add(x.Visit); const vis=x.Visit; vis.TokenNo=(a.queue||'1'); vis.SaveBtnEnable=1; for(const k in snap){ if(k.indexOf('Visit.')===0) vis[k.slice(6)]=snap[k]; } if(a.queue) vis.TokenNo=a.queue; }"
                 + "   x=x.$parent; } }catch(e){} });"
                 + VISIT_TYPE_GUARD_JS
                 + " ['mousedown','mouseup','click'].forEach(t=>b.dispatchEvent(new MouseEvent(t,{bubbles:true,cancelable:true,view:window}))); return 'clicked'; }";
@@ -2656,7 +2703,10 @@ public class RegistrationPage extends BasePage {
         // the validator see them), re-apply the snapshot and re-click Save. Give up after 3 attempts.
         String lastToast = "";
         for (int attempt = 0; attempt < 3; attempt++) {
-            page.evaluate(saveJs, java.util.Map.of("snap", snap));
+            // The queue number typed on the visit form travels with the Save: this routine used to hard-code TokenNo='1' on every Visit object
+            // in the Save tick, so the posted queue number was always 1 — taken by an earlier registration — whatever was typed ("This queue
+            // number is already assigned"), and changing the typed number could never help.
+            page.evaluate(saveJs, java.util.Map.of("snap", snap, "queue", lastQueueNo == null ? "" : lastQueueNo));
             lastToast = "";
             for (int i = 0; i < 40; i++) {
                 // The "Patient has previous unclosed episode" confirm can pop up first — click OK and keep waiting.
@@ -2763,6 +2813,31 @@ public class RegistrationPage extends BasePage {
         } finally {
             page.offResponse(mrnWatcher);
             try { captureNewMrn(apiAnswers); } catch (Exception e) { System.out.println("captureNewMrn failed - " + e.getMessage()); }
+            try { captureSaveExchange(apiAnswers); } catch (Exception e) { System.out.println("captureSaveExchange failed - " + e.getMessage()); }
+        }
+    }
+
+    /** What the last Save sent and got back: the queue number in the posted payload and the server's answer (to tell a real clash from a bad payload). */
+    public String lastSaveExchange = "";
+
+    private void captureSaveExchange(java.util.List<com.microsoft.playwright.Response> answers) {
+        lastSaveExchange = "";
+        for (int i = answers.size() - 1; i >= 0; i--) {
+            com.microsoft.playwright.Response r = answers.get(i);
+            if (!r.url().toLowerCase().contains("patientregistration/iud")) continue;
+            String sent = "", body = "";
+            try { sent = String.valueOf(r.request().postData()); } catch (Exception ignore) { }
+            try { body = r.text(); } catch (Exception ignore) { }
+            // Every token/queue-looking key in the payload, with its value — the box's model may not be the field the save posts.
+            java.util.regex.Matcher m = java.util.regex.Pattern.compile("\"([A-Za-z_.]*(?:token|queue)[A-Za-z_.]*)\"\\s*:\\s*(\"[^\"]*\"|[^,}\\]]*)", java.util.regex.Pattern.CASE_INSENSITIVE).matcher(sent);
+            StringBuilder tk = new StringBuilder();
+            while (m.find() && tk.length() < 300) tk.append(m.group(1)).append('=').append(m.group(2)).append(' ');
+            String tokenSent = tk.length() == 0 ? "(no token/queue key in the payload)" : tk.toString().trim();
+            String answer = body.replaceAll("\\s+", " ");
+            lastSaveExchange = "HTTP " + r.status() + " patientregistration/IUD | sent TokenNo=" + tokenSent + " | answer: "
+                    + answer.substring(0, Math.min(240, answer.length()));
+            System.out.println("RegistrationPage: save exchange -> " + lastSaveExchange);
+            return;
         }
     }
 

@@ -106,14 +106,20 @@ public class DepartmentSchedule extends BasePage {
             try { page.evaluate("(h) => { window.location.hash = h; }", ROUTE); } catch (Exception ignore) { }
             waitForAngular(2500);
         }
-        for (int i = 0; i < 8 && !onScreen(); i++) page.waitForTimeout(1000);
+        // The address changes before the view does: give the screen up to 30 s to replace the dashboard.
+        for (int i = 0; i < 30 && !onScreen(); i++) page.waitForTimeout(1000);
         return onScreen();
     }
 
     public boolean onScreen() {
-        // URL only: a page-text match also matches the sidebar's own "Department Schedule" menu item, so the Patient
-        // Dashboard counted as the screen.
-        return !ROUTE.isEmpty() && page.url().toLowerCase().contains(ROUTE.replace("#/", "").toLowerCase());
+        // The route AND the screen's own title in the top bar. The URL alone is not enough: the app sometimes changes the hash while the
+        // Patient Dashboard stays on screen (the run reported "Opened" with the dashboard showing). The sidebar's own "Department Schedule"
+        // menu item must not count either, so only the top bar — which carries the current screen's name — is read.
+        if (ROUTE.isEmpty() || !page.url().toLowerCase().contains(ROUTE.replace("#/", "").toLowerCase())) return false;
+        try {
+            Object t = page.evaluate("() => { const h=document.querySelector('header,.navbar'); return h? (h.textContent||'').replace(/\\s+/g,' ').trim().slice(0,80) : ''; }");
+            return t != null && t.toString().toLowerCase().contains("department schedule");
+        } catch (Exception e) { return false; }
     }
 
     // ---- actions ---------------------------------------------------------

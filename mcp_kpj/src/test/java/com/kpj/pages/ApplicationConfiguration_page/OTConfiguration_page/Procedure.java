@@ -56,8 +56,11 @@ public class Procedure extends BasePage {
         try { page.waitForFunction("() => window.angular", null,
                 new Page.WaitForFunctionOptions().setTimeout(20000)); } catch (Exception ignore) { }
 
-        clickMenu("^\\s*application\\s*configuration\\s*$");
-        clickMenu("^\\s*ot\\s*configuration\\s*$");
+        // Each level is opened only if it is closed (a second click on an open entry CLOSES it) and the next one is looked up
+        // INSIDE its parent's li — the blind first-match click walked past a closed module on some runs and ended on the dashboard.
+        expandMenuEntry(null, "^\\s*application\\s*config(uration)?\\s*$");
+        expandMenuEntry("^\\s*application\\s*config(uration)?\\s*$", "^\\s*ot\\s*config(uration)?\\s*$");
+        waitForAngular(800);
         lastMenu = describeMenu();
 
         // Anchored to the WHOLE label, and hidden anchors are included on purpose: these menu links sit in
@@ -65,7 +68,11 @@ public class Procedure extends BasePage {
         // contains the words — the scaffolding trap that once ran an entire Compliance flow against
         // Complaint Type and reported PASS against the wrong screen's fields.
         Object href = page.evaluate("() => {" + JS
-                + " const a=[...document.querySelectorAll('a[href]')]"
+                + " const top=[...document.querySelectorAll('a')].find(x=>/^\\s*application\\s*config(uration)?\\s*$/i.test(norm(x.textContent)) && vis(x));"
+                + " const topLi=(top&&top.closest('li'))||document;"
+                + " const ot=[...topLi.querySelectorAll('a')].find(x=>/^\\s*ot\\s*config(uration)?\\s*$/i.test(norm(x.textContent)) && vis(x));"
+                + " const scope=(ot&&ot.closest('li'))||topLi;"
+                + " const a=[...scope.querySelectorAll('a[href]')]"
                 // Item MASTER, not Item Company / Item Class — all three sit in this submenu, so the
                 // match is anchored to the whole label and the siblings are rejected in onScreen().
                 + "   .find(x=>/^\\s*procedure\\s*$/i.test(norm(x.textContent)));"
@@ -210,6 +217,14 @@ public class Procedure extends BasePage {
      */
     public String clickServiceItem() {
         String before = page.url();
+        // The Procedure list holds ~1,900 rows and keeps the page busy while it fills: a click made straight after the list appears
+        // changes the address to #/serviceItemMaster but the list stays on screen (seen on v2026.10.30.356), while the same click made
+        // ~20 s later opens the form. So wait for the rows, then let the page settle before clicking.
+        try {
+            page.waitForFunction("() => [...document.querySelectorAll('.ui-grid-row')].some(r=>/\\S/.test(r.textContent||''))",
+                    null, new Page.WaitForFunctionOptions().setTimeout(30000));
+        } catch (Exception ignore) { }
+        waitForAngular(12000);
         try {
             page.locator("button:has-text('Service Item'), a:has-text('Service Item')").first()
                     .click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(8000));
@@ -219,11 +234,18 @@ public class Procedure extends BasePage {
             return lastServiceItem;
         }
         waitForAngular(3000);
-        Object add = page.evaluate("() => {" + JS
-                + " return [...document.querySelectorAll('button,a,input[type=button]')].filter(vis)"
-                + "   .filter(x=>/^\s*add\s*$/i.test(norm(x.textContent)||x.value||'')"
-                + "        || /AddServiceItem/i.test(x.getAttribute('ng-click')||'')).length; }");
-        int addControls = add instanceof Number ? ((Number) add).intValue() : 0;
+        // The screen's Add control arrives after the view has swapped — poll for it rather than reading once.
+        int addControls = 0;
+        long until = System.currentTimeMillis() + 30000;
+        while (System.currentTimeMillis() < until) {
+            Object add = page.evaluate("() => {" + JS
+                    + " return [...document.querySelectorAll('button,a,input[type=button]')].filter(vis)"
+                    + "   .filter(x=>/^\s*add\s*$/i.test(norm(x.textContent)||x.value||'')"
+                    + "        || /AddServiceItem/i.test(x.getAttribute('ng-click')||'')).length; }");
+            addControls = add instanceof Number ? ((Number) add).intValue() : 0;
+            if (addControls > 0) break;
+            page.waitForTimeout(1000);
+        }
         lastServiceItem = "clicked the Service Item button: " + before + " -> " + page.url()
                 + " (" + addControls + " Add control(s) on screen)";
         System.out.println("Procedure: service item -> " + lastServiceItem);
@@ -420,8 +442,32 @@ public class Procedure extends BasePage {
                 && !lastPolicy.contains("no Pricing Policy section found");
     }
 
-    /** Enter the <b>HSN Code</b>, pinned so it cannot take the Service Code's box. */
+    /**
+     * Enter the <b>HSN Code</b> where the form has an HSN box (Inventory &gt; Item Master does).
+     *
+     * <p>The Service Item form this screen opens ({@code #/serviceItemMaster}, "Service Master Details") has NO HSN box, and its own save
+     * does not ask for one: {@code fnIUDServiceMaster} checks the HSN ({@code serviceMst.TaxCode}) only when
+     * {@code !isServiceMasterScreen}, i.e. on the Inventory Item Master. Its "Code Type" table (13th Schedule, Insurance Code, Package Code,
+     * Service Code …) has no HSN type either, so nothing is typed in that case and the result starts with {@code (n/a)} — see
+     * {@link #hsnNotApplicable()}; it is not a failure of the screen, and not a pass of the step.</p>
+     */
     public String enterHsn(String hsn) {
+        String direct = enterHsnBox(hsn);
+        if (direct.startsWith("(no-HSN-field)") && direct.contains("ABSENT")) {
+            lastHsn = "(n/a) the form has no HSN Code box and its save does not require one — the app asks for the HSN only on the "
+                    + "Inventory Item Master screen (isServiceMasterScreen is true here); the Code Type table has no HSN type to use instead";
+            System.out.println("Procedure: HSN = " + lastHsn);
+        }
+        return lastHsn;
+    }
+
+    /** The form has no HSN box to fill (see {@link #enterHsn}). */
+    public boolean hsnNotApplicable() {
+        return lastHsn != null && lastHsn.startsWith("(n/a)");
+    }
+
+    /** The HSN box itself, pinned so it cannot take the Service Code's box. */
+    private String enterHsnBox(String hsn) {
         Object r = page.evaluate("(v) => {" + JS
                 + " const boxes=[...document.querySelectorAll('input,textarea')].filter(vis)"
                 + "   .filter(e=>e.type!=='hidden' && e.type!=='checkbox' && e.type!=='radio')"
@@ -514,8 +560,9 @@ public class Procedure extends BasePage {
         try { acceptSaveDialog(); } catch (Exception ignore) { }
 
         String toast = "";
-        long deadline = System.currentTimeMillis() + 20000;
+        long deadline = System.currentTimeMillis() + 120000;
         while (System.currentTimeMillis() < deadline && toast.isEmpty()) {
+            try { acceptSaveDialog(); } catch (Exception ignore) { }
             try {
                 Object now = page.evaluate("() => {" + JS + TOAST_ELS
                         + " return toastEls().map(x=>norm(x.textContent)); }");
@@ -547,7 +594,7 @@ public class Procedure extends BasePage {
         }
 
         lastSaveDiagnostics = (clicked == null ? "" : clicked.toString())
-                + (toast.isEmpty() ? "; no message within 20s" : "");
+                + (toast.isEmpty() ? "; no message within 120s" : "");
         lastToast = toast;
         System.out.println("Procedure: submit -> " + lastSaveDiagnostics + " toast=\"" + toast + "\"");
         return toast;

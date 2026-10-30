@@ -84,12 +84,17 @@ public class PayableWaiver extends DevHisBase {
         // a guaranteed failure. Try the next Doctor instead, then the next Department once Doctors run out,
         // BEFORE ever attempting Submit.
         int vtGuard = 0;
-        while (pw.lastVisitType.isEmpty() && vtGuard++ < 20) {
+        while (pw.lastVisitType.isEmpty() && vtGuard++ < 60) {
             System.out.println("PayableWaiver: Visit Type empty for " + pw.lastDepartment + "/" + pw.lastDoctor + " — trying the next Doctor");
             doctorIndex++;
             sel = pw.fillAll(deptIndex, doctorIndex, "7", "10");
-            if (pw.lastDoctor.isEmpty() && deptIndex < 40) {
-                doctorIndex = 0; deptIndex++;
+            // A Department can have no Doctor at all (e.g. "Breast and Endocrine Surgery Unit 4"): keep moving to the next Department THAT HAS
+            // NO WAIVER YET until one offers a Doctor — stepping to the next one only once gave up with ~40 still to try, and a plain
+            // "next index" walked into CAFETARIA, which already has a waiver ("Waiver already exist!").
+            while (pw.lastDoctor.isEmpty()) {
+                int next = pw.nextDepartmentIndexAvoiding(existingDepts, deptIndex);
+                if (next < 0) break;
+                doctorIndex = 0; deptIndex = next;
                 sel = pw.fillAll(deptIndex, doctorIndex, "7", "10");
             }
             if (pw.lastDoctor.isEmpty()) break;   // combinations exhausted
@@ -107,40 +112,46 @@ public class PayableWaiver extends DevHisBase {
         step(page, "Enter Waiver Days and Service Rate", "Type the Waiver Days and the Service Rate",
                 "Both are entered", rates, ratesOk ? "PASS" : "FAIL");
 
-        // Submit — retry with the next Doctor (then next Department once Doctors are exhausted) when the combo
-        // already has a waiver, or when a Doctor leaves Visit Type empty again.
+        // Submit — when the Department already has a waiver ("Waiver already exist!") go to the next Department without one; when a Doctor
+        // leaves Visit Type empty, go to the next Doctor. The last combination tried is always submitted (the loop used to end right after
+        // re-filling, leaving the final combination unsubmitted).
         String toast = "", tl;
         boolean ok = false;
         StringBuilder tries = new StringBuilder();
-        for (int attempt = 0; attempt < 6 && !ok; attempt++) {
+        for (int attempt = 0; attempt < 8 && !ok; attempt++) {
             toast = pw.submitAndGetToast();
             tl = toast == null ? "" : toast.toLowerCase();
             ok = tl.contains("saved") || tl.contains("success") || tl.contains("added");
             tries.append(attempt == 0 ? "" : " | ").append(pw.lastDepartment).append('/').append(pw.lastDoctor).append(" -> \"").append(toast).append('"');
             if (ok) break;
-            if (!tl.contains("already") && !tl.contains("exist") && !tl.contains("visit type")) break;
+            boolean taken = tl.contains("already") || tl.contains("exist");
+            if (!taken && !tl.contains("visit type")) break;
+            if (taken) existingDepts.add(pw.lastDepartment);
             if (!pw.clickBack()) break;
             if (!(pw.clickAdd() && pw.addFormOpen())) break;
-            doctorIndex++;
-            String refilled = pw.fillAll(deptIndex, doctorIndex, "7", "10");
-            while (pw.lastDoctor.isEmpty() && deptIndex < 40) {
-                doctorIndex = 0; deptIndex++;
-                refilled = pw.fillAll(deptIndex, doctorIndex, "7", "10");
-            }
-            // Same Visit-Type-empty guard as before the loop — keep advancing Doctor/Department instead of
-            // burning an attempt on a Submit that is guaranteed to fail.
-            int vtGuard2 = 0;
-            while (pw.lastVisitType.isEmpty() && !pw.lastDoctor.isEmpty() && vtGuard2++ < 20) {
+            if (taken) {
+                int next = pw.nextDepartmentIndexAvoiding(existingDepts, deptIndex);
+                if (next < 0) break;                       // no Department without a waiver is left
+                doctorIndex = 0; deptIndex = next;
+            } else {
                 doctorIndex++;
-                refilled = pw.fillAll(deptIndex, doctorIndex, "7", "10");
-                if (pw.lastDoctor.isEmpty() && deptIndex < 40) {
-                    doctorIndex = 0; deptIndex++;
-                    refilled = pw.fillAll(deptIndex, doctorIndex, "7", "10");
+            }
+            String refilled = pw.fillAll(deptIndex, doctorIndex, "7", "10");
+            // Same guards as before the loop: skip Departments without a Doctor and Doctors without a Visit Type, never ones already taken.
+            int vtGuard2 = 0;
+            while ((pw.lastDoctor.isEmpty() || pw.lastVisitType.isEmpty()) && vtGuard2++ < 60) {
+                if (!pw.lastDoctor.isEmpty()) doctorIndex++; else doctorIndex = 0;
+                if (pw.lastDoctor.isEmpty()) {
+                    int next = pw.nextDepartmentIndexAvoiding(existingDepts, deptIndex);
+                    if (next < 0) break;
+                    deptIndex = next;
                 }
+                refilled = pw.fillAll(deptIndex, doctorIndex, "7", "10");
             }
             System.out.println("Submit retry " + (attempt + 1) + ": " + refilled);
             if (pw.lastDoctor.isEmpty()) break;   // combinations exhausted
         }
+
         step(page, "Click Submit", "Click Submit", "The payable waiver is saved",
                 (toast == null || toast.isEmpty() ? "No message appeared" : "Message: \"" + toast + "\"")
                         + (pw.lastSaveApi.isEmpty() ? "" : "  [" + pw.lastSaveApi + "]")

@@ -61,12 +61,20 @@ public class ProviderClassification extends BasePage {
         try { page.waitForFunction("() => window.angular", null,
                 new Page.WaitForFunctionOptions().setTimeout(20000)); } catch (Exception ignore) { }
 
-        clickMenu("^\\s*application\\s*configuration\\s*$");
-        clickMenu("^\\s*general\\s*$");
+        // Each level is opened only if it is closed (a second click on an open entry CLOSES it) and the next one is looked up
+        // INSIDE its parent's li: the sidebar is built lazily after login, so a blind first-match click walked past the
+        // closed module, and the direct-route fallback below is bounced to the dashboard by the app's "Reload page" popup.
+        expandMenuEntry(null, "^\\s*application\\s*config(uration)?\\s*$");
+        expandMenuEntry("^\\s*application\\s*config(uration)?\\s*$", "^\\s*general\\s*$");
+        waitForAngular(800);
         lastMenu = describeMenu();
 
         Object href = page.evaluate("() => {" + JS
-                + " const a=[...document.querySelectorAll('a[href]')]"
+                + " const top=[...document.querySelectorAll('a')].find(x=>/^\\s*application\\s*config(uration)?\\s*$/i.test(norm(x.textContent)) && vis(x));"
+                + " const topLi=(top&&top.closest('li'))||document;"
+                + " const gen=[...topLi.querySelectorAll('a')].find(x=>/^\\s*general\\s*$/i.test(norm(x.textContent)) && vis(x));"
+                + " const scope=(gen&&gen.closest('li'))||topLi;"
+                + " const a=[...scope.querySelectorAll('a[href]')]"
                 + "   .find(x=>/^\\s*provider\\s*classification\\s*$/i.test(norm(x.textContent)));"
                 + " if(!a) return ''; a.id='__pcMenu'; return a.getAttribute('href')||''; }");
         lastRoute = href == null ? "" : href.toString();

@@ -32,6 +32,19 @@ public class RegistrationTest extends DevHisBase {
     /** How many registrations to create in a single run (one login, looped flow). */
     private static final int TOTAL = 1;
 
+    /** How many times one registration is redone with a different queue number when the server says the queue number is already assigned. */
+    private static final int MAX_QUEUE_ATTEMPTS = Integer.getInteger("queue.attempts", 8);
+
+    /** Set by {@link #registerOne} when its Save was refused because the queue number is already assigned. */
+    private boolean queueRetry = false;
+
+    /** Leave the Registration screen through Home, so the next OP > Registration opens a fresh, empty form (the same link on the same screen would keep the half-reset one). */
+    private void freshRegistrationForm() {
+        try { page.evaluate("() => { const h=[...document.querySelectorAll(\"a[href='#/home']\")][0] || [...document.querySelectorAll('a')].find(x=>/^\s*home\s*$/i.test(x.textContent||'')); if(h) h.click(); }"); }
+        catch (Exception ignore) { }
+        page.waitForTimeout(3000);
+    }
+
     @Override
     protected void body() {
         meta("OP - Registration",
@@ -55,7 +68,23 @@ public class RegistrationTest extends DevHisBase {
 
         int success = 0;
         for (int iter = 1; iter <= TOTAL; iter++) {
-            if (registerOne(reg, iter)) success++;
+            // A save refused because the queue number is already assigned is redone from a fresh form with a different 3-digit queue number.
+            boolean ok = false;
+            for (int attempt = 1; attempt <= MAX_QUEUE_ATTEMPTS; attempt++) {
+                queueRetry = false;
+                if (attempt > 1) freshRegistrationForm();
+                ok = registerOne(reg, iter);
+                if (ok || !queueRetry) break;
+                System.out.println("Registration "+iter+": queue number already assigned (attempt "+attempt+"/"+MAX_QUEUE_ATTEMPTS+") - redoing it with a different queue number");
+            }
+            if (ok) success++;
+            else if (queueRetry) {
+                // Every attempt was refused: the run must not read as a pass just because each refusal was handled.
+                step("[" + iter + "/" + TOTAL + "] Registration saved", "Save the registration (retrying with a different queue number when refused)",
+                        "The patient is registered",
+                        "NOT registered: all " + MAX_QUEUE_ATTEMPTS + " attempts were refused with \"This queue number is already assigned\" — queue numbers tried: "
+                                + String.join(", ", reg.triedQueueNos) + " || last exchange: " + reg.lastSaveExchange, "FAIL");
+            }
         }
         addSummary("Registrations created", success + " / " + TOTAL);
     }
@@ -255,9 +284,23 @@ public class RegistrationTest extends DevHisBase {
         // 11) Confirm Save (toast verification removed — the actual save success is confirmed by the
         // Consent Details modal + the new-MRN Registration Report that follow).
         SaveOutcome save = reg.confirmSaveAndAwaitSuccess();
+        // "This queue number is already assigned. Please enter a different queue number." — the 2-digit queue number typed on the visit form is
+        // already held by another patient. A refused Save leaves the form in a half-reset state (the next Save answered "Please fill in all the
+        // mandatory fields!"), so this attempt ends here and the caller redoes the whole registration on a fresh form with a DIFFERENT queue number.
+        if (!save.saved && RegistrationPage.queueNumberTaken(save.toast)) {
+            queueRetry = true;
+            step(tag + "Confirm Save", "Confirm the 'Do You Want To Save' dialog", "Save confirmed",
+                    "Save refused: \"" + save.toast + "\" — queue number " + reg.lastQueueNo + " is already assigned; the registration is redone on a "
+                            + "fresh form with a different queue number (tried so far: " + String.join(", ", reg.triedQueueNos) + ") || "
+                            + reg.lastSaveExchange, "MANUAL");
+            addSummary(tag + "Queue " + reg.lastQueueNo, "already assigned — retrying with a different queue number");
+            return false;
+        }
+        String queueNote = " [queue no. " + reg.lastQueueNo + (reg.triedQueueNos.size() > 1 ? ", after " + (reg.triedQueueNos.size() - 1)
+                + " refused: " + String.join(", ", reg.triedQueueNos) : "") + "]";
         step(tag + "Confirm Save", "Confirm the 'Do You Want To Save' dialog",
                 "Save confirmed (success is verified by the Consent modal / MRN report below)",
-                save.toast == null || save.toast.isEmpty() ? "Save confirmed" : save.toast, "PASS");
+                (save.toast == null || save.toast.isEmpty() ? "Save confirmed" : save.toast) + queueNote, "PASS");
 
         // 12) In-app "Consent Details" (PERSONAL DATA NOTICE & CONSENT) modal — a hard FAIL when it doesn't
         // appear, not a silently-skipped step; this is one of the two ways Save success is verified.

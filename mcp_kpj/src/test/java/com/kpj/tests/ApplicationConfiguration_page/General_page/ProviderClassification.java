@@ -48,7 +48,9 @@ public class ProviderClassification extends DevHisBase {
                         + "Classification, select the Service, Submit.");
 
         String counter = System.getProperty("counter", COUNTER_FOR_MENU);
-        String stamp = String.format("%05d", Math.abs(System.nanoTime() % 100000));
+        // Stamped from the wall clock: System.nanoTime() ticks in 100 ns steps on this machine, so its remainders end in "00" and a
+        // code repeats; the shared QA environment keeps every record ever saved.
+        String stamp = java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("ddHHmmss"));
         String code = System.getProperty("code", "PC" + stamp);
         String name = System.getProperty("name", "Auto Provider Class " + stamp);
 

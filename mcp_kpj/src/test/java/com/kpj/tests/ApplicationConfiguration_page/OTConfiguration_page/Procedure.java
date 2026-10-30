@@ -45,8 +45,11 @@ public class Procedure extends DevHisBase {
                         + "Group, tick a pricing policy, enter the HSN Code, Submit.");
 
         String counter = System.getProperty("counter", COUNTER_FOR_MENU);
-        String stamp = String.format("%05d", Math.abs(System.nanoTime() % 100000));
-        String code = System.getProperty("code", "PRC" + stamp);
+        // Stamped from the wall clock: System.nanoTime() ticks in 100 ns steps on this machine, so its remainders end in "00" and a
+        // code repeats; the shared QA environment keeps every record ever saved. The Service Code box has maxlength=10 — a longer value
+        // shows in the box but the screen's model stays empty ("Please Enter Service Code!"), so "PR" + 8 digits = 10.
+        String stamp = java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("ddHHmmss"));
+        String code = System.getProperty("code", "PR" + stamp);
         String name = System.getProperty("name", "Auto procedure " + stamp);
         String hsn = System.getProperty("hsn", "HSN" + stamp);
 
@@ -142,12 +145,17 @@ public class Procedure extends DevHisBase {
         // 6) HSN Code
         String hsnEntry = pr.enterHsn(hsn);
         boolean hsnOk = pr.hsnEntered(hsn);
+        // The Service Item form this screen opens has no HSN box and its save does not ask for one (only the Inventory Item Master does),
+        // so there is nothing to enter: recorded as MANUAL (not applicable), neither a pass nor a failure of the screen.
+        boolean hsnNa = pr.hsnNotApplicable();
         step(page, "Enter HSN code", "Enter the HSN Code " + hsn,
                 "The HSN code is entered",
                 (hsnOk
                     ? "PASSES because the field accepted the value and read it back: " + hsnEntry
-                    : "FAILS because the value did not land in the HSN field: " + hsnEntry),
-                hsnOk ? "PASS" : "FAIL");
+                    : hsnNa
+                        ? "NOT APPLICABLE on this form: " + hsnEntry
+                        : "FAILS because the value did not land in the HSN field: " + hsnEntry),
+                hsnOk ? "PASS" : hsnNa ? "MANUAL" : "FAIL");
 
         // 7) Submit -> toast
         String toast = pr.submitAndGetToast();
