@@ -12,6 +12,9 @@ import com.kpj.pages.PdfReport;
  * <ol>
  *   <li>Login (shared {@link LoginPage}, on an OPD counter so the menu exists).</li>
  *   <li>Open <b>Inventory</b> → <b>Transfer</b> → <b>Store Indent</b>.</li>
+ *   <li><b>Indent List</b> (read-only): select the <b>Requesting Store</b> from its list, enter a one-year <b>From Date</b>/<b>To Date</b> ending today, click <b>Search</b> — when the store has no
+ *       record the next store of the list is selected and searched, through the whole list, until one returns a record — verify the records are displayed in the Indent List, click one record,
+ *       verify it is displayed in <b>Indent Details</b>, click <b>Print</b> (the report opens in a new tab) and take its screenshot. Pin with {@code -Dsi.store=}, {@code -Dsi.from=}, {@code -Dsi.to=}.</li>
  *   <li>"Add a new tab - Manual Indent" (reported plainly, not assumed to be a real tab); click
  *       <b>Manual Indent</b>; select <b>Issuing Store</b>; click <b>Get Items</b> (opens the "Item
  *       Search" dialog); click <b>Search</b>; tick a checkbox to select an item; click <b>OK</b>; enter
@@ -53,7 +56,8 @@ public class StoreIndent extends DevHisBase {
     @Override
     protected void body() {
         meta("Store Indent", "Inventory > Transfer > Store Indent",
-                "&#9888; Creates ONE REAL Store Indent: click Manual Indent, select Issuing Store, "
+                "&#9888; Creates REAL Store Indents (one manual, one auto). Indent List: Requesting Store (next store until a record), one-year dates, Search, click a record, "
+                        + "Indent Details, Print (report screenshot). Then Manual Indent: click Manual Indent, select Issuing Store, "
                         + "Get Items, search and tick an item, OK, enter Unit Quantity and Remarks, "
                         + "click Save, verify report generation and the success toast, then click OK on "
                         + "the Indent Number confirmation popup.");
@@ -82,31 +86,137 @@ public class StoreIndent extends DevHisBase {
         if (!rendered) { addSummary("Result", "FAILED — screen not reached"); return; }
 
         boolean contentLoaded = si.waitForRealContent(15000);
-        addSummary("Content loaded", contentLoaded ? "yes" : "NO — still just the header shell after 15s");
+        addDiagnostic("Content loaded", contentLoaded ? "yes" : "NO — still just the header shell after 15s");
 
-        addSummary("List screen controls", si.describeControls());
+        addDiagnostic("List screen controls", si.describeControls());
+
+        // ==================== Indent List: search, record, Indent Details, Print (read-only) ====================
+        {
+            java.time.format.DateTimeFormatter df = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy");
+            java.time.LocalDate today = java.time.LocalDate.now();
+            String listTo = System.getProperty("si.to", today.format(df));
+            String listFrom = System.getProperty("si.from", today.minusYears(1).format(df));
+            String pinned = System.getProperty("si.store", "");
+            com.kpj.pages.Inventory_page.Transfer_page.StoreIndentList list = new com.kpj.pages.Inventory_page.Transfer_page.StoreIndentList(page);
+
+            java.util.List<String> stores = list.storeNames();
+            if (stores.isEmpty()) {
+                step(page, "[List] Select requesting store", "Open the Requesting Store list", "The list offers stores", "FAILED — the Requesting Store list is empty", "FAIL");
+                addSummary("Result", "FAILED — no stores in the Requesting Store list");
+                return;
+            }
+            // the order the stores are tried in: the pinned one first, then the list order
+            java.util.List<String> order = new java.util.ArrayList<>();
+            if (!pinned.isEmpty() && stores.contains(pinned)) order.add(pinned);
+            for (String s : stores) if (!s.equals(pinned)) order.add(s);
+
+            // Requesting store (the first; the Search step moves on through the list when it has no record)
+            String first = order.get(0);
+            boolean storeOk = list.selectStore(first);
+            step(page, "[List] Select requesting store", "Open the Requesting Store list and click \"" + first + "\"", "The store is selected from the list",
+                    storeOk ? "Requesting Store \"" + list.lastStore + "\" selected from the list (" + stores.size() + " stores offered)" : "FAILED — " + list.problems,
+                    storeOk ? "PASS" : "FAIL");
+            if (!storeOk) { addSummary("Result", "FAILED — store: " + list.problems); return; }
+
+            // Date range: one year ending today
+            String dates = list.enterDateRange(listFrom, listTo);
+            boolean datesOk = list.ok();
+            step(page, "[List] Enter date (1 year range)", "Enter the From Date " + listFrom + " and the To Date " + listTo, "Both dates are entered",
+                    datesOk ? dates : "FAILED — " + list.problems + " (" + dates + ")",
+                    datesOk ? "PASS" : "FAIL");
+            if (!datesOk) { addSummary("Result", "FAILED — dates: " + list.problems); return; }
+
+            // Search; store after store until a record comes back
+            java.util.List<String> tried = new java.util.ArrayList<>();
+            java.util.List<String> skipped = new java.util.ArrayList<>();
+            tried.add(first);
+            int n = list.clickSearch();
+            String foundStore = n > 0 ? list.lastStore : "";
+            System.out.println("StoreIndent: [1/" + order.size() + "] " + first + " -> " + n + " indent(s)");
+            for (int i = 1; i < order.size() && n == 0; i++) {
+                String next = order.get(i);
+                if (!list.selectStore(next)) { skipped.add(next + " (" + list.problems + ")"); continue; }
+                tried.add(next);
+                n = list.clickSearch();
+                if (!(list.lastSearchStatus > 0 && list.lastSearchStatus < 400)) skipped.add(next + " (search: " + list.problems + ")");
+                System.out.println("StoreIndent: [" + (i + 1) + "/" + order.size() + "] " + next + " -> " + n + " indent(s)");
+                if (n > 0) foundStore = list.lastStore;
+            }
+            boolean found = n > 0;
+            String triedText = tried.size() == 1 ? "\"" + tried.get(0) + "\"" : tried.size() + " store(s) in list order, from \"" + tried.get(0) + "\" to \"" + tried.get(tried.size() - 1) + "\"";
+            step(page, "[List] Click search (try the next store until a record comes back)", "Click Search; if the store has no record select the next store of the list and search again",
+                    "The Indent List shows a record",
+                    found ? n + " indent(s) found for \"" + foundStore + "\" after trying " + triedText + (skipped.isEmpty() ? "" : "; stores that could not be tried: " + skipped)
+                          : "FAILED — none of the " + tried.size() + " store(s) tried (" + triedText + ") returned an indent between " + listFrom + " and " + listTo
+                              + (skipped.isEmpty() ? "" : "; stores that could not be tried: " + skipped) + (list.ok() ? "" : "; last Search problem: " + list.problems),
+                    found ? "PASS" : "FAIL");
+            if (!found) { addSummary("Result", "FAILED — no store has an indent in " + listFrom + " - " + listTo); return; }
+
+            // Records displayed in the Indent List
+            java.util.List<java.util.List<String>> rows = list.indentRows();
+            int bad = list.incompleteRows(rows);
+            boolean populated = !rows.isEmpty() && bad == 0;
+            String sample = list.sample(rows, 2);
+            step(page, "[List] Verify records are displayed in the Indent List table", "Read the Indent List after Search", "The indents are listed with their date, number, status and stores",
+                    populated ? rows.size() + " indent(s) listed, each with date-time, indent no., status, location, type and requesting store; first: " + sample
+                              : "FAILED — " + (rows.isEmpty() ? "the table is empty" : bad + " of " + rows.size() + " row(s) lack a date, number, status, location, type or requesting store") + "; " + sample,
+                    populated ? "PASS" : "FAIL");
+            if (!populated) { addSummary("Result", "FAILED — Indent List not populated"); return; }
+
+            // Click 1 record -> Indent Details
+            String no = list.selectFirstRecord();
+            boolean rowOk = !no.isEmpty() && list.ok();
+            step(page, "[List] Click 1 record", "Click the Indent No. of the first record in the Indent List", "The indent is selected (highlighted) and its items load",
+                    rowOk ? "Selected " + no + " (" + list.lastRowText + ") — row highlighted, " + list.lastDetailRows + " item row(s) loaded" : "FAILED — " + list.problems,
+                    rowOk ? "PASS" : "FAIL");
+            if (!rowOk) { addSummary("Result", "FAILED — record: " + list.problems); return; }
+
+            java.util.List<String> det = list.detailRows();
+            boolean detOk = !det.isEmpty() && det.get(0).trim().matches("^\\d+\\s+\\S+.*");          // a numbered item line: Sr.No. then the item code
+            step(page, "[List] Verify the record is displayed in Indent Details", "Read Indent Details after selecting the indent", "The indent's item lines are shown (Sr.No., Item Code, Item Name ...)",
+                    detOk ? "Indent Details lists " + det.size() + " item line(s) for " + no + "; first: " + det.get(0)
+                          : "FAILED — Indent Details " + (det.isEmpty() ? "is empty" : "holds no numbered item line: " + det),
+                    detOk ? "PASS" : "FAIL");
+
+            // Print -> report tab -> screenshot
+            PdfReport.Result listPdf = list.clickPrintAndCapture();
+            boolean listTab = !listPdf.url.isEmpty();
+            boolean listReportOk = listTab && !listPdf.blank && listPdf.url.toLowerCase().contains("indentid=");
+            String listEvidence = listTab ? listPdf.diagnostics + (listPdf.png != null ? " The screenshot is the report's first page rendered from the file itself." : "")
+                                          : "no report tab opened" + (list.lastToast.isEmpty() ? "" : " — the screen said \"" + list.lastToast + "\"");
+            String listVerdict = (listReportOk ? "Report opened in a new tab for indent " + no + ": " : "FAILED — ") + listEvidence;
+            if (listPdf.png != null && listPdf.png.length > 0) {
+                step(listPdf.png, "[List] Click print; report opens in a new tab (screenshot)", "Click Print with the indent selected; take the report screenshot",
+                        "The indent report opens in a new tab", listVerdict, listReportOk ? "PASS" : "FAIL");
+            } else {
+                step(page, "[List] Click print; report opens in a new tab (screenshot)", "Click Print with the indent selected; take the report screenshot",
+                        "The indent report opens in a new tab", listVerdict, listReportOk ? "PASS" : "FAIL");
+            }
+            addSummary("[List] Indent printed", list.lastRowText + " | " + list.lastDetailRows + " item line(s) | " + tried.size() + " of " + order.size() + " store(s) tried | "
+                    + listFrom + " - " + listTo + " | report " + (listTab ? listPdf.url : "(none)"));
+        }
 
         // 2) "Add a new tab - Manual Indent" — reported plainly; not assumed to be a real tab.
         String manualIndentTab = si.clickManualIndentTab();
-        addSummary("\"Add a new tab - Manual Indent\"", manualIndentTab);
+        addDiagnostic("\"Add a new tab - Manual Indent\"", manualIndentTab);
 
         // 3) Click Manual Indent
         String manualIndentResult = si.clickManualIndent();
         boolean manualIndentOk = si.manualIndentClicked();
         step(page, "Click Manual Indent", "Click Manual Indent",
                 "The entry form opens",
-                manualIndentOk ? "PASSES: " + manualIndentResult : "FAILS: " + manualIndentResult,
+                manualIndentOk ? manualIndentResult : "FAILED — " + manualIndentResult,
                 manualIndentOk ? "PASS" : "FAIL");
         if (!manualIndentOk) { addSummary("Result", "FAILED — the entry form never opened"); return; }
 
-        addSummary("Entry form controls", si.describeControls());
+        addDiagnostic("Entry form controls", si.describeControls());
 
         // 4) Select Issuing Store
         String issuingStoreResult = si.selectIssuingStore();
         boolean issuingStoreOk = si.issuingStoreSelected();
         step(page, "Select issuing store", "Select the Issuing Store",
                 "An issuing store is selected",
-                issuingStoreOk ? "PASSES: " + issuingStoreResult : "FAILS: " + issuingStoreResult,
+                issuingStoreOk ? issuingStoreResult : "FAILED — " + issuingStoreResult,
                 issuingStoreOk ? "PASS" : "FAIL");
         if (!issuingStoreOk) { addSummary("Result", "FAILED — no issuing store could be selected"); return; }
 
@@ -116,7 +226,7 @@ public class StoreIndent extends DevHisBase {
         boolean ownStoreOk = si.ownStoreSelected();
         step(page, "Select Requesting Store", "Select the Requesting Store from the dropdown",
                 "A Requesting Store is selected",
-                ownStoreOk ? "PASSES: Requesting Store = " + ownStore : "FAILS: " + ownStore
+                ownStoreOk ? "Requesting Store = " + ownStore : "FAILED — " + ownStore
                         + " — without it the Item Search dialog answers \"Please Select Store Name !!!!\"",
                 ownStoreOk ? "PASS" : "FAIL");
 
@@ -125,18 +235,18 @@ public class StoreIndent extends DevHisBase {
         boolean dialogOpenOk = si.dialogOpen();
         step(page, "Click get items", "Click Get Items",
                 "The Item Search dialog opens",
-                dialogOpenOk ? "PASSES: " + getItemsResult : "FAILS: " + getItemsResult,
+                dialogOpenOk ? getItemsResult : "FAILED — " + getItemsResult,
                 dialogOpenOk ? "PASS" : "FAIL");
         if (!dialogOpenOk) { addSummary("Result", "FAILED — the Item Search dialog never opened"); return; }
 
-        addSummary("Item Search dialog controls", si.describeControls());
+        addDiagnostic("Item Search dialog controls", si.describeControls());
 
         // 5b) The dialog's own Store dropdown — its Search refuses to run while no Store is chosen.
         String dialogStore = si.selectDialogStore();
         boolean dialogStoreOk = si.dialogStoreSelected();
         step(page, "In dialog popup -Item Search, select the Store", "Select the Store from the dialog's Store dropdown",
                 "A Store is selected in the dialog",
-                dialogStoreOk ? "PASSES: Store = " + dialogStore : "FAILS: " + dialogStore,
+                dialogStoreOk ? "Store = " + dialogStore : "FAILED — " + dialogStore,
                 dialogStoreOk ? "PASS" : "FAIL");
 
         // 6) In dialog popup - Item Search, click the search button
@@ -144,7 +254,7 @@ public class StoreIndent extends DevHisBase {
         boolean dialogRowsOk = si.dialogItemRowsFound();
         step(page, "In dialog popup -Item Search, click the search button", "Click Search",
                 "Item rows appear in the dialog",
-                dialogRowsOk ? "PASSES: " + dialogSearchResult : "FAILS: " + dialogSearchResult,
+                dialogRowsOk ? dialogSearchResult : "FAILED — " + dialogSearchResult,
                 dialogRowsOk ? "PASS" : "FAIL");
         if (!dialogRowsOk) { addSummary("Result", "FAILED — no item to select"); return; }
 
@@ -153,7 +263,7 @@ public class StoreIndent extends DevHisBase {
         boolean itemTickOk = si.itemTicked();
         step(page, "Click tick on checkbox to select item", "Tick the checkbox for one item",
                 "The item is selected",
-                itemTickOk ? "PASSES: " + itemTickResult : "FAILS: " + itemTickResult,
+                itemTickOk ? itemTickResult : "FAILED — " + itemTickResult,
                 itemTickOk ? "PASS" : "FAIL");
         if (!itemTickOk) { addSummary("Result", "FAILED — no item was selected"); return; }
 
@@ -162,18 +272,18 @@ public class StoreIndent extends DevHisBase {
         boolean dialogOkOk = si.dialogOkClicked() && si.dialogClosed();
         step(page, "Click ok", "Click OK",
                 "The dialog closes and the item appears on the main form",
-                dialogOkOk ? "PASSES: " + dialogOkResult : "FAILS: " + dialogOkResult,
+                dialogOkOk ? dialogOkResult : "FAILED — " + dialogOkResult,
                 dialogOkOk ? "PASS" : "FAIL");
         if (!dialogOkOk) { addSummary("Result", "FAILED — the Item Search dialog never closed"); return; }
 
-        addSummary("Main form controls after selecting the item", si.describeControls());
+        addDiagnostic("Main form controls after selecting the item", si.describeControls());
 
         // 9) Enter unit quantity
         String unitQtyResult = si.enterUnitQuantity(qty);
         boolean unitQtyOk = si.unitQuantityEntered(qty);
         step(page, "Enter unit quantity", "Enter Unit Quantity " + qty,
                 "The Unit Quantity is entered",
-                unitQtyOk ? "PASSES: " + unitQtyResult + si.quantityNote() : "FAILS: " + unitQtyResult + si.quantityNote(),
+                unitQtyOk ? unitQtyResult + si.quantityNote() : "FAILED — " + unitQtyResult + si.quantityNote(),
                 unitQtyOk ? "PASS" : "FAIL");
 
         // 10) Enter remarks
@@ -181,7 +291,7 @@ public class StoreIndent extends DevHisBase {
         boolean remarksOk = si.remarksEntered(remarks);
         step(page, "Enter remarks", "Enter Remarks " + remarks,
                 "Remarks is entered",
-                remarksOk ? "PASSES: " + remarksResult : "FAILS: " + remarksResult,
+                remarksOk ? remarksResult : "FAILED — " + remarksResult,
                 remarksOk ? "PASS" : "FAIL");
 
         // 11) Click Save
@@ -189,7 +299,7 @@ public class StoreIndent extends DevHisBase {
         boolean saveClickedOk = si.saveClicked();
         step(page, "Click save", "Click Save",
                 "The Save action fires",
-                saveClickedOk ? "PASSES: " + si.lastSaveDiagnostics : "FAILS: " + si.lastSaveDiagnostics,
+                saveClickedOk ? si.lastSaveDiagnostics : "FAILED — " + si.lastSaveDiagnostics,
                 saveClickedOk ? "PASS" : "FAIL");
         if (!saveClickedOk) { addSummary("Result", "FAILED — the Save button was not found"); return; }
 
@@ -222,15 +332,11 @@ public class StoreIndent extends DevHisBase {
         boolean indentNumberOk = si.indentNumberOkClicked();
         step(page, "In the indent number pop up, click ok", "Click OK on the Indent Number popup",
                 "The popup is dismissed",
-                indentNumberOk ? "PASSES: " + indentNumberResult : "FAILS: " + indentNumberResult,
+                indentNumberOk ? indentNumberResult : "FAILED — " + indentNumberResult,
                 indentNumberOk ? "PASS" : "FAIL");
 
-        addSummary("Issuing store", si.lastIssuingStore);
-        addSummary("Item selected", si.lastItemTick);
-        addSummary("Unit quantity / Remarks", si.lastUnitQty + " / " + si.lastRemarks);
-        addSummary("Report result", pdf.diagnostics);
-        addSummary("Save toast result", success ? toast : "Not confirmed (\"" + toast + "\")");
-        addSummary("Indent Number popup", indentNumberResult);
+        addSummary("[Manual] Indent saved", "Issuing store " + si.lastIssuingStore + " | quantity " + si.lastUnitQty + " | remarks " + si.lastRemarks + " | "
+                + (success ? toast : "not confirmed (\"" + toast + "\")") + " | report " + (pdf.url.isEmpty() ? "(none)" : pdf.url));
 
         // ==================== [Auto Indent] tab (same list view, a second tab) ====================
         // Confirmed live this is a genuinely separate route (#/AutoIndent), not a dialog over the
@@ -249,35 +355,43 @@ public class StoreIndent extends DevHisBase {
 
         // 15) "Add new tab - Auto Indent" — reported plainly; not assumed to be a real tab.
         String autoIndentTab = si.clickAutoIndentTab();
-        addSummary("\"Add new tab - Auto Indent\"", autoIndentTab);
+        addDiagnostic("\"Add new tab - Auto Indent\"", autoIndentTab);
 
         // 16) Click Auto Indent
         String autoIndentResult = si.clickAutoIndent();
         boolean autoIndentOk = si.autoIndentClicked();
         step(page, "[Auto Indent] Click auto indent", "Click Auto Indent",
                 "The Auto Indent screen opens",
-                autoIndentOk ? "PASSES: " + autoIndentResult : "FAILS: " + autoIndentResult,
+                autoIndentOk ? autoIndentResult : "FAILED — " + autoIndentResult,
                 autoIndentOk ? "PASS" : "FAIL");
         if (!autoIndentOk) { addSummary("Auto Indent result", "FAILED — the Auto Indent screen never opened"); return; }
 
-        addSummary("[Auto Indent] Screen controls", si.describeControls());
+        addDiagnostic("[Auto Indent] Screen controls", si.describeControls());
 
         // 17) Select requesting store and issuing store
         String storesResult = si.selectRequestingAndIssuingStore();
         boolean storesOk = si.requestingAndIssuingStoreSelected();
         step(page, "[Auto Indent] Select requesting store and issuing store",
-                "Select the Requesting Store and Issuing Store",
+                "Select the Requesting Store (Pharmacy Main Store, else Pharmacy (Central)) and the Issuing Store",
                 "Both stores are selected",
-                storesOk ? "PASSES: " + storesResult : "FAILS: " + storesResult,
+                storesOk ? storesResult : "FAILED — " + storesResult,
                 storesOk ? "PASS" : "FAIL");
         if (!storesOk) { addSummary("Auto Indent result", "FAILED — the stores could not be selected"); return; }
 
         // 18) Click Search
         String autoSearchResult = si.clickAutoIndentSearch();
         boolean autoRowsOk = si.autoIndentRowsFound();
+        String swapNote = "";
+        if (!autoRowsOk) {                                              // the first pair lists nothing: try the other way round before giving up
+            String swapped = si.selectRequestingAndIssuingStore(si.lastAutoIssuingStore, si.lastRequestingStore);
+            autoSearchResult = si.clickAutoIndentSearch();
+            autoRowsOk = si.autoIndentRowsFound();
+            swapNote = " (the first pair listed no items, so the pair was swapped: " + swapped + ")";
+            storesResult = swapped;
+        }
         step(page, "[Auto Indent] Click search", "Click Search",
-                "Results appear in Auto Indent Details",
-                autoRowsOk ? "PASSES: " + autoSearchResult : "FAILS: " + autoSearchResult,
+                "Records are displayed in Auto Indent Details",
+                autoRowsOk ? autoSearchResult + swapNote : "FAILED — " + autoSearchResult + swapNote,
                 autoRowsOk ? "PASS" : "FAIL");
         if (!autoRowsOk) { addSummary("Auto Indent result", "FAILED — no item to select"); return; }
 
@@ -287,7 +401,7 @@ public class StoreIndent extends DevHisBase {
         step(page, "In auto indent details, click tick on checkbox to select item",
                 "Tick the checkbox for one item",
                 "The item is selected",
-                autoTickOk ? "PASSES: " + autoTickResult : "FAILS: " + autoTickResult,
+                autoTickOk ? autoTickResult : "FAILED — " + autoTickResult,
                 autoTickOk ? "PASS" : "FAIL");
         if (!autoTickOk) { addSummary("Auto Indent result", "FAILED — no item was selected"); return; }
 
@@ -296,7 +410,7 @@ public class StoreIndent extends DevHisBase {
         boolean autoRemarksOk = si.autoIndentRemarksEntered(autoRemarks);
         step(page, "[Auto Indent] Enter remarks", "Enter Remarks " + autoRemarks,
                 "Remarks is entered",
-                autoRemarksOk ? "PASSES: " + autoRemarksResult : "FAILS: " + autoRemarksResult,
+                autoRemarksOk ? autoRemarksResult : "FAILED — " + autoRemarksResult,
                 autoRemarksOk ? "PASS" : "FAIL");
 
         // 21) Click Save Indent
@@ -304,7 +418,7 @@ public class StoreIndent extends DevHisBase {
         boolean saveIndentOk = si.saveIndentClicked();
         step(page, "Click save indent", "Click Save Indent",
                 "The Save Indent action fires",
-                saveIndentOk ? "PASSES: " + si.lastSaveIndentDiagnostics : "FAILS: " + si.lastSaveIndentDiagnostics,
+                saveIndentOk ? si.lastSaveIndentDiagnostics : "FAILED — " + si.lastSaveIndentDiagnostics,
                 saveIndentOk ? "PASS" : "FAIL");
         if (!saveIndentOk) { addSummary("Auto Indent result", "FAILED — the Save Indent button was not found"); return; }
 
@@ -330,10 +444,8 @@ public class StoreIndent extends DevHisBase {
                     "A non-blank PDF is generated", autoPdf.diagnostics, autoPdf.blank ? "FAIL" : "PASS");
         }
 
-        addSummary("[Auto Indent] Requesting/Issuing store", storesResult);
-        addSummary("[Auto Indent] Item selected", si.lastAutoIndentItemTick);
-        addSummary("[Auto Indent] Remarks", si.lastAutoIndentRemarks);
-        addSummary("[Auto Indent] Report result", autoPdf.diagnostics);
-        addSummary("[Auto Indent] Save toast result", autoSuccess ? autoToast : "Not confirmed (\"" + autoToast + "\")");
+        addSummary("[Auto Indent] Indent saved", storesResult + " | remarks " + si.lastAutoIndentRemarks + " | "
+                + (autoSuccess ? autoToast : "not confirmed (\"" + autoToast + "\")") + " | report " + (autoPdf.url.isEmpty() ? "(none)" : autoPdf.url));
+        addSummary("Indents created", ((success ? 1 : 0) + (autoSuccess ? 1 : 0)) + " / 2");
     }
 }

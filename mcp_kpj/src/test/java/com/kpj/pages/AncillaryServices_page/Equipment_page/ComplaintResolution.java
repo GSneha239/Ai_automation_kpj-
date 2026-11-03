@@ -72,15 +72,17 @@ public class ComplaintResolution extends BasePage {
             System.out.println("ComplaintResolution.nav: nav menu never appeared — is this session on an OPD counter?");
         }
 
-        page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                + " const a=[...document.querySelectorAll('a')].find(x=>/ancillary\\s*services?/i.test(norm(x.textContent)) && x.offsetParent!==null); if(a) a.click(); }");
-        waitForAngular(1000);
-        page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                + " const a=[...document.querySelectorAll('a')].find(x=>/equipment\\s*\\/?\\s*asset/i.test(norm(x.textContent)) && x.offsetParent!==null); if(a) a.click(); }");
-        waitForAngular(1000);
+        // Each level is opened only if it is shut (a sidebar entry TOGGLES: a blind click on an open one closes it) and looked up INSIDE its parent, so a same-named entry elsewhere in
+        // the sidebar cannot be matched instead.
+        expandMenuEntry(null, "^\\s*ancillary\\s*services?\\s*$");
+        expandMenuEntry("^\\s*ancillary\\s*services?\\s*$", "^\\s*equipment\\s*/\\s*asset\\s*$");
 
         Object tagged = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                + " const links=[...document.querySelectorAll('a[href]')].filter(x=>x.offsetParent!==null);"
+                + " const vis=x=>x.offsetParent!==null;"
+                + " const top=[...document.querySelectorAll('a')].find(x=>/^\\s*ancillary\\s*services?\\s*$/i.test(norm(x.textContent)) && vis(x));"
+                + " const eq=top && [...top.closest('li').querySelectorAll('a')].find(x=>/^\\s*equipment\\s*\\/\\s*asset\\s*$/i.test(norm(x.textContent)) && vis(x));"
+                + " const scope=eq ? eq.closest('li') : document;"
+                + " const links=[...scope.querySelectorAll('a[href]')].filter(vis);"
                 + " const a=links.find(x=>/^complaint\\s*resolution$/i.test(norm(x.textContent)))"
                 + "   || links.find(x=>/#\\/complaintresolution/i.test(x.getAttribute('href')||''));"
                 + " if(!a) return false; a.id='__crMenu'; return true; }");
@@ -367,6 +369,32 @@ public class ComplaintResolution extends BasePage {
         return lastMandatoryCheck.startsWith("MANDATORY");
     }
 
+    // ---- why can no complaint exist? ----------------------------------------
+
+    /** Set by {@link #equipmentBlockers()}. */
+    public String lastBlockers = "";
+
+    /**
+     * Read-only evidence of WHY this environment holds no equipment complaint (re-confirmed in the built-in browser 2026-11-02): a complaint is raised in Complaint Details, whose mandatory
+     * <b>Equipment*</b> list is the store-bound lookup {@code fetchDropDownListForAncillarywithPar('Equipment', storeId)} — it answered 0 equipment for each of the 121 stores — and the Equipment master
+     * list ({@code POST /api/ItemMaster/Fetch {"ExecFlag":"EquipmentItems"}}) answers HTTP 500 {@code MappingException: Failed to cast column value ... property 'Instruction_2'}, so even the master
+     * cannot be listed or linked to a store from the screen. This asks both questions through the page's own services (no UI scan, about a second) and returns one sentence.
+     */
+    public String equipmentBlockers() {
+        Object r = page.evaluate("async () => { try {"
+                + " const inj=window.angular.element(document.body).injector(); const cf=inj.get('commonFactory'); const http=inj.get('$http');"
+                + " const st=document.querySelector(\"[ng-model='" + M + "storeid']\"); if(!st) return '(the Store list is not on screen)';"
+                + " const ids=[...st.options].filter(o=>o.value && !/select/i.test(o.textContent||'')).map(o=>parseInt(String(o.value).replace(/\\D/g,''),10)).filter(n=>n>0);"
+                + " const counts=await Promise.all(ids.map(i=>cf.fetchDropDownListForAncillarywithPar('Equipment', i).then(x=>(x.data||[]).length).catch(()=>-1)));"
+                + " let master=''; try { const x=await http.post('/api/ItemMaster/Fetch',{ExecFlag:'EquipmentItems'}); master='HTTP '+x.status+', '+((x.data||[]).length)+' item(s)'; }"
+                + "   catch(e){ master='HTTP '+(e&&e.status||'?')+' '+String((e&&e.data&&(e.data.ExceptionMessage||e.data.Message))||'').replace(/\\s+/g,' ').slice(0,170); }"
+                + " return counts.filter(n=>n>0).length+' of '+ids.length+' store(s) have any equipment in the lookup Complaint Details uses for its mandatory Equipment field; the Equipment master list call (ItemMaster/Fetch EquipmentItems) answered '+master; }"
+                + " catch(e){ return '(could not check: '+(e&&e.message||e)+')'; } }");
+        lastBlockers = r == null ? "" : r.toString();
+        System.out.println("ComplaintResolution: " + lastBlockers);
+        return lastBlockers;
+    }
+
     // ---- does any complaint data exist at all? -----------------------------
 
     /** Set by {@link #complaintsInMasterList()} — what the master list showed. */
@@ -384,8 +412,20 @@ public class ComplaintResolution extends BasePage {
     public int complaintsInMasterList() {
         int rows = -1;
         try {
-            page.evaluate("() => { window.location.hash = '#/complaintdetails'; }");
+            // Reached through the menu: a direct hash jump is bounced by this app ("Reload page?" is answered No), and the grid read below would then be the Complaint Resolution grid.
+            expandMenuEntry(null, "^\\s*ancillary\\s*services?\\s*$");
+            expandMenuEntry("^\\s*ancillary\\s*services?\\s*$", "^\\s*equipment\\s*/\\s*asset\\s*$");
+            page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const vis=x=>x.offsetParent!==null;"
+                    + " const top=[...document.querySelectorAll('a')].find(x=>/^\\s*ancillary\\s*services?\\s*$/i.test(norm(x.textContent))&&vis(x));"
+                    + " const eq=top&&[...top.closest('li').querySelectorAll('a')].find(x=>/^\\s*equipment\\s*\\/\\s*asset\\s*$/i.test(norm(x.textContent))&&vis(x));"
+                    + " const a=eq&&[...eq.closest('li').querySelectorAll('a[href]')].find(x=>/^complaint\\s*details$/i.test(norm(x.textContent)));"
+                    + " if(a) a.click(); }");
             waitForAngular(5000);
+            if (!page.url().toLowerCase().contains("complaintdetails")) {
+                lastMasterListCheck = "could not open Complaint Details (the app stayed on " + page.url().replaceAll("^.*#", "#") + ") — its list was not read";
+                System.out.println("ComplaintResolution: " + lastMasterListCheck);
+                return -1;
+            }
             Object r = page.evaluate("() => {"
                     + " let best=-1;"
                     + " document.querySelectorAll('*').forEach(el=>{ try{"
@@ -400,7 +440,7 @@ public class ComplaintResolution extends BasePage {
             String[] parts = s.split("\\|");
             if (parts.length > 0) try { rows = Integer.parseInt(parts[0].trim()); } catch (Exception ignore) { }
             lastMasterListCheck = "the Complaint Details list (" + (parts.length > 2 ? parts[2] : "?")
-                    + ") holds " + rows + " complaint row(s)"
+                    + ") holds " + rows + " complaint row(s) before any search"
                     + (parts.length > 1 ? ", " + parts[1] + " rendered" : "");
         } catch (Exception e) {
             lastMasterListCheck = "could not read the Complaint Details list: " + e.getMessage().split("\n")[0];

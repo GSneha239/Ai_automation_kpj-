@@ -86,9 +86,9 @@ public class LoanGRN extends DevHisBase {
         int year = java.time.LocalDate.now().getYear() + EXPIRY_YEARS_AHEAD;
         boolean enabled = g.expiryEnabled();
         String expiry = enabled ? g.pickExpiryDate(year) : "";
-        step(page, "Enter expiry date", "Enter the Expiry Date (picked in the calendar: " + year + ")", "The expiry date is entered (MM/yy)",
+        step(page, "Enter expiry date", "Enter the Expiry Date (picked in the calendar: " + year + ")", "The expiry date is entered (the picked date, shown as dd/MM/yyyy — earlier builds showed MM/yy)",
                 !enabled ? "The Expiry Date box is disabled for this item (it is not batch-tracked)"
-                         : expiry.isEmpty() || !g.ok() ? "Not entered — " + g.problems : "Expiry Date reads " + expiry + " (month/year picked in the calendar)",
+                         : expiry.isEmpty() || !g.ok() ? "Not entered — " + g.problems : "Expiry Date reads " + expiry + " (picked in the calendar)",
                 enabled && !expiry.isEmpty() && g.ok() ? "PASS" : "FAIL");
         if (!enabled || expiry.isEmpty() || !g.ok()) { addSummary("Result", "FAILED — expiry date: " + (enabled ? g.problems : "box disabled")); return; }
 

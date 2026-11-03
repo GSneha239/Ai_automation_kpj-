@@ -141,13 +141,25 @@ public class PurchaseOrderApproval extends DevHisBase {
                     tried.append(" [store loop aborted: ").append(m.split("\\R")[0]).append("]");
                 } finally { watchdog.cancel(); }
                 search = search + "  ||  with a Store chosen, one after another:" + tried;
+                if (!rowsOk) {
+                    // 16 stores are not all of them: ask the screen's own search call for every store at once, and open the first store that holds a purchase order.
+                    String scan = poa.scanAllStores();
+                    search = search + "  ||  all stores: " + scan;
+                    if (!poa.scanHits.isEmpty()) {
+                        String picked = poa.selectSearchStoreByName(poa.scanHits.get(0));
+                        String s = poa.clickSearch();
+                        rowsOk = poa.rowsFound();
+                        search = search + "  ||  then searched " + picked + " -> " + (rowsOk ? "rows found" : "0 rows");
+                        if (rowsOk) search = s + "  ||  " + search;
+                    }
+                }
             }
         }
         step(page, "Click Search; verify row of data exists and appears", "Click Search",
                 "A row of data appears in the list",
                 rowsOk ? "PASSES: " + search : "FAILS: " + search,
                 rowsOk ? "PASS" : "FAIL");
-        if (!rowsOk) { addSummary("Result", "FAILED — no purchase order to modify"); return; }
+        if (!rowsOk) { addSummary("Result", "FAILED — no purchase order to modify" + (poa.lastScan.isEmpty() ? "" : " (" + poa.lastScan + ")")); return; }
 
         addSummary("Results", poa.describeRows());
 

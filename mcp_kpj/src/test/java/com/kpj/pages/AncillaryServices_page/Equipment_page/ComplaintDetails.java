@@ -95,15 +95,17 @@ public class ComplaintDetails extends BasePage {
             System.out.println("ComplaintDetails.nav: nav menu never appeared — is this session on an OPD counter?");
         }
 
-        page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                + " const a=[...document.querySelectorAll('a')].find(x=>/ancillary\\s*services?/i.test(norm(x.textContent)) && x.offsetParent!==null); if(a) a.click(); }");
-        waitForAngular(1000);
-        page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                + " const a=[...document.querySelectorAll('a')].find(x=>/equipment\\s*\\/?\\s*asset/i.test(norm(x.textContent)) && x.offsetParent!==null); if(a) a.click(); }");
-        waitForAngular(1000);
+        // Each level is opened only if it is shut (a sidebar entry TOGGLES: a blind click on an open one closes it) and looked up INSIDE its parent, so a same-named entry elsewhere in
+        // the sidebar cannot be matched instead.
+        expandMenuEntry(null, "^\\s*ancillary\\s*services?\\s*$");
+        expandMenuEntry("^\\s*ancillary\\s*services?\\s*$", "^\\s*equipment\\s*/\\s*asset\\s*$");
 
         Object tagged = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                + " const links=[...document.querySelectorAll('a[href]')].filter(x=>x.offsetParent!==null);"
+                + " const vis=x=>x.offsetParent!==null;"
+                + " const top=[...document.querySelectorAll('a')].find(x=>/^\\s*ancillary\\s*services?\\s*$/i.test(norm(x.textContent)) && vis(x));"
+                + " const eq=top && [...top.closest('li').querySelectorAll('a')].find(x=>/^\\s*equipment\\s*\\/\\s*asset\\s*$/i.test(norm(x.textContent)) && vis(x));"
+                + " const scope=eq ? eq.closest('li') : document;"
+                + " const links=[...scope.querySelectorAll('a[href]')].filter(vis);"
                 + " const a=links.find(x=>/^complaint\\s*details?$/i.test(norm(x.textContent)))"
                 + "   || links.find(x=>/#\\/ComplaintDetails/i.test(x.getAttribute('href')||''));"
                 + " if(!a) return false; a.id='__cdMenu'; return true; }");
@@ -128,6 +130,30 @@ public class ComplaintDetails extends BasePage {
     public boolean onListScreen() {
         String url = page.url().toLowerCase();
         return url.contains("complaintdetails") && !url.contains("add");
+    }
+
+    /** Set by {@link #equipmentBlockers()}. */
+    public String lastBlockers = "";
+
+    /**
+     * Read-only evidence of why the mandatory <b>Equipment*</b> list is empty (found in the built-in browser 2026-11-02): it is the store-bound lookup
+     * {@code fetchDropDownListForAncillarywithPar('Equipment', storeId)}, asked here for EVERY store the form offers, and the Equipment master list
+     * ({@code POST /api/ItemMaster/Fetch {"ExecFlag":"EquipmentItems"}}) answers HTTP 500 ({@code MappingException ... property 'Instruction_2'}), so equipment cannot
+     * even be listed on its own screen, let alone linked to a store. Works through the page's own services (about a second); one sentence.
+     */
+    public String equipmentBlockers() {
+        Object r = page.evaluate("async () => { try {"
+                + " const inj=window.angular.element(document.body).injector(); const cf=inj.get('commonFactory'); const http=inj.get('$http');"
+                + " const st=document.querySelector(\"[ng-model='" + M + "storeid']\"); if(!st) return '(the Store list is not on screen)';"
+                + " const ids=[...st.options].filter(o=>o.value && !/select/i.test(o.textContent||'')).map(o=>parseInt(String(o.value).replace(/\\D/g,''),10)).filter(n=>n>0);"
+                + " const counts=await Promise.all(ids.map(i=>cf.fetchDropDownListForAncillarywithPar('Equipment', i).then(x=>(x.data||[]).length).catch(()=>-1)));"
+                + " let master=''; try { const x=await http.post('/api/ItemMaster/Fetch',{ExecFlag:'EquipmentItems'}); master='HTTP '+x.status+', '+((x.data||[]).length)+' item(s)'; }"
+                + "   catch(e){ master='HTTP '+(e&&e.status||'?')+' '+String((e&&e.data&&(e.data.ExceptionMessage||e.data.Message))||'').replace(/\\s+/g,' ').slice(0,170); }"
+                + " return counts.filter(n=>n>0).length+' of '+ids.length+' store(s) have any equipment in the Equipment lookup; the Equipment master list call (ItemMaster/Fetch EquipmentItems) answered '+master; }"
+                + " catch(e){ return '(could not check: '+(e&&e.message||e)+')'; } }");
+        lastBlockers = r == null ? "" : r.toString();
+        System.out.println("ComplaintDetails: " + lastBlockers);
+        return lastBlockers;
     }
 
     public boolean onComplaintForm() {

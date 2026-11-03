@@ -85,16 +85,18 @@ public class MORoster extends BasePage {
             System.out.println("MORoster.nav: nav menu never appeared — is this session on an OPD counter?");
         }
 
-        page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                + " const a=[...document.querySelectorAll('a')].find(x=>/ancillary\\s*services?/i.test(norm(x.textContent)) && x.offsetParent!==null); if(a) a.click(); }");
-        waitForAngular(1000);
-        page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                + " const a=[...document.querySelectorAll('a')].find(x=>/^\\s*doctor\\s*roster\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null); if(a) a.click(); }");
-        waitForAngular(1000);
+        // Each level is opened only if it is shut (a sidebar entry TOGGLES: a blind click on an open one closes it) and looked up INSIDE its parent (the sidebar is built
+        // lazily, and a same-named entry elsewhere must not be matched) — the old blind clicks ended on the Patient Dashboard.
+        expandMenuEntry(null, "^\\s*ancillary\\s*services?\\s*$");
+        expandMenuEntry("^\\s*ancillary\\s*services?\\s*$", "^\\s*doctor\\s*roster\\s*$");
 
         // Exact match first — "MO Roster" sits beside "ConsultantOnCall" in the same submenu.
         Object tagged = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                + " const links=[...document.querySelectorAll('a[href]')].filter(x=>x.offsetParent!==null);"
+                + " const vis=x=>x.offsetParent!==null;"
+                + " const top=[...document.querySelectorAll('a')].find(x=>/^\\s*ancillary\\s*services?\\s*$/i.test(norm(x.textContent)) && vis(x));"
+                + " const dr=top && [...top.closest('li').querySelectorAll('a')].find(x=>/^\\s*doctor\\s*roster\\s*$/i.test(norm(x.textContent)) && vis(x));"
+                + " const scope=dr ? dr.closest('li') : document;"
+                + " const links=[...scope.querySelectorAll('a[href]')].filter(vis);"
                 + " const a=links.find(x=>/^mo\\s*roster$/i.test(norm(x.textContent)))"
                 + "   || links.find(x=>/#\\/MORoster/i.test(x.getAttribute('href')||''));"
                 + " if(!a) return false; a.id='__moMenu'; return true; }");
@@ -306,16 +308,22 @@ public class MORoster extends BasePage {
         return "(no-choices)";
     }
 
+    /**
+     * Which Medical Officer row to take: the shared QA environment holds a roster for the first officer on almost every date (every earlier run took row 0 and
+     * the date/officer/shift uniqueness rule now refuses all of them), so a RANDOM row is taken ({@code -1}); {@code -Dmo.officerIndex=} pins one.
+     */
+    private int officerIndex = Integer.getInteger("mo.officerIndex", -1);
+
     private String pickOfficerChoice() {
         for (int i = 0; i < 8; i++) {
-            Object chosen = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+            Object chosen = page.evaluate("(a) => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
                     + " const vis=e=>e && e.offsetParent!==null;"
                     + " const rows=[...document.querySelectorAll('.ui-select-choices-row')].filter(vis)"
                     + "   .filter(r=>norm(r.textContent) && !/^-*\\s*select|^--/i.test(norm(r.textContent)));"
                     + " if(!rows.length) return '';"
-                    + " const r=rows[0]; const t=norm(r.textContent);"
+                    + " const r=rows[a<0 ? Math.floor(Math.random()*rows.length) : Math.min(a, rows.length-1)]; const t=norm(r.textContent);"
                     + " const clickable=r.querySelector('.ui-select-choices-row-inner,a,div')||r;"
-                    + " clickable.click(); return t; }");
+                    + " clickable.click(); return t; }", officerIndex);
             if (chosen != null && !chosen.toString().isEmpty()) {
                 System.out.println("MORoster: Medical Officer = " + chosen);
                 return chosen.toString();
@@ -442,7 +450,7 @@ public class MORoster extends BasePage {
                 break;
             }
             java.time.LocalDate base = java.time.LocalDate.now()
-                    .plusDays(30 + Math.floorMod(System.nanoTime(), 300));
+                    .plusDays(30 + Math.floorMod(System.nanoTime(), 1500));   // up to ~4 years out: the nearer year is already full
             selectDates(base.toString(), base.plusDays(6).toString());
             selectDepartmentShiftAndOfficer(deptPrefer, shiftPrefer);
         }

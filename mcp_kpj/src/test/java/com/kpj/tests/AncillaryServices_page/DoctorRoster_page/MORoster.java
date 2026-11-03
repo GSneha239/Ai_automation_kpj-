@@ -72,7 +72,7 @@ public class MORoster extends DevHisBase {
         // test) land on the SAME window and collide. nanoTime's low bits change on every JVM start, so the
         // offset is effectively unique per run regardless of how close together runs happen.
         java.time.LocalDate base = java.time.LocalDate.now()
-                .plusDays(30 + Math.floorMod(System.nanoTime(), 300));
+                .plusDays(30 + Math.floorMod(System.nanoTime(), 1500));
         String fromDate = System.getProperty("fromDate", base.toString());
         String toDate = System.getProperty("toDate", base.plusDays(6).toString());
 

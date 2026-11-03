@@ -37,7 +37,20 @@ import com.microsoft.playwright.Page;
  */
 public class PurchaseOrderApproval extends BasePage {
 
-    public PurchaseOrderApproval(Page page) { super(page); }
+    /** The body of the last {@code POST /api/ApprovePurchaseOrder/Fetch} the screen sent (a Search), replayed by {@link #scanAllStores()}. */
+    private volatile String lastFetchBody = "";
+    /** Names of the stores {@link #scanAllStores()} found purchase orders in, and the sentence describing the whole scan. */
+    public final java.util.List<String> scanHits = new java.util.ArrayList<>();
+    public String lastScan = "";
+
+    public PurchaseOrderApproval(Page page) {
+        super(page);
+        page.onRequest(r -> {
+            try {
+                if ("POST".equalsIgnoreCase(r.method()) && r.url().contains("/api/ApprovePurchaseOrder/Fetch") && r.postData() != null) lastFetchBody = r.postData();
+            } catch (Exception ignore) { }
+        });
+    }
 
     public String lastBodyText = "", lastMenu = "", lastRoute = "", lastDates = "", lastSearch = "",
             lastRows = "", lastModifyTab = "", lastRowModify = "", lastDeliveryPlace = "",
@@ -678,6 +691,59 @@ public class PurchaseOrderApproval extends BasePage {
         if (text.isEmpty() || text.matches("^-*\\s*[Ss]elect.*")) text = "(the Store did not stay selected: shows \"" + text + "\")";
         System.out.println("PurchaseOrderApproval: Store #" + (k + 1) + " -> " + text);
         return text;
+    }
+
+    /**
+     * Ask the screen's own search call ({@code POST /api/ApprovePurchaseOrder/Fetch}, the body of the last Search replayed) for EVERY store of the Store filter,
+     * eight at a time — a few seconds in all, where searching store after store through the screen takes minutes. Fills {@link #scanHits} with the names of the
+     * stores that answered with purchase orders and {@link #lastScan} with what was asked and found. The Store filter is put back as it was.
+     */
+    @SuppressWarnings("unchecked")
+    public String scanAllStores() {
+        scanHits.clear();
+        if (lastFetchBody.isEmpty()) { lastScan = "(no search request was seen, so there is nothing to replay for the other stores)"; return lastScan; }
+        Object r = page.evaluate("async (a) => {" + JS
+                + " const sel=[...document.querySelectorAll(\"select[ng-model='POAList.StoreID']\")].find(vis); if(!sel) return {err:'no Store dropdown on the screen'};"
+                + " const sc=angular.element(sel).scope(); const $http=angular.element(sel).injector().get('$http');"
+                + " let body; try{ body=JSON.parse(a); }catch(e){ return {err:'the search request body is not JSON'}; }"
+                + " const key=Object.keys(body).find(k=>/^storeid$/i.test(k)) || Object.keys(body).find(k=>/store/i.test(k));"
+                + " if(!key) return {err:'the search request carries no store field ('+Object.keys(body).join(', ')+')'};"
+                + " const opts=[...sel.options].map((o,i)=>({o,i})).filter(x=>x.o.value && !/^-*\\s*select/i.test(norm(x.o.text)));"
+                + " const was=sel.selectedIndex, stores=[];"
+                + " for(const x of opts){ sel.selectedIndex=x.i; sel.dispatchEvent(new Event('change',{bubbles:true})); try{ angular.element(sel).triggerHandler('change'); }catch(e){}"
+                + "   const id=sc.POAList.StoreID; if(id!=null && id!=='' && !stores.some(s=>String(s.id)===String(id))) stores.push({id:id, name:norm(x.o.text)}); }"
+                + " sel.selectedIndex=was; sel.dispatchEvent(new Event('change',{bubbles:true})); try{ angular.element(sel).triggerHandler('change'); }catch(e){}"
+                + " const res=[];"
+                + " for(let i=0;i<stores.length;i+=8){ await Promise.all(stores.slice(i,i+8).map(async s=>{ const b=Object.assign({},body); b[key]=s.id;"
+                + "   try{ const rr=await $http.post('/api/ApprovePurchaseOrder/Fetch', b); const d=rr.data; res.push({name:s.name, n:Array.isArray(d)?d.length:-1}); }"
+                + "   catch(e){ res.push({name:s.name, n:-2}); } })); }"
+                + " return {key:key, asked:stores.length, listed:opts.length, hits:res.filter(x=>x.n>0), failed:res.filter(x=>x.n<0).length}; }", lastFetchBody);
+        if (!(r instanceof java.util.Map)) { lastScan = "(the all-stores scan returned nothing)"; return lastScan; }
+        java.util.Map<String, Object> m = (java.util.Map<String, Object>) r;
+        if (m.get("err") != null) { lastScan = "(the all-stores scan could not run: " + m.get("err") + ")"; return lastScan; }
+        StringBuilder sb = new StringBuilder("asked the screen's own search call (" + m.get("key") + " replaced) for " + m.get("asked") + " of " + m.get("listed") + " store(s) in the Store list");
+        java.util.List<Object> hits = (java.util.List<Object>) m.get("hits");
+        for (Object h : hits) {
+            java.util.Map<String, Object> hm = (java.util.Map<String, Object>) h;
+            scanHits.add(String.valueOf(hm.get("name")));
+        }
+        Object failed = m.get("failed");
+        sb.append(scanHits.isEmpty() ? " — none had a purchase order" : " — purchase orders in: " + hits.stream().map(h -> ((java.util.Map<String, Object>) h).get("name") + " (" + ((java.util.Map<String, Object>) h).get("n") + ")").collect(java.util.stream.Collectors.joining(", ")));
+        if (failed instanceof Number && ((Number) failed).intValue() > 0) sb.append("; ").append(failed).append(" call(s) failed");
+        lastScan = sb.toString();
+        System.out.println("PurchaseOrderApproval: " + lastScan);
+        return lastScan;
+    }
+
+    /** Select the Store filter's option whose name is {@code name}; returns the name shown afterwards ("(…)" when it did not take). */
+    public String selectSearchStoreByName(String name) {
+        Object r = page.evaluate("(n) => {" + JS
+                + " const e=[...document.querySelectorAll(\"select[ng-model='POAList.StoreID']\")].find(vis); if(!e) return '(no Store dropdown on the screen)';"
+                + " const i=[...e.options].findIndex(o=>norm(o.text)===n); if(i<0) return '(the Store list has no \"'+n+'\")';"
+                + " e.selectedIndex=i; e.dispatchEvent(new Event('change',{bubbles:true})); try{ angular.element(e).triggerHandler('change'); }catch(x){}"
+                + " return norm(e.options[e.selectedIndex].text); }", name);
+        waitForAngular(900);
+        return r == null ? "" : r.toString();
     }
 
     public String tickPendingPoFilter() {

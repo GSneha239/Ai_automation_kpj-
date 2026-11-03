@@ -357,6 +357,75 @@ public class PatientFeedback extends BasePage {
         return Boolean.TRUE.equals(r);
     }
 
+    // ---- admission id (CAT1968) --------------------------------------------
+
+    /** What {@link #ensureAdmissionViaPopup} found and did, for the report. */
+    public String lastAdmissionNote = "";
+
+    /** The admission id the form holds ({@code PatientFeedback.admid}), 0 when it holds none. */
+    public int admissionId() {
+        Object r = page.evaluate("() => { const e=[...document.querySelectorAll(\"[ng-model='" + M + "MRNo']\")].find(x=>x.offsetParent!==null);"
+                + " try { const s=window.angular.element(e).scope(); const v=s && s.PatientFeedback && s.PatientFeedback.admid; return v>0 ? v : 0; } catch(err) { return 0; } }");
+        return r instanceof Number ? ((Number) r).intValue() : 0;
+    }
+
+    /**
+     * Make sure the form holds an <b>admission id</b>, which Save now demands.
+     *
+     * <p><b>Verified live 2026-11-02 (build v2026.11.02.367, change CAT1968 dated 30-10-2026).</b> {@code IUDPatientFeedbackDetail()} starts with
+     * {@code if (no feedbackid in the URL && !(PatientFeedback.admid > 0)) { JAlert("Please Enter MRN No."); return; }} — it makes no server call. Typing the MRN and clicking Search
+     * ({@code SearchPatientByMRNo()}, ExecFlag GetPatientInfo) fills the form from a patient row that carries {@code visitadmissionid} but NO {@code admid}, so Save answered "Please Enter MRN No.!" for
+     * every template. Choosing the patient in the form's <b>Search Patient</b> popup with its <b>Select</b> button ({@code SetSearchPatient}) DOES fill {@code admid} (and {@code patientid}, and the MRN box).</p>
+     *
+     * <p>So when the form holds no admission id after the MRN search, this opens the popup, filters it by that MRN ({@code PatientData.MRNo}, the server-side criterion), searches, and clicks Select on the
+     * row for that MRN (else the first row).</p>
+     *
+     * @return true when the form then holds {@code admid > 0}
+     */
+    public boolean ensureAdmissionViaPopup(String mrn) {
+        int before = admissionId();
+        if (before > 0) { lastAdmissionNote = "the MRN search already set admission id " + before; return true; }
+        page.evaluate("() => { const b=[...document.querySelectorAll('button')].find(x=>/OpenPatientSearchPopupScreen/i.test(x.getAttribute('ng-click')||'') && x.offsetParent!==null); if(b) b.click(); }");
+        // a modal is position:fixed, so its offsetParent is null even when it is showing — judge it by its size
+        try { page.waitForFunction("() => [...document.querySelectorAll('.modal')].some(m=>m.offsetWidth||m.offsetHeight||m.getClientRects().length)", null, new Page.WaitForFunctionOptions().setTimeout(8000)); }
+        catch (Exception e) { lastAdmissionNote = "the Search Patient popup did not open"; return false; }
+        waitForAngular(700);
+        page.evaluate("(f) => {" + JS
+                + " const e=[...document.querySelectorAll(\".modal [ng-model='PatientData.MRNo']\")].find(vis);"
+                + " if(e){ const c=A.element(e).controller('ngModel'); e.value=f; if(c){ c.$setViewValue(f); c.$render(); }"
+                + "   e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true})); } }", mrn);
+        page.evaluate("() => { const b=[...document.querySelectorAll('.modal [ng-click]')].find(x=>/SearchPatient\\(0\\)/.test(x.getAttribute('ng-click')||'') && x.offsetParent!==null); if(b) b.id='__pfPopSearch'; }");
+        try { page.locator("#__pfPopSearch").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000)); } catch (Exception ignore) { }
+        page.evaluate("() => { const e=document.getElementById('__pfPopSearch'); if(e) e.removeAttribute('id'); }");
+        try {
+            page.waitForFunction("() => [...document.querySelectorAll('.modal table tbody tr, .modal .ui-grid-row')].filter(r=>r.offsetParent!==null).length > 0",
+                    null, new Page.WaitForFunctionOptions().setTimeout(15000));
+        } catch (Exception e) { lastAdmissionNote = "the Search Patient popup listed no patient for MRN " + mrn; closePopup(); return false; }
+        waitForAngular(600);
+        Object tagged = page.evaluate("(m) => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                + " const rows=[...document.querySelectorAll('.modal table tbody tr, .modal .ui-grid-row')].filter(r=>r.offsetParent!==null);"
+                + " const pick=rows.find(r=>norm(r.textContent).split(' ')[0]===m) || rows[0]; if(!pick) return '';"
+                + " const b=[...pick.querySelectorAll('[ng-click]')].find(x=>/SetSearchPatient/.test(x.getAttribute('ng-click')||'')); if(!b) return '';"
+                + " b.id='__pfPopSelect'; return norm(pick.textContent).slice(0,120); }", mrn);
+        String row = tagged == null ? "" : tagged.toString();
+        if (row.isEmpty()) { lastAdmissionNote = "the popup row for MRN " + mrn + " has no Select button"; closePopup(); return false; }
+        try { page.locator("#__pfPopSelect").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000)); }
+        catch (Exception e) { lastAdmissionNote = "the popup's Select button could not be clicked"; closePopup(); return false; }
+        page.evaluate("() => { const e=document.getElementById('__pfPopSelect'); if(e) e.removeAttribute('id'); }");
+        for (int i = 0; i < 20 && admissionId() == 0; i++) page.waitForTimeout(250);
+        waitForAngular(500);
+        int now = admissionId();
+        lastAdmissionNote = now > 0 ? "the MRN search left no admission id, so the patient was also chosen in the Search Patient popup (Select on \"" + row + "\") — admission id " + now
+                                    : "the popup's Select did not set an admission id (row \"" + row + "\")";
+        closePopup();
+        return now > 0;
+    }
+
+    private void closePopup() {
+        page.evaluate("() => { const b=[...document.querySelectorAll('.modal [ng-click]')].find(x=>/CloseModel/i.test(x.getAttribute('ng-click')||'') && x.offsetParent!==null); if(b) b.click(); }");
+        waitForAngular(400);
+    }
+
     // ---- template ----------------------------------------------------------
 
     /**

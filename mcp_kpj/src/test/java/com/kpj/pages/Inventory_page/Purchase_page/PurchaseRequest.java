@@ -475,9 +475,9 @@ public class PurchaseRequest extends BasePage {
 
     // ---- Purchase Request Details: PR Type / Delivery Lead Time / Delivery Place --
 
-    /** Select the <b>PR Type</b> — the first real option in whatever select carries "PR Type". */
+    /** Select the <b>PR Type</b> — the first real option in whatever select carries "PR Type", or the one named by {@code -Dpr.type=}. */
     public String selectPrType() {
-        lastPrType = selectFirstRealOption("pr.?type", "__prType");
+        lastPrType = selectRealOption("pr.?type", "__prType", System.getProperty("pr.type", ""));
         System.out.println("PurchaseRequest: PR type -> " + lastPrType);
         return lastPrType;
     }
@@ -516,9 +516,12 @@ public class PurchaseRequest extends BasePage {
         return lastDeliveryPlace != null && !lastDeliveryPlace.isEmpty() && !lastDeliveryPlace.startsWith("(");
     }
 
-    private String selectFirstRealOption(String labelRegex, String tempId) {
+    private String selectFirstRealOption(String labelRegex, String tempId) { return selectRealOption(labelRegex, tempId, ""); }
+
+    /** As {@link #selectFirstRealOption}, but takes the option whose text is {@code prefer} (case-insensitive) when the list has it. */
+    private String selectRealOption(String labelRegex, String tempId, String prefer) {
         Object r = page.evaluate("(a) => {" + JS
-                + " const [re, id] = a;"
+                + " const [re, id, prefer] = a;"
                 + " document.querySelectorAll('#'+id).forEach(e=>e.removeAttribute('id'));"
                 + " const d=topDialog(); const root=d||document;"
                 + " const rx=new RegExp(re,'i');"
@@ -528,9 +531,10 @@ public class PurchaseRequest extends BasePage {
                 + " e.id=id;"
                 + " const reals=[...e.options].map((o,i)=>({o,i}))"
                 + "   .filter(x=>x.i>0 && !/^-*\\s*select\\s*-*$/i.test(norm(x.o.text)));"
-                + " return reals.length? JSON.stringify({index:reals[0].i, count:reals.length})"
+                + " const pick=(prefer && reals.find(x=>norm(x.o.text).toLowerCase()===prefer.toLowerCase())) || reals[0];"
+                + " return reals.length? JSON.stringify({index:pick.i, count:reals.length})"
                 + "   : '(the list has no real option)'; }",
-                java.util.List.of(labelRegex, tempId));
+                java.util.List.of(labelRegex, tempId, prefer == null ? "" : prefer));
         String info = r == null ? "" : r.toString();
         if (info.startsWith("(")) return info;
         try {

@@ -1,6 +1,7 @@
 package com.kpj.pages.Inventory_page.Purchase_page;
 
 import com.kpj.pages.BasePage;
+import com.kpj.pages.PdfReport;
 import com.microsoft.playwright.Page;
 
 /**
@@ -701,17 +702,14 @@ public class LoanSupplierReturnNote extends BasePage {
         waitForAngular(1000);
         try { acceptSaveDialog(); } catch (Exception ignore) { }
 
-        int pagesAfter = page.context().pages().size();
-        Object reportText = page.evaluate("() => {" + JS
-                + " const t=[...document.querySelectorAll('*')].filter(vis)"
-                + "   .map(x=>ownText(x)).find(x=>/report/i.test(x) && x.length<120);"
-                + " return t||''; }");
-        String reportTextStr = reportText == null ? "" : reportText.toString();
-
-        String reportSignal = pagesAfter > pagesBefore
-                ? "a new tab/window opened (" + pagesBefore + " -> " + pagesAfter + " page(s))"
-                : (!reportTextStr.isEmpty() ? "a \"report\"-mentioning message appeared: \"" + reportTextStr + "\""
-                                             : "no new tab and no \"report\" message were observed");
+        // The report tab is opened by the save's SUCCESS callback (window.open of frmGRNReturnReport.aspx?ID=<ResponseId>), i.e. only after the confirmation was
+        // answered and the server replied — counting tabs straight after the confirm (as this used to) always saw none. Wait for it and judge it like any DevHIS report.
+        reportBlank = true; reportPng = null; lastReport = "";
+        if (clickedText.startsWith("clicked")) {
+            PdfReport.Result rep = PdfReport.capture(page, pagesBefore, 25000);
+            reportBlank = rep.blank; lastReport = rep.diagnostics; reportPng = rep.png;
+        }
+        String reportSignal = lastReport.isEmpty() ? "no report tab was opened" : lastReport;
         lastReportSignal = clickedText + "; " + reportSignal;
         lastSaveDiagnostics = clickedText;
         System.out.println("LoanSupplierReturnNote: " + lastReportSignal);
@@ -719,6 +717,11 @@ public class LoanSupplierReturnNote extends BasePage {
     }
 
     public boolean saveClicked() { return lastReportSignal != null && lastReportSignal.startsWith("clicked \""); }
+
+    /** The report tab the save opened, judged by {@link PdfReport}: {@code reportBlank} is true when none opened or it carries no content. */
+    public boolean reportBlank = true;
+    public byte[] reportPng;
+    public String lastReport = "";
 
     /** Screenshot taken while the toast was on screen, and what the save call (GoodsReturnNote/IUD) answered. */
     public byte[] toastPng;

@@ -122,39 +122,28 @@ public class ComplaintResolution extends DevHisBase {
         // If the specified filters found nothing, broaden and scan stores. That distinguishes "these
         // filters were too narrow" from "there are no complaints at all", and the answer goes in the report.
         String broadened = "";
-        int stored = -1;
+        String blockers = "";
         if (!found) {
-            broadened = cr.searchScanningStores(Integer.getInteger("stores", 25));
-            addSummary("Broadened retry", broadened);
-            // Then settle WHY it is empty: is there any complaint stored at all? Complaint Details is
-            // where complaints are created and listed, so it is the reference. Done last, because it
-            // navigates away from the search screen.
-            stored = cr.complaintsInMasterList();
-            addSummary("Is there data to find?", cr.lastMasterListCheck);
+            blockers = cr.equipmentBlockers();
+            // Clear the narrowing filters and walk EVERY store of the list (-Dstores= caps it). That tells "these filters were too narrow" from "no complaint exists in any store"; the screen cannot
+            // be searched without a Store, so a store walk is the only complete answer.
+            broadened = cr.searchScanningStores(Integer.getInteger("stores", 500));
         }
-        // No details loaded in the table = FAIL, regardless of whether the emptiness is explainable. The
-        // broadened retry and master-list check are still run and reported, since they tell you WHY the
-        // table is empty (a data gap vs. a broken search) — but that explanation no longer flips the verdict.
-        boolean searchBroken = !found && stored > 0;
+        // No complaint rows in the table = FAIL; the scan only says WHY (a data gap vs a narrow filter).
         step(page, "Click Search & verify the result",
                 "Click Search (GetComplaintGrid) and check the result grid",
                 "The search returns matching complaints",
                 (found
-                    ? "PASSES because the search returned " + cr.lastRowCount + " row(s) -> " + result
-                    : searchBroken
-                    ? "FAILS — THE SEARCH IS NOT RETURNING STORED DATA. It returned no rows even after "
-                      + "clearing the narrowing filters and scanning stores, yet complaint records DO "
-                      + "exist: " + cr.lastMasterListCheck + ". So this is the search function, not a "
-                      + "data gap. Detail: " + result + " | broadened retry: " + broadened
-                    : "FAILS — no complaint rows loaded in the table. " + cr.lastMasterListCheck
-                      + ". NOTE: create a complaint first (Complaint Details cannot do that today — its "
-                      + "Equipment list is empty) and run this again. Detail: " + result
-                      + " | broadened retry: " + broadened),
+                    ? "Search returned " + cr.lastRowCount + " row(s) -> " + result
+                    : "FAILED — no complaint rows loaded in the table (" + result + "). With the narrowing filters cleared: " + broadened
+                      + ". No equipment complaint exists, and none can be raised here: " + blockers
+                      + ". Until equipment is linked to a store (and the Equipment master list is fixed) Complaint Details cannot save a complaint (its Equipment* field stays empty), so there is nothing for this screen to find."),
                 found ? "PASS" : "FAIL");
 
         addSummary("From / To", fromDate + " -> " + toDate);
         addSummary("Location / Store", cr.lastLocation + " / " + cr.lastStore);
         addSummary("Result rows", String.valueOf(cr.lastRowCount));
+        if (!found) { addSummary("All-stores scan", broadened); addSummary("Why no complaint can exist", blockers); }
         if (!cr.lastSearchMessage.isEmpty()) addSummary("App message", cr.lastSearchMessage);
     }
 }

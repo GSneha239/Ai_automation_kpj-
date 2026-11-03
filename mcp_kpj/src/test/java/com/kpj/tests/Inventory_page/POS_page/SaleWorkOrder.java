@@ -151,7 +151,7 @@ public class SaleWorkOrder extends DevHisBase {
             // Chrome's PDF viewer screenshots blank, so the screenshot is the PDF's first page rendered from the file.
             step(pdf.png, "[Print] Verify pdf generation", "Wait for the report to open",
                     "A non-blank PDF is generated",
-                    pdf.diagnostics + " The screenshot is the PDF's first page rendered from the file itself.",
+                    pdf.diagnostics + (pdf.blank ? "" : " The screenshot is the PDF's first page rendered from the file itself."),
                     pdf.blank ? "FAIL" : "PASS");
         } else {
             step(page, "[Print] Verify pdf generation", "Wait for the report to open",
@@ -181,7 +181,7 @@ public class SaleWorkOrder extends DevHisBase {
         if (drugLabelPdf.png != null && drugLabelPdf.png.length > 0) {
             step(drugLabelPdf.png, "[Print Drug Label] Verify pdf generated of drug label", "Wait for the drug label PDF to open",
                     "A non-blank PDF drug label is generated",
-                    drugLabelPdf.diagnostics + " The screenshot is the PDF's first page rendered from the file itself.",
+                    drugLabelPdf.diagnostics + (drugLabelPdf.blank ? "" : " The screenshot is the PDF's first page rendered from the file itself."),
                     drugLabelPdf.blank ? "FAIL" : "PASS");
         } else {
             step(page, "[Print Drug Label] Verify pdf generated of drug label", "Wait for the drug label PDF to open",

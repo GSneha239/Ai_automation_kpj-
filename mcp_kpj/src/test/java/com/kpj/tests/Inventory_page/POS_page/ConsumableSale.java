@@ -186,7 +186,7 @@ public class ConsumableSale extends DevHisBase {
         boolean rowOk = cs.verifyLine(before, ITEM, QTY);
         cs.showGrid();
         step("Verify the row added in Counter Sale Information", "Look at the Counter Sale Information grid",
-                "A line with the item name, a batch, the quantity entered, a selling price and an amount is listed",
+                "The item is listed with a batch, expiry, selling price and amount — one line, or one per batch when the quantity spans batches — and the quantities add up to the quantity entered",
                 rowOk ? "PASSES because the grid shows: " + cs.lastRow : "FAILS because " + String.join("; ", cs.problems) + (cs.lastRow.isEmpty() ? "" : " — row: " + cs.lastRow), rowOk ? "PASS" : "FAIL");
         if (!rowOk) { addSummary("Result", "FAILED — row not as added: " + cs.problems); return; }
 

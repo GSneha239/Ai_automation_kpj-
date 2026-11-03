@@ -204,6 +204,19 @@ public class PharmacySaleOrder extends BasePage {
         return lastStore;
     }
 
+    /**
+     * MRNs from the Find Patient popup beside the MRN box ({@code OpenPatientSearchPopupScreen()}, needs a Store). Its default filters list the patients who visited TODAY — exactly the ones this
+     * screen accepts: it answers "Please Mark Today's Visit of this Patient!" (a toast, no dialog to mark it, unlike Pharmacy Sale/Dispense) for a patient with no visit today.
+     */
+    public List<String> candidateMrns(int target, int maxPages) {
+        List<String> mrns = new ArrayList<>();
+        for (int attempt = 0; attempt < 2 && mrns.isEmpty(); attempt++) {
+            if (attempt > 0) waitForAngular(2500);
+            mrns = new com.kpj.pages.PatientSearchPopup(page).collectMrns("OpenPatientSearchPopupScreen", target, maxPages);
+        }
+        return mrns;
+    }
+
     public boolean enterMrn(String mrn) {
         problems.clear();
         if (!typeInto(MRN_BOX, mrn, "MRN")) return false;
@@ -407,10 +420,15 @@ public class PharmacySaleOrder extends BasePage {
         if (q != num(qty)) problems.add("the line's Quantity is \"" + row.getOrDefault("quantity", "") + "\" instead of " + qty);
         if (!(price > 0)) problems.add("the line's Selling Price is \"" + row.getOrDefault("mrp", "") + "\" (expected a positive price)");
         if (!(total > 0)) problems.add("the line's Total Amt is \"" + row.getOrDefault("totalamount", "") + "\" (expected a positive amount)");
-        if (price > 0 && total > 0 && Math.abs(total - q * price) > 0.02) problems.add("the line's Total Amt " + total + " is not Quantity x Selling Price (" + q * price + ")");
+        // The screen rounds every line amount (total, discount, tax, net) to the nearest 0.05 (calculateincelledit, HIN3628) and shows the price to 2 decimals,
+        // so 2 x 0.36 = 0.72 is listed as 0.70: allow half a step of rounding plus the price's own display rounding.
+        double expected = q * price, step = 0.05, slack = step / 2 + q * 0.005 + 0.001;
+        if (price > 0 && total > 0 && Math.abs(total - expected) > slack) problems.add("the line's Total Amt " + total + " is not Quantity x Selling Price (" + Math.round(expected * 100) / 100.0 + ") even allowing for the screen's 0.05 rounding");
+        else if (price > 0 && total > 0 && Math.abs(total - expected) > 0.005)
+            lastRow += " (Total Amt is the " + (q == Math.rint(q) ? String.valueOf((long) q) : String.valueOf(q)) + " x " + price + " = " + Math.round(expected * 100) / 100.0 + " rounded to the nearest 0.05, as this screen does)";
         double d = Double.isNaN(disc) ? 0 : disc, x = Double.isNaN(tax) ? 0 : tax;
         if (!(net > 0)) problems.add("the line's Net Amt is \"" + row.getOrDefault("netamount", "") + "\" (expected a positive amount)");
-        else if (total > 0 && Math.abs(net - (total + x - d)) > 0.02) problems.add("the line's Net Amt " + net + " is not Total + Tax - Discount (" + (total + x - d) + ")");
+        else if (total > 0 && Math.abs(net - (total + x - d)) > step / 2 + 0.005) problems.add("the line's Net Amt " + net + " is not Total + Tax - Discount (" + Math.round((total + x - d) * 100) / 100.0 + ") even allowing for the screen's 0.05 rounding");
         return ok();
     }
 

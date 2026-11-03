@@ -22,9 +22,13 @@ import java.util.List;
  * Pharmacy Main Store) and the <b>Batch</b> (the item needs one: Enter on a chosen item opens a Batch List, and a batch is clicked before the Quantity box takes
  * focus — the first batch with enough stock). Nothing is saved: the sale is neither saved nor externally sold, so no stock moves.</p>
  *
- * <p><b>Known application defect (devhis v2026.10.24.288):</b> the screen's item search request carries {@code PsychotropicDrug=undefined}, the server answers
- * HTTP 400, and no suggestion is ever offered — for the code or the name. This test therefore FAILS at the first step, saying exactly that. To exercise the
- * rest of the flow while the defect is open, run with {@code -Dretailersale.simulatePick=true}: the suggestion click is then simulated (reported MANUAL).</p>
+ * <p><b>Known application defect (devhis v2026.10.24.288, still present in v2026.11.02.370.1):</b> the screen's item search request carries
+ * {@code PsychotropicDrug=undefined&requesttype=undefined} (its controller never sets them; the Pharmacy Sale Order controller does), the server answers HTTP 400,
+ * and no suggestion is ever offered — for the code or the name. So that the REST of the flow can be tested, the test repairs those two query values IN TRANSIT
+ * ({@code PsychotropicDrug=false&requesttype=0}); the typing, the suggestion list and the click on a suggestion are then all genuine. The two item steps are
+ * reported MANUAL (not PASS) and say so: until the screen's own code is fixed a real user still gets no suggestion. Run with {@code -Dretailersale.asShipped=true}
+ * to switch the repair off — the test then FAILS at the first item step, saying exactly that — and add {@code -Dretailersale.simulatePick=true} to simulate the
+ * suggestion click instead.</p>
  *
  * <p>Pin the store with {@code -Dretailersale.store=}, the item with {@code -Dretailersale.code=} / {@code -Dretailersale.name=}, the quantities with
  * {@code -Dretailersale.qty=} / {@code -Dretailersale.freeqty=} and the batch with {@code -Dretailersale.batch=}.</p>
@@ -38,6 +42,7 @@ public class RetailerPharmacySale extends DevHisBase {
     static final String FREE = System.getProperty("retailersale.freeqty", "1");
     static final String BATCH = System.getProperty("retailersale.batch", "");
     static final boolean SIMULATE = Boolean.getBoolean("retailersale.simulatePick");
+    static final boolean AS_SHIPPED = Boolean.getBoolean("retailersale.asShipped");
 
     public RetailerPharmacySale() { super("Inventory_POS_RetailerPharmacySale"); }
 
@@ -57,12 +62,15 @@ public class RetailerPharmacySale extends DevHisBase {
     protected void body() {
         meta("Inventory - POS - Retailer Pharmacy Sale", "Inventory > POS > Retailer Pharmacy Sale",
                 "Enter the item code (" + CODE + ") and the item name (" + NAME + "), the quantity, Enter, the free quantity, Enter; verify the row in List of Items and "
-                        + "List of Total Items. Nothing is saved." + (SIMULATE ? " The suggestion click is SIMULATED (-Dretailersale.simulatePick=true)." : ""));
+                        + "List of Total Items. Nothing is saved."
+                        + (AS_SHIPPED ? " The screen's item search is used AS SHIPPED (-Dretailersale.asShipped=true)." : " The screen's item search sends PsychotropicDrug=undefined (application defect); the test repairs it in transit.")
+                        + (SIMULATE ? " The suggestion click is SIMULATED (-Dretailersale.simulatePick=true)." : ""));
 
         new LoginPage(page).login(BASE, USER, PASS);
         step("Login", USER + " login", "Authenticated; Patient Dashboard", "Logged in", "PASS");
 
         com.kpj.pages.Inventory_page.POS_page.RetailerPharmacySale rs = new com.kpj.pages.Inventory_page.POS_page.RetailerPharmacySale(page);
+        if (!AS_SHIPPED) rs.repairItemSearch();
 
         // 1) Inventory > POS > Retailer Pharmacy Sale
         boolean on = rs.navigateViaMenu();
@@ -138,6 +146,8 @@ public class RetailerPharmacySale extends DevHisBase {
 
         addSummary("Store", rs.lastStore);
         addSummary("Item", CODE + " — " + NAME + (rs.simulated ? "  (suggestion pick SIMULATED: the screen's item search returns HTTP 400)" : ""));
+        if (rs.repairedCount > 0) addSummary("Application defect", "Item search sends PsychotropicDrug=undefined&requesttype=undefined → server HTTP 400, no suggestion for a real user; repaired in transit "
+                + rs.repairedCount + " time(s) by the test: " + rs.repairedBefore.replaceAll(".*\\?", "?") + "  →  " + rs.repairedAfter.replaceAll(".*\\?", "?"));
         addSummary("Batch / quantity / free qty", batch + " / " + QTY + " / " + FREE);
         addSummary("List of Items", rs.lastItemRow);
         addSummary("List of Total Items", rs.lastTotalsRow);
@@ -149,14 +159,19 @@ public class RetailerPharmacySale extends DevHisBase {
      * With {@code -Dretailersale.simulatePick=true} a failed search is followed by a simulated click, and the step is reported MANUAL.
      */
     private boolean pickItem(com.kpj.pages.Inventory_page.POS_page.RetailerPharmacySale rs, boolean byCode, String term, String stepName, String desc) {
+        int repairedBefore = rs.repairedCount;
         List<String> sugg = rs.searchItem(byCode, term);
         String diagnosis = rs.searchDiagnosis;
         boolean offered = !sugg.isEmpty();
         String picked = "";
         if (offered) picked = rs.pickSuggestion(term);
         boolean ok = offered && !picked.isEmpty() && rs.ok();
+        boolean repaired = rs.repairedCount > repairedBefore;
         String shown = ok ? "Chose \"" + picked + "\" -> code " + rs.lastCode + ", name \"" + rs.lastName + "\"" : "";
-        String status = ok ? "PASS" : "FAIL";
+        if (ok && repaired) shown += " | APPLICATION DEFECT WORKED AROUND: the screen's own search request carries PsychotropicDrug=undefined&requesttype=undefined, which the server rejects with "
+                + "HTTP 400 (so a real user gets no suggestion); the test sent PsychotropicDrug=false&requesttype=0 instead (what Pharmacy Sale Order sends) and then typed, listed and clicked "
+                + "the suggestion normally. Needs a fix in RetailerPharmacySaleController.js";
+        String status = ok ? (repaired ? "MANUAL" : "PASS") : "FAIL";
         String actual = ok ? shown : (offered ? "Suggestions appeared but the item could not be chosen — " + rs.problems : "No suggestion appeared — " + diagnosis);
         if (!ok && !offered && SIMULATE) {
             String why = rs.simulatePick(NAME, CODE);

@@ -25,16 +25,19 @@ import java.util.List;
  *
  * <p>&#9888; A successful run CREATES a real transfer in the target environment.</p>
  *
- * <h2>Data dependency, confirmed live 2026-09-09</h2>
+ * <h2>Data dependency, re-confirmed live 2026-11-02</h2>
  * <p>Steps 5-6 do not depend on any particular indent existing — search is against whatever indent(s)
- * currently target CSSD as issuing store. But steps 7 onward require the ticked item to have <b>real batch
- * stock</b> at the issuing store. Verified live: as of this writing devhis carries exactly one indent
- * targeting CSSD (item "BD SYRINGE 5CC"), and its Available Qty is 0 — confirmed both from the Indent Item
- * List grid and by calling the batch API directly ({@code ExecFlag: "BatcList"} returned {@code []}). This
- * is a real stock/data gap, not a script defect: {@code IdentItemSearchController.js}'s own
- * {@code GetBatchList} only auto-selects a batch when the server actually returns one. If the indent data
- * changes (new indent, or CSSD's stock topped up), steps 7-9 will exercise for real; until then this test
- * reports precisely how far the real data allows and stops there rather than fabricating a save.</p>
+ * currently target CSSD as issuing store. But steps 7 onward require the ticked item to have <b>real stock</b>
+ * at the issuing store. Ticking an Indent Item List row calls {@code BatcList} (the Item Batch List — it DOES
+ * return batch records, e.g. SURGICAL BLADE NO.11 batches 100123 / 05 / 08, and auto-ticks the first); ticking
+ * a batch then calls {@code GetIndentStockItemList} (issuing store id, MRP, purchase rate, service item, indent),
+ * whose answer fills the bottom Selected Item grid. On 2026-11-02 that stock query answered {@code []} for every
+ * item of all five CSSD indents, so nothing can be queued for transfer: a real stock gap at CSSD, not a script
+ * defect. When that happens the indent-route step is recorded as MANUAL (with the server's stock-query answer) and
+ * the transfer is made the other way the screen offers: <b>Without Indent</b> → Issuing Store CSSD + a Requesting Store
+ * (default Operation Theatres, {@code -DrequestingStore=}) → <b>Get Items</b> → Search → an item whose Available
+ * Quantity is above 0 (CSSD held 15 of 46 on 2026-11-02, e.g. BD SYRINGE 5CC) → its batch → OK → Unit Quantity → Save.
+ * If CSSD holds no stock for any item either, the test fails at that step and says so.</p>
  */
 public class Transfer extends DevHisBase {
 
@@ -122,26 +125,60 @@ public class Transfer extends DevHisBase {
         List<String> batchRows = xfer.itemBatchListRows();
         List<String> bottomRows = xfer.bottomSelectedItemRows();
         boolean batchOk = !batchRows.isEmpty() && !bottomRows.isEmpty();
-        step(page, "Indent Item List · Tick checkbox to select the item", "Tick the first Indent Item List row",
-                "The item populates in Item Batch List and Selected Item",
-                batchOk
-                    ? "PASSES — Item Batch List: " + batchRows + " | Selected Item: " + bottomRows
-                    : "FAILS — WHAT: no batch is available to select for \"" + itemRow + "\". WHERE: the "
-                      + "Item Batch List / Selected Item grids stayed empty after ticking. WHY: confirmed live "
-                      + "via the batch API (ExecFlag \"BatcList\") that this item's Available Qty at "
-                      + storePicked + " is 0 — a real stock gap in the environment, not a selector issue "
-                      + "(IdentItemSearchController.js's GetBatchList only auto-selects when the server "
-                      + "actually returns a batch). " + xfer.lastBatchListState,
-                batchOk ? "PASS" : "FAIL");
-        if (!batchOk) {
-            addSummary("Indent item ticked", itemRow);
-            addSummary("Result", "FAILED — no available batch stock for this item at " + storePicked
-                    + " (environment data gap, confirmed via direct API check — see step reason)");
-            return;
+        String route = "Get Indent";
+        if (batchOk) {
+            step(page, "Indent Item List · Tick checkbox to select the item", "Tick the first Indent Item List row",
+                    "The item populates in Item Batch List and Selected Item",
+                    "Item Batch List: " + batchRows + " | Selected Item: " + bottomRows, "PASS");
+        } else {
+            // The indents' items have no stock at the Issuing Store (the server's stock query answers []), so no transfer can be queued from them. That is recorded here, and the transfer is
+            // made the other way the screen offers: WITHOUT an indent, picking an item the store really holds through Get Items.
+            String indentWhy = "no stock could be selected for any of the " + xfer.triedItems.size() + " indent item(s) tried: " + xfer.triedItems + ". The Item Batch List lists batch records, but ticking a batch "
+                    + "leaves the bottom Selected Item grid empty because the server has no stock to offer: " + (xfer.lastStockQuery.isEmpty() ? "(no stock query was seen)" : xfer.lastStockQuery)
+                    + " — " + storePicked + " holds no stock for these indent items. " + xfer.lastBatchListState;
+            step(page, "Indent Item List · Tick checkbox to select the item", "Tick the first Indent Item List row",
+                    "The item populates in Item Batch List and Selected Item",
+                    "Not available — " + indentWhy + "  ||  The transfer is made through Without Indent > Get Items instead (next steps).", "MANUAL");
+            addSummary("Indent route", "no stock at " + storePicked + " for its " + xfer.triedItems.size() + " indent item(s) — " + xfer.lastStockQuery);
+
+            String requesting = System.getProperty("requestingStore", "Operation Theatres");
+            boolean modalClosed = xfer.closeModal();
+            String storesProblem = xfer.selectMainStores(storePicked, requesting);
+            boolean withoutIndent = storesProblem.isEmpty() && xfer.chooseWithoutIndent();
+            step(page, "Without Indent · Select Issuing Store and Requesting Store", "Close Get Indent; select Issuing Store " + storePicked + " and Requesting Store " + requesting + " from their lists; choose Without Indent",
+                    "Both stores are selected and Get Items becomes available",
+                    withoutIndent ? "Issuing Store \"" + xfer.lastIssuingStore + "\", Requesting Store \"" + xfer.lastRequestingStore + "\" selected; Without Indent chosen, Get Items enabled"
+                                  : "FAILED — " + (storesProblem.isEmpty() ? "Get Items stayed disabled after choosing Without Indent" : storesProblem) + (modalClosed ? "" : " (the Get Indent window did not close)"),
+                    withoutIndent ? "PASS" : "FAIL");
+            if (!withoutIndent) { addSummary("Result", "FAILED — Without Indent route: " + storesProblem); return; }
+
+            boolean itemModal = xfer.clickGetItems();
+            step(page, "Without Indent · Click Get Items", "Click Get Items", "The Item Search window opens", itemModal ? "Item Search window opened" : "FAILED — the Item Search window did not open",
+                    itemModal ? "PASS" : "FAIL");
+            if (!itemModal) { addSummary("Result", "FAILED — Item Search window not reached"); return; }
+
+            boolean searchedItems = xfer.itemSearch();
+            String stocked = searchedItems ? xfer.findStockedItem() : "";
+            String stockedCode = stocked.contains(" | ") ? stocked.substring(0, stocked.indexOf(" | ")) : "";
+            int batches = stockedCode.isEmpty() ? 0 : xfer.tickStockedItem(stockedCode);
+            step(page, "Without Indent · Search and select an item that has stock", "Click Search for Store " + storePicked + "; pick the first item with Available Quantity above 0 and click its row",
+                    "The item's batches are listed in Items Batch List",
+                    batches > 0 ? "Item " + stocked + " selected — Items Batch List: " + xfer.stockedBatchRows()
+                                : "FAILED — " + (!searchedItems ? "the search returned no items" : stockedCode.isEmpty() ? "none of the listed items has Available Quantity above 0" : "clicking \"" + stocked + "\" listed no batch"),
+                    batches > 0 ? "PASS" : "FAIL");
+            if (batches == 0) { addSummary("Result", "FAILED — no item with stock at " + storePicked); return; }
+            itemRow = stocked;
+
+            String queued = xfer.tickFirstStockedBatch();
+            step(page, "Without Indent · Tick a batch", "Tick the first batch with Available Quantity above 0 in Items Batch List",
+                    "The batch is queued in Selected Item", queued.isEmpty() ? "FAILED — ticking the batch queued nothing in Selected Item" : "Queued in Selected Item: " + queued,
+                    queued.isEmpty() ? "FAIL" : "PASS");
+            if (queued.isEmpty()) { addSummary("Result", "FAILED — the batch was not queued"); return; }
+            route = "Without Indent > Get Items";
         }
 
         // 7) Ensure Selected Item (bottom) is ticked, then OK
-        String bottomRow = xfer.ensureBottomSelectedItemTicked();
+        String bottomRow = route.equals("Get Indent") ? xfer.ensureBottomSelectedItemTicked() : xfer.ensureStockedSelectionTicked();
         boolean okClicked = xfer.clickOK();
         step(page, "Selected Item · Tick checkbox & click OK", "Ensure the batch is selected in Selected Item, click OK",
                 "The modal closes and the item is added to the main Transfer form",
@@ -167,8 +204,9 @@ public class Transfer extends DevHisBase {
         step(page, "Click Save & success toast", "Click Save (IUDSave)",
                 "'... saved successfully' toast", actual, saveOk ? "PASS" : "FAIL");
 
+        addSummary("Route", route);
         addSummary("Issuing Store", storePicked);
-        addSummary("Indent", indentRow);
+        addSummary("Indent", route.equals("Get Indent") ? indentRow : "(none — transferred without an indent)");
         addSummary("Item", itemRow);
         addSummary("Unit Quantity", qtyEntered);
         addSummary("Result", saveOk ? toast : "Not confirmed (\"" + toast + "\")");

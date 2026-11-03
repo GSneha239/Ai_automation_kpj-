@@ -85,12 +85,13 @@ public class BookAppointmentTest extends DevHisBase {
 
         // 5) Save -> confirm -> accept alert -> report tab
         Page reportTab = bookPage.saveAndCaptureReport();
-        List<String> alerts = bookPage.capturedAlerts();
+        List<String> alerts = bookPage.capturedMessages();
         String alertMsg = alerts.isEmpty() ? "(none captured)" : String.join(" | ", alerts);
+        boolean saved = BookAppointmentPage.saveSucceeded(alerts);
         step("Save & accept alert",
                 "Click Save; confirm 'Do You Want To Save'; accept the slot/booking alert",
                 "Appointment saved; success/booking alert",
-                alertMsg, "PASS");
+                saved ? alertMsg : "FAILED - the appointment was not saved; the screen said: " + alertMsg, saved ? "PASS" : "FAIL");
 
         // 6) Report tab
         if (reportTab != null) {

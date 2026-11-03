@@ -48,11 +48,11 @@ import com.kpj.pages.LoginPage;
  * ({@code rowsAdded=0}) and {@code IUDOperations()} has nothing to save — both later failures are
  * consequences of this one.</p>
  *
- * <p><b>It is NOT missing master data.</b> Re-checked 2026-08-14: the sibling <b>Complaint Resolution</b>
- * screen lists <b>244 equipment</b> on the same environment, same login, same day, while this screen
- * yields zero under all 96 stores (each retried, so not a list read too early). Equipment exists; this
- * screen's Location/Store &rarr; Equipment cascade does not deliver it. An earlier version of this note
- * blamed the environment's data — that reading was wrong.</p>
+ * <p><b>Why (corrected 2026-11-02 in the built-in browser).</b> The "244 equipment" once read from the sibling <b>Complaint Resolution</b> screen
+ * were NOT equipment: its "Equipment" filter lists item sub-groups ("Administration Fees", "Advertising", ...). This screen's mandatory Equipment* is the store-bound lookup
+ * {@code fetchDropDownListForAncillarywithPar('Equipment', storeId)}, which answers zero for every store, and the Equipment master list
+ * ({@code POST /api/ItemMaster/Fetch {"ExecFlag":"EquipmentItems"}}) fails with HTTP 500 ({@code MappingException ... 'Instruction_2'}). So no complaint can be raised on this
+ * environment until the developers fix that mapping and equipment is linked to a store. The failing step quotes the live check.</p>
  */
 public class ComplaintDetails extends DevHisBase {
 
@@ -130,14 +130,12 @@ public class ComplaintDetails extends DevHisBase {
                 "An Equipment is selected",
                 cd.equipmentSelected()
                     ? "PASSES because an equipment was selected: " + eq + " (store: " + cd.lastStore + ")"
-                    : "FAILS because this screen's Equipment list is empty for EVERY store. Re-checked "
-                      + "2026-08-14 by walking the form directly: it offers 1 location (KPJ) and 96 "
-                      + "stores, and all 96 yield zero equipment — each retried up to 6 times, so this is "
-                      + "not a list read before it had loaded. The data is NOT missing: the sibling "
-                      + "Ancillary Services > Equipment/Asset > Complaint Resolution screen lists 244 "
-                      + "equipment on the same environment, same login, same day. Equipment master data "
-                      + "therefore exists, and it is this screen's Location/Store -> Equipment cascade "
-                      + "that fails to deliver it. Detail: " + eq,
+                    : "FAILS because this screen's Equipment list is empty for EVERY store: it offers 1 location (KPJ) and 96 "
+                      + "stores, and each yields zero equipment (retried up to 6 times, so not a list read before it had loaded). "
+                      + "Why (checked through the screen's own services): " + cd.equipmentBlockers()
+                      + " — a back-end/data problem, not something this test can work around: no equipment is linked to any store, and the "
+                      + "Equipment master cannot even be listed. (The \"Equipment\" filter on the Complaint Resolution screen is NOT an equipment list: it holds item "
+                      + "sub-groups such as \"Administration Fees\".) Detail: " + eq,
                 cd.equipmentSelected() ? "PASS" : "FAIL");
 
         // 5) Complaint By / Reported By / Status

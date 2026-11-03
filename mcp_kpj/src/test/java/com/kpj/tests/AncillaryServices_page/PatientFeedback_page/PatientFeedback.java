@@ -128,21 +128,29 @@ public class PatientFeedback extends DevHisBase {
         // actually persisted (verified live) — so that is reported here as a heads-up, not a retry trigger.
         String searchResult = fb.searchByMrn(mrn);
         boolean loaded = fb.patientLoaded();
+        // Save (build 2026-11-02, CAT1968) refuses without an admission id, which the typed MRN + Search does not set — the Search Patient popup's Select does. See ensureAdmissionViaPopup.
+        boolean admissionOk = loaded && fb.ensureAdmissionViaPopup(mrn);
         boolean discharged = loaded && fb.patientDischarged();
         fb.describeControls();   // diagnostics: shows the template control the patient brought with them
+        addDiagnostic("MRN search model", searchResult);
+        String searchShort = searchResult == null ? "" : searchResult.replaceAll("(?s)\\s*\\|\\s*model:.*$", "");
         step(page, "Enter MRN No. & click Search", "Enter MRN " + mrn + " and click Search (SearchPatientByMRNo)",
-                "The MRN is accepted (this screen shows no patient-name field to confirm against; "
-                        + "a bad MRN raises a rejection toast)",
-                loaded ? "MRN " + mrn + " accepted -> " + searchResult
-                        + (discharged ? "" : "  ||  HEADS UP: this patient is NOT discharged — Save may report "
-                            + "success without actually persisting anything (verified live elsewhere)")
-                      : "MRN " + mrn + " did not resolve to a patient (" + searchResult + ")",
-                loaded ? "PASS" : "FAIL");
+                "The MRN is accepted and the patient's admission is held by the form (a bad MRN raises a rejection toast)",
+                !loaded ? "MRN " + mrn + " did not resolve to a patient (" + searchShort + ")"
+                        : !admissionOk ? "FAILED — MRN " + mrn + " loaded (" + searchShort + ") but the form holds no admission id, which Save requires: " + fb.lastAdmissionNote
+                        : "MRN " + mrn + " accepted (" + searchShort + "); " + fb.lastAdmissionNote
+                            + (discharged ? "" : "  ||  HEADS UP: this patient is NOT discharged — Save may report success without actually persisting anything (verified live elsewhere)"),
+                loaded && admissionOk ? "PASS" : "FAIL");
         addSummary("MRN source", mrnSource);
         addSummary("Discharged", loaded ? String.valueOf(discharged) : "(patient not loaded)");
         if (!loaded) {
             addSummary("MRN", mrn);
             addSummary("Result", "FAILED — no patient for this MRN (pass a valid one with -Dmrn=...)");
+            return;
+        }
+        if (!admissionOk) {
+            addSummary("MRN", mrn);
+            addSummary("Result", "FAILED — the form holds no admission id for this patient, so Save would be refused (" + fb.lastAdmissionNote + ")");
             return;
         }
 
@@ -170,11 +178,13 @@ public class PatientFeedback extends DevHisBase {
         // dropdown and Save again, until one saves — and record which ones errored, since that is an app defect.
         java.util.List<String> errored = new java.util.ArrayList<>();
         int attempts = 1;
-        if (!ok && System.getProperty("template") == null && tl.contains("error")) {
+        // Any failed Save counts, not only "Error!": on 2026-11-02 the first template answered "Please Enter MRN No.!" although the MRN box held the MRN, which the old
+        // "contains error" rule did not retry. Each template that did not save is recorded with the answer it gave.
+        if (!ok && System.getProperty("template") == null) {
             for (String cand : fb.templateOptions()) {
                 if (attempts >= 8) break;
                 if (template != null && template.toLowerCase().startsWith(cand.toLowerCase())) continue;   // the one just tried
-                errored.add(template);
+                errored.add(template + " -> \"" + (toast == null || toast.isEmpty() ? "no toast" : toast) + "\"");
                 template = fb.selectTemplateExact(cand);
                 if (!fb.templateSelected()) continue;
                 attempts++;
@@ -182,23 +192,21 @@ public class PatientFeedback extends DevHisBase {
                 tl = toast == null ? "" : toast.toLowerCase();
                 ok = tl.contains("success") || tl.contains("saved") || tl.contains("added");
                 System.out.println("PatientFeedback: attempt " + attempts + " with template \"" + template + "\" -> \"" + toast + "\"");
-                if (ok || !tl.contains("error")) break;
+                if (ok) break;
             }
         }
+        // "NOT a test defect" is only said for a server "Error!" — the same answer for every template means the screen or the patient, not a template.
         String retryNote = attempts > 1
-                ? "(attempt " + attempts + " with template \"" + template + "\"; the server answered \"Error!\" for: "
-                  + String.join("; ", errored) + " — an app defect with those templates, not a test problem) "
+                ? "(attempt " + attempts + " with template \"" + template + "\"; these templates did not save: " + String.join("; ", errored) + ") "
                 : "";
         String actual = retryNote + (toast == null || toast.isEmpty() ? "No toast appeared"
-                : (ok ? toast : "Save not confirmed — server returned: \"" + toast + "\""))
+                : (ok ? toast : "Save not confirmed — the screen answered: \"" + toast + "\""))
                 + "  [answers: " + fb.lastAnswer + "]  [the server's answer to the last Save: " + fb.lastSaveHttp + "]";
+        boolean templateError = !ok && tl.contains("error") && !DEFAULT_TEMPLATE.equalsIgnoreCase(template);
         step(page, "Click Save & success toast", "Click Save (IUDPatientFeedbackDetail); wait for the success toast",
                 "'... saved successfully' toast",
-                (ok ? "PASSES because the screen answered with a success message: "
-                    : "FAILS — " + (DEFAULT_TEMPLATE.equalsIgnoreCase(template) ? "" : "NOT a test defect if the "
-                      + "template is the cause: \"" + template + "\" is one of the templates verified live to "
-                      + "return a server error regardless of patient/MRN — pin -Dtemplate=\""
-                      + DEFAULT_TEMPLATE + "\" to isolate other failures from this one. ")) + actual,
+                (ok ? "" : "FAILED — " + (templateError ? "NOT a test defect if the template is the cause: \"" + template + "\" is one of the templates verified live to return a server error "
+                      + "regardless of patient/MRN — pin -Dtemplate=\"" + DEFAULT_TEMPLATE + "\" to isolate other failures from this one. " : "")) + actual,
                 ok ? "PASS" : "FAIL");
 
         // 6) Back to the list

@@ -692,23 +692,46 @@ public class StoreIndent extends BasePage {
     public boolean autoIndentClicked() { return lastAutoIndent != null && lastAutoIndent.contains("form is open"); }
 
     /** Select <b>Requesting Store</b> and <b>Issuing Store</b> — confirmed live both are real labels on
-     *  this screen (not reversed like Manual Indent's pair) and both start blank. Prefers an option
-     *  whose text starts with "Pharmacy" for each, same reasoning as {@link #selectIssuingStore}, picking
-     *  two DIFFERENT such stores since the app rejects a Requesting/Issuing pair that match. */
+     *  this screen (not reversed like Manual Indent's pair) and both start blank. Requesting Store: Pharmacy
+     *  Main Store first, else Pharmacy (Central); Issuing Store: the other of the two (confirmed live that
+     *  Main -> Central lists 133 items) — the app rejects a Requesting/Issuing pair that match. When neither
+     *  name is offered it falls back to the first "Pharmacy..." option, then the first real one. */
     public String selectRequestingAndIssuingStore() {
-        lastRequestingStore = selectAutoIndentStore("AutoIndent.FromStoreID", null);
-        lastAutoIssuingStore = selectAutoIndentStore("AutoIndent.ToStoreID", lastRequestingStore);
+        // Requesting Store: Pharmacy Main Store first, else Pharmacy (Central); Issuing Store: the other of the two (the app rejects a pair that match)
+        lastRequestingStore = selectAutoIndentStore("AutoIndent.FromStoreID", null, "Pharmacy Main Store", "Pharmacy (Central)");
+        lastAutoIssuingStore = selectAutoIndentStore("AutoIndent.ToStoreID", lastRequestingStore, "Pharmacy (Central)", "Pharmacy Main Store");
         String combined = "Requesting=" + lastRequestingStore + ", Issuing=" + lastAutoIssuingStore;
         System.out.println("StoreIndent: " + combined);
         return combined;
     }
 
-    private String selectAutoIndentStore(String ngModel, String avoidText) {
+    /** Select an explicit Requesting / Issuing pair (used to try the swapped pair when the first one lists no items). */
+    public String selectRequestingAndIssuingStore(String requesting, String issuing) {
+        lastRequestingStore = selectAutoIndentStore("AutoIndent.FromStoreID", null, requesting);
+        lastAutoIssuingStore = selectAutoIndentStore("AutoIndent.ToStoreID", lastRequestingStore, issuing);
+        String combined = "Requesting=" + lastRequestingStore + ", Issuing=" + lastAutoIssuingStore;
+        System.out.println("StoreIndent: " + combined);
+        return combined;
+    }
+
+    /**
+     * Pick a store from one of the Auto Indent selects: the first of {@code preferred} (matched on the whole option text, ignoring case) that the list offers and that is not {@code avoidText};
+     * when none is offered, the first option starting with "Pharmacy", else the first real option.
+     */
+    private String selectAutoIndentStore(String ngModel, String avoidText, String... preferred) {
         try {
             java.util.List<String> texts = page.locator("select[ng-model=\"" + ngModel + "\"] option").allTextContents();
             int index = -1;
             int firstRealIndex = -1;
-            for (int i = 1; i < texts.size(); i++) {
+            for (String want : preferred) {
+                for (int i = 1; i < texts.size() && index < 0; i++) {
+                    String t = texts.get(i).trim();
+                    if (avoidText != null && t.equals(avoidText)) continue;
+                    if (t.equalsIgnoreCase(want)) index = i;
+                }
+                if (index >= 0) break;
+            }
+            for (int i = 1; index < 0 && i < texts.size(); i++) {
                 String t = texts.get(i).trim();
                 if (t.isEmpty() || t.matches("(?i)-*\\s*select\\s*-*")) continue;
                 if (avoidText != null && t.equals(avoidText)) continue;

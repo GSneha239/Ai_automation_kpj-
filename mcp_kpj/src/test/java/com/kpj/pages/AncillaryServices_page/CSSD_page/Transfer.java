@@ -51,7 +51,29 @@ import java.util.List;
  */
 public class Transfer extends BasePage {
 
-    public Transfer(Page page) { super(page); }
+    public Transfer(Page page) {
+        super(page);
+        // Remember the server's last answer to the stock query that fills the bottom Selected Item grid: when it is [] there is no stock to transfer, whatever the batch list shows.
+        page.onResponse(r -> {
+            try {
+                if (!r.url().contains("/api/IssueToStore/Fetch")) return;
+                String post = r.request().postData();
+                if (post == null || !post.contains("GetIndentStockItemList")) return;
+                int rows = com.google.gson.JsonParser.parseString(r.text().trim()).getAsJsonArray().size();
+                java.util.regex.Matcher a = java.util.regex.Pattern.compile("\"tostoreid\":(\\d+)").matcher(post);
+                java.util.regex.Matcher m = java.util.regex.Pattern.compile("\"mrp\":([0-9.]+)").matcher(post);
+                java.util.regex.Matcher p = java.util.regex.Pattern.compile("\"purchaserate\":([0-9.]+)").matcher(post);
+                lastStockQuery = "GetIndentStockItemList (issuing store id " + (a.find() ? a.group(1) : "?") + ", MRP " + (m.find() ? m.group(1) : "?")
+                        + ", purchase rate " + (p.find() ? p.group(1) : "?") + ") answered " + rows + " stock row(s)";
+            } catch (Exception ignore) { }
+        });
+    }
+
+    /** The server's last answer to the stock query behind the bottom Selected Item grid ("" if none was asked). */
+    public String lastStockQuery = "";
+
+    /** Every Indent Item List row {@link #tickIndentItemWithStock()} ticked while looking for one with stock. */
+    public final List<String> triedItems = new java.util.ArrayList<>();
 
     public String lastIssuingStore = "", lastRequestingStore = "", lastIndentNumber = "";
     public String lastUnitQty = "";
@@ -381,6 +403,7 @@ public class Transfer extends BasePage {
             for (int j = 0; j < Math.min(items, 10); j++) {
                 String text = clickRowCheckbox("Indent Item List", j);
                 if (text.isEmpty()) continue;
+                triedItems.add(text.length() > 90 ? text.substring(0, 90) + "…" : text);
                 try {
                     page.waitForFunction("() => {" + JS + " const hs=headings('Selected Item');"
                             + " return hs.length>1 && rowsOf(tableAfter(hs[hs.length-1])).length > 0; }",
@@ -453,6 +476,169 @@ public class Transfer extends BasePage {
         return onTransferForm();
     }
 
+    // ---- Without Indent -> Get Items (the route that reads real stock) ---------------
+
+    /**
+     * Confirmed live 2026-11-02: when no CSSD indent item has stock, the transfer can still be made WITHOUT an indent. On the add-transfer form the <b>Indent Number / Without Indent</b>
+     * radio ({@code IssueToStore.IndentNumber} 1 / 2) switches which button is enabled — Get Indent (1) or <b>Get Items</b> ({@code #GetItem}, 2; a real click on it does NOTHING while it is
+     * disabled). Get Items needs the form's <b>Issuing Store</b> ({@code IssueToStore.SearchStoreID}) and <b>Requesting Store</b> ({@code IssueToStore.ToStore}) first (its own message:
+     * "Please Select Requesting Store"); choosing the Issuing Store may raise an "Urgent Indent(s) Received" alert that must be closed. Its Item Search modal ({@code DirectReturn.*},
+     * Search = {@code CommonSearch()}) lists the issuing store's items with <b>AvailableQty</b> (CSSD: 15 of 46 had stock); clicking any cell of an item row
+     * ({@code getItemBatchdetails(row)}) fills <b>Items Batch List</b> (checkbox {@code List.IsSelected}), ticking a batch queues it in the bottom <b>Selected Item</b> grid, and OK adds it to the form.
+     */
+    public String lastStockedItem = "";
+
+    private static final String ISSUE_NG = "IssueToStore.SearchStoreID", REQUEST_NG = "IssueToStore.ToStore";
+
+    /** Close the Get Indent / Item Search modal that is open (its Close button, {@code Cancel()}). */
+    public boolean closeModal() {
+        page.evaluate("() => { const m=[...document.querySelectorAll('.modal.in')].find(x=>x.offsetWidth||x.offsetHeight); if(!m) return;"
+                + " const b=[...m.querySelectorAll('button')].find(x=>/^\\s*close\\s*$/i.test(x.textContent||'') || /Cancel\\(/.test(x.getAttribute('ng-click')||'')); if(b) b.click(); }");
+        waitForAngular(800);
+        return !Boolean.TRUE.equals(page.evaluate("() => [...document.querySelectorAll('.modal.in')].some(x=>x.offsetWidth||x.offsetHeight)"));
+    }
+
+    /** Close an "Alert" dialog (for example "Urgent Indent(s) Received") if one is showing. */
+    private void dismissAlertModal() {
+        page.waitForTimeout(900);
+        page.evaluate("() => { const m=[...document.querySelectorAll('.modal.in')].find(x=>(x.offsetWidth||x.offsetHeight) && /Alert/i.test(x.textContent||''));"
+                + " if(!m) return; const b=[...m.querySelectorAll('button')].find(x=>/close|ok/i.test(x.textContent||'')); if(b) b.click(); }");
+        waitForAngular(600);
+    }
+
+    /** Select the form's Issuing Store and Requesting Store from their lists. Returns "" when both hold, else what went wrong. */
+    public String selectMainStores(String issuing, String requesting) {
+        String p = com.kpj.pages.Select2Pick.pick(page, ISSUE_NG, issuing);
+        dismissAlertModal();
+        if (!p.isEmpty()) return "Issuing Store: " + p;
+        lastIssuingStore = issuing;
+        p = com.kpj.pages.Select2Pick.pick(page, REQUEST_NG, requesting);
+        dismissAlertModal();
+        if (!p.isEmpty()) return "Requesting Store: " + p;
+        lastRequestingStore = requesting;
+        return "";
+    }
+
+    /** Choose <b>Without Indent</b> and wait for <b>Get Items</b> to become enabled. */
+    public boolean chooseWithoutIndent() {
+        page.evaluate("() => { const rb=[...document.querySelectorAll(\"input[type=radio][ng-model='IssueToStore.IndentNumber']\")].find(x=>x.value==='2'); if(rb) rb.click(); }");
+        try {
+            page.waitForFunction("() => { const b=document.getElementById('GetItem'); return !!b && !b.disabled; }", null, new Page.WaitForFunctionOptions().setTimeout(8000));
+        } catch (Exception e) { System.out.println("CSSD.Transfer.chooseWithoutIndent: Get Items stayed disabled"); return false; }
+        waitForAngular(500);
+        return true;
+    }
+
+    /** Click <b>Get Items</b> and wait for the Item Search modal ({@code DirectReturn.ItemCode} visible). */
+    public boolean clickGetItems() {
+        try { page.locator("#GetItem").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000)); }
+        catch (Exception e) { System.out.println("CSSD.Transfer.clickGetItems: click failed - " + e.getMessage()); return false; }
+        try {
+            page.waitForFunction("() => !![...document.querySelectorAll(\"[ng-model='DirectReturn.ItemCode']\")].find(e=>e.offsetParent!==null)", null, new Page.WaitForFunctionOptions().setTimeout(15000));
+        } catch (Exception ignore) { System.out.println("CSSD.Transfer.clickGetItems: the Item Search modal did not open"); return false; }
+        waitForAngular(600);
+        return true;
+    }
+
+    /** Click the Item Search modal's <b>Search</b> ({@code CommonSearch()}) and wait for item rows. */
+    public boolean itemSearch() {
+        Object tagged = page.evaluate("() => { const m=[...document.querySelectorAll('.modal.in')].find(x=>x.offsetWidth||x.offsetHeight); if(!m) return false;"
+                + " const b=[...m.querySelectorAll('button')].find(x=>/CommonSearch/.test(x.getAttribute('ng-click')||'')); if(!b) return false; b.id='__xferItemSearch'; return true; }");
+        if (!Boolean.TRUE.equals(tagged)) return false;
+        try { page.locator("#__xferItemSearch").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000)); }
+        catch (Exception e) { System.out.println("CSSD.Transfer.itemSearch: click failed - " + e.getMessage()); }
+        page.evaluate("() => { const e=document.getElementById('__xferItemSearch'); if(e) e.removeAttribute('id'); }");
+        try {
+            page.waitForFunction("() => { const m=[...document.querySelectorAll('.modal.in')].find(x=>x.offsetWidth||x.offsetHeight); return !!m && m.querySelectorAll('.ui-grid-body .ui-grid-row, .ui-grid-render-container-body .ui-grid-row').length>0; }",
+                    null, new Page.WaitForFunctionOptions().setTimeout(15000));
+        } catch (Exception e) { return false; }
+        waitForAngular(500);
+        return true;
+    }
+
+    /**
+     * The first item of the Item Search result that has stock, read from the grid's own data (every page, not only the rows drawn): {@code "code | name | AvailableQty"}, or "" when none has any.
+     */
+    public String findStockedItem() {
+        Object r = page.evaluate("() => { const m=[...document.querySelectorAll('.modal.in')].find(x=>x.offsetWidth||x.offsetHeight); const row=m&&m.querySelector('.ui-grid-row'); if(!row) return '';"
+                + " const s=window.angular.element(row).scope(); const d=(s.grid&&s.grid.options&&s.grid.options.data)||[];"
+                + " const hit=d.find(x=>+x.AvailableQty>0); return hit ? (hit.serviceitemcode+' | '+hit.serviceitemname+' | '+hit.AvailableQty) : ''; }");
+        lastStockedItem = r == null ? "" : r.toString();
+        return lastStockedItem;
+    }
+
+    /**
+     * Narrow the modal to one item by its code (Item Code box + Search), click that item's row — any cell, {@code getItemBatchdetails(row)} — and wait for <b>Items Batch List</b> to fill.
+     *
+     * @return the number of batches listed (0 = the click did nothing)
+     */
+    public int tickStockedItem(String code) {
+        page.evaluate("(c) => {" + JS + " const e=byNg('DirectReturn.ItemCode'); if(e){ const k=A.element(e).controller('ngModel'); e.value=c; if(k){ k.$setViewValue(c); k.$render(); }"
+                + " e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true})); } }", code);
+        if (!itemSearch()) return 0;
+        // The row's own tick in the LEFT ("Sel") container is what fires getItemBatchdetails(row) — a click on the Item Name cell only lands in that cell's editor and lists no batch.
+        Object tagged = page.evaluate("(c) => { const m=[...document.querySelectorAll('.modal.in')].find(x=>x.offsetWidth||x.offsetHeight);"
+                + " const body=[...m.querySelectorAll('.ui-grid-render-container-body .ui-grid-row')]; const left=[...m.querySelectorAll('.ui-grid-render-container-left .ui-grid-row')];"
+                + " let i=body.findIndex(r=>(r.textContent||'').indexOf(c)>=0); if(i<0) i=0; const row=left[i]; if(!row) return false;"
+                + " const cell=row.querySelector('.ui-grid-cell:has(i), .ui-grid-cell:has(.fa)') || [...row.querySelectorAll('.ui-grid-cell')].find(x=>/getItemBatchdetails/.test(x.getAttribute('ng-click')||'')) || row.querySelector('.ui-grid-cell'); if(!cell) return false;"
+                + " cell.scrollIntoView({block:'center'}); cell.id='__xferItemCell'; return true; }", code);
+        if (!Boolean.TRUE.equals(tagged)) return 0;
+        try { page.locator("#__xferItemCell").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000)); }
+        catch (Exception e) { System.out.println("CSSD.Transfer.tickStockedItem: click failed - " + e.getMessage()); }
+        page.evaluate("() => { const e=document.getElementById('__xferItemCell'); if(e) e.removeAttribute('id'); }");
+        try {
+            page.waitForFunction("() => {" + JS + MODAL_TABLES + " const t=tblWith(['Batch Code','Available Quantity']); return !!t && rowsOf(t).length > 0; }", null, new Page.WaitForFunctionOptions().setTimeout(10000));
+        } catch (Exception ignore) { }
+        waitForAngular(400);
+        return stockedBatchRows().size();
+    }
+
+    /**
+     * The modal's tables are found by their COLUMN HEADERS: the "Items Batch List" / "Selected Item" headings are not reliable anchors in this window's layout (the heading lookup used by the Get
+     * Indent window finds no table here, so the batches looked absent although the server had answered them).
+     */
+    private static final String MODAL_TABLES =
+            "const mod=()=>[...document.querySelectorAll('.modal.in')].find(x=>x.offsetWidth||x.offsetHeight);"
+          + "const tblWith=(parts)=>{ const m=mod(); if(!m) return null; return [...m.querySelectorAll('table')].find(t=>{"
+          + "  const h=norm([...t.querySelectorAll('th')].map(x=>x.textContent).join(' ')); return parts.every(p=>h.indexOf(p)>=0); }) || null; };";
+
+    /** The rows of the Get Items modal's <b>Items Batch List</b> (the table with Batch Code + Available Quantity). */
+    public List<String> stockedBatchRows() {
+        Object r = page.evaluate("() => {" + JS + MODAL_TABLES + " const t=tblWith(['Batch Code','Available Quantity']); return t? rowsOf(t) : []; }");
+        return toList(r);
+    }
+
+    /** The rows of the Get Items modal's bottom <b>Selected Item</b> grid (the table with Batch Code + Available Stock). */
+    public List<String> stockedSelectedRows() {
+        Object r = page.evaluate("() => {" + JS + MODAL_TABLES + " const t=tblWith(['Batch Code','Available Stock']); return t? rowsOf(t) : []; }");
+        return toList(r);
+    }
+
+    /** Make sure the first row of the Get Items modal's Selected Item grid is ticked (OK only takes ticked rows). Returns the row's text with its state, "" when there is no row. */
+    public String ensureStockedSelectionTicked() {
+        Object r = page.evaluate("() => {" + JS + MODAL_TABLES + " const t=tblWith(['Batch Code','Available Stock']); const row=t&&t.querySelector('tbody tr'); if(!row) return '';"
+                + " const cb=row.querySelector('input[type=checkbox]'); if(!cb) return norm(row.textContent)+' [no checkbox]'; if(!cb.checked) cb.click(); return norm(row.textContent)+' [checked='+cb.checked+']'; }");
+        waitForAngular(400);
+        return r == null ? "" : r.toString();
+    }
+
+    /** Tick the first batch that has available quantity and wait for it to be queued in the bottom <b>Selected Item</b> grid. Returns that grid's first row ("" if nothing was queued). */
+    public String tickFirstStockedBatch() {
+        Object tagged = page.evaluate("() => {" + JS + MODAL_TABLES + " const t=tblWith(['Batch Code','Available Quantity']); const rows=t?[...t.querySelectorAll('tbody tr')]:[];"
+                + " const row=rows.find(r=>r.querySelector('input[type=checkbox]') && [...r.querySelectorAll('td')].some(td=>/^\\d+(\\.\\d+)?$/.test(norm(td.textContent)) && +norm(td.textContent)>0)) || rows[0];"
+                + " if(!row) return false; const cb=row.querySelector('input[type=checkbox]'); if(!cb) return false; cb.scrollIntoView({block:'center'}); cb.id='__xferBatchCb'; return true; }");
+        if (!Boolean.TRUE.equals(tagged)) return "";
+        try { page.locator("#__xferBatchCb").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000)); }
+        catch (Exception e) { System.out.println("CSSD.Transfer.tickFirstStockedBatch: click failed - " + e.getMessage()); }
+        page.evaluate("() => { const e=document.getElementById('__xferBatchCb'); if(e) e.removeAttribute('id'); }");
+        try {
+            page.waitForFunction("() => {" + JS + MODAL_TABLES + " const t=tblWith(['Batch Code','Available Stock']); return !!t && rowsOf(t).length > 0; }", null, new Page.WaitForFunctionOptions().setTimeout(10000));
+        } catch (Exception ignore) { }
+        waitForAngular(400);
+        List<String> bottom = stockedSelectedRows();
+        return bottom.isEmpty() ? "" : bottom.get(0);
+    }
+
     // ---- main form: Unit Quantity + Save ------------------------------------------
 
     /**
@@ -506,7 +692,7 @@ public class Transfer extends BasePage {
         Object r = page.evaluate("() => { const a=window.__xferToasts||[];"
                 + " return a.find(x=>/saved\\s*success|success/i.test(x)) || a.find(x=>x) || ''; }");
         waitForAngular(400);
-        return r == null ? "" : r.toString().trim();
+        return r == null ? "" : r.toString().trim().replaceFirst("^[^A-Za-z0-9]*KPJ\\s*Portal\\s*", "");
     }
 
     private void waitForToastsToClear() {

@@ -240,7 +240,8 @@ public class LoanGRN extends BasePage {
         waitForAngular(700);
         lastExpiry = model("#txtexpirydate", "GRNDetails.expirydate");
         String shown = String.valueOf(page.evaluate("() => document.getElementById('txtexpirydate').value"));
-        if (!lastExpiry.matches("\\d{2}/\\d{2}")) problems.add("the expiry date box reads \"" + shown + "\" (model \"" + lastExpiry + "\")");
+        // the box used to read MM/yy (month/year only); on v2026.11.02.372 it reads the full picked date, dd/MM/yyyy (its placeholder says dd/mm/yyyy) — both are a picked date
+        if (!lastExpiry.matches("\\d{2}/\\d{2}(/\\d{4})?")) problems.add("the expiry date box reads \"" + shown + "\" (model \"" + lastExpiry + "\")");
         else if (!lastExpiry.equals(shown)) problems.add("the expiry box shows \"" + shown + "\" but the model holds \"" + lastExpiry + "\"");
         return lastExpiry;
     }

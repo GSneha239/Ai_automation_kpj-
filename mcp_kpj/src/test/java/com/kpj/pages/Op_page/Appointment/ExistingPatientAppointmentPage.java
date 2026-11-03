@@ -149,6 +149,20 @@ public class ExistingPatientAppointmentPage extends BookAppointmentPage {
                 + " | Department=" + m.get("dept") + " | Doctor=" + doctor;
     }
 
+    /**
+     * An existing patient can come without an NRIC; the form then refuses Save with "Please Enter NRIC". When the NRIC box is on screen and empty, enter a unique 12-digit NRIC
+     * (same shape {@link BookAppointmentPage#fillMandatoryDetails()} uses for a new patient) and return it; return "" when the patient already holds one (nothing is touched).
+     */
+    public String fillNricIfEmpty() {
+        Object cur = page.evaluate("() => { const e=[...document.querySelectorAll('input')].find(x=>x.getAttribute('ng-model')==='PatientData.NationalId' && x.offsetParent!==null);"
+                + " return e ? String(e.value||'').trim() : null; }");
+        if (cur == null || !cur.toString().isEmpty()) return "";
+        String nric = "9002020" + (uniqueId() + "00000").substring(0, 5);
+        page.evaluate("(v) => window.__setInp('PatientData.NationalId', v)", nric);
+        waitForAngular(400);
+        return nric;
+    }
+
     /** Set Appointment Date to TOMORROW. (Live-confirmed: this only affects display — "Next Schedule" already
      *  represents tomorrow regardless, which is what {@link #selectFreeSlot()} picks from.) */
     public String setAppointmentDateTomorrow() {

@@ -64,18 +64,32 @@ public class PharmacySaleOrder extends DevHisBase {
         step("Select store", "Select the Store (" + STORE + ")", "The store is selected", storeOk ? "Selected \"" + store + "\"" : "Not selected — " + ps.problems, storeOk ? "PASS" : "FAIL");
         if (!storeOk) { addSummary("Result", "FAILED — store: " + ps.problems); return; }
 
-        // 3) MRN
-        boolean mrnOk = ps.enterMrn(MRN);
-        step("Enter MRN no", "Enter the MRN No. (" + MRN + ")", "The MRN is accepted", mrnOk ? "MRN " + ps.lastMrn + " entered" : "Problem — " + ps.problems, mrnOk ? "PASS" : "FAIL");
+        // 3) MRN + 4) Search. This screen only loads a patient who has a visit TODAY (otherwise a toast "Please Mark Today's Visit of this Patient!" and no dialog to mark it), so the pinned MRN can
+        // go stale from one day to the next. Unless the MRN was pinned with -Dpharmacysaleorder.mrn=, the next patients of the Find Patient popup (patients with a visit today) are tried.
+        String mrnUsed = MRN;
+        java.util.List<String> skipped = new java.util.ArrayList<>();
+        boolean mrnOk = ps.enterMrn(mrnUsed);
+        String patient = mrnOk ? ps.clickSearch() : "";
+        if (mrnOk && patient.isEmpty() && System.getProperty("pharmacysaleorder.mrn") == null) {
+            skipped.add(MRN + " (" + String.join("; ", ps.problems) + ")");
+            for (String cand : ps.candidateMrns(12, 3)) {
+                if (cand.equals(MRN)) continue;
+                if (!ps.enterMrn(cand)) continue;
+                String p = ps.clickSearch();
+                if (!p.isEmpty()) { patient = p; mrnUsed = cand; break; }
+                skipped.add(cand + " (" + String.join("; ", ps.problems) + ")");
+            }
+        }
+        String mrnNote = skipped.isEmpty() ? "" : (patient.isEmpty() ? "; no patient loaded for any of: " : "; the given MRN " + MRN + " was not usable, so MRN " + mrnUsed + " (a patient with a visit today, from the Find Patient popup) was used; skipped: ") + skipped;
+        step("Enter MRN no", "Enter the MRN No. (" + MRN + ")", "The MRN is accepted", mrnOk ? "MRN " + (patient.isEmpty() ? ps.lastMrn : mrnUsed) + " entered" + mrnNote : "Problem — " + ps.problems, mrnOk ? "PASS" : "FAIL");
         if (!mrnOk) { addSummary("Result", "FAILED — MRN: " + ps.problems); return; }
 
-        // 4) Search
-        String patient = ps.clickSearch();
         boolean found = !patient.isEmpty() && ps.ok();
         step("Click Search", "Click Search", "The patient's details load (name, age, gender, payor)",
-                found ? "Loaded " + patient + " — " + ps.lastAge + ", " + ps.lastGender + ", payor " + (ps.lastPayor.isEmpty() ? "(none)" : ps.lastPayor) : "No patient loaded — " + ps.problems,
+                found ? "Loaded " + patient + " — " + ps.lastAge + ", " + ps.lastGender + ", payor " + (ps.lastPayor.isEmpty() ? "(none)" : ps.lastPayor) : "No patient loaded — " + ps.problems + mrnNote,
                 found ? "PASS" : "FAIL");
-        if (!found) { addSummary("Result", "FAILED — Search: " + ps.problems); return; }
+        if (!found) { addSummary("Result", "FAILED — Search: " + ps.problems + mrnNote); return; }
+        addSummary("Patient", mrnUsed + " — " + patient + (mrnUsed.equals(MRN) ? "" : " (NOT the given MRN " + MRN + ": it has no visit today)"));
 
         // 5) Ward / Room / Bed
         boolean wardOk = ps.enterWard(WARD);

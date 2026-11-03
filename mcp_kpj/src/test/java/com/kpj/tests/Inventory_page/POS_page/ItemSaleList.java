@@ -181,7 +181,7 @@ public class ItemSaleList extends DevHisBase {
             step(drugLabelPdf.png, "[Print Drug Label] Verify pdf generation with drug label",
                     "Wait for the drug label PDF to open",
                     "A non-blank PDF drug label is generated",
-                    drugLabelPdf.diagnostics + " The screenshot is the PDF's first page rendered from the file itself.",
+                    drugLabelPdf.diagnostics + (drugLabelPdf.blank ? "" : " The screenshot is the PDF's first page rendered from the file itself."),
                     drugLabelPdf.blank ? "FAIL" : "PASS");
         } else {
             step(page, "[Print Drug Label] Verify pdf generation with drug label",
@@ -212,7 +212,7 @@ public class ItemSaleList extends DevHisBase {
         if (printPdf.png != null && printPdf.png.length > 0) {
             step(printPdf.png, "[Print] Verify report generated", "Wait for the report to open",
                     "A non-blank report is generated",
-                    printPdf.diagnostics + " The screenshot is the PDF's first page rendered from the file itself.",
+                    printPdf.diagnostics + (printPdf.blank ? "" : " The screenshot is the PDF's first page rendered from the file itself."),
                     printPdf.blank ? "FAIL" : "PASS");
         } else {
             step(page, "[Print] Verify report generated", "Wait for the report to open",

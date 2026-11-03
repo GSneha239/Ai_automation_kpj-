@@ -75,6 +75,19 @@ public class BookAppointmentPage extends BasePage {
         installHelpers();
     }
 
+    /**
+     * Attach to a Book Appointment form that is ALREADY open — reached from another screen (e.g. Work Order List &gt; Appointment) instead of the OP menu:
+     * wait for the form and its master data, then install the helpers every other method of this class relies on.
+     */
+    public void attachToOpenForm() {
+        page.waitForSelector("#txtFirstName", new Page.WaitForSelectorOptions().setTimeout(40000));
+        page.waitForFunction(
+                "() => { const e = [...document.querySelectorAll('select')].find(x => x.getAttribute('ng-model') === 'PatientData.receivabletypeid'); return e && e.options.length > 1; }",
+                null, new Page.WaitForFunctionOptions().setTimeout(40000));
+        waitForAngular(1500);
+        installHelpers();
+    }
+
     /** Install in-page JS helpers (select setter that decodes ng-options; ng-model input setter). */
     protected void installHelpers() {
         page.evaluate("() => {"
@@ -148,11 +161,18 @@ public class BookAppointmentPage extends BasePage {
                 + "window.__setInp('PatientData.NationalId','9002020' + (s.slice(0,5)+'0').slice(0,5));"
                 + "window.__setInp('PatientData.DateOfBirth','02/02/1990');"
                 + "window.__setInp('PatientData.Email','autobook' + s + '@example.com');"
-                + "window.__setInp('PatientData.MobileNo','19' + (s+'0000000').slice(0,7));"
                 + "window.__setInp('PatientData.AgeYear','36');"
                 + "window.__setInp('PatientData.AgeMonth','0');"
                 + "window.__setInp('PatientData.AgeDays','0');"
                 + "}", suffix);
+        // Mobile No: since the 28-10-26 build Save refuses ("Enter Valid Mobile No.") any number whose length differs from the configured digit count
+        // (CfgMobileNoDigit, 10 until GetConfigData answers) — a fixed 9-digit number no longer passes, so build one of the configured length.
+        Object cfg = page.evaluate("() => { let s=angular.element(document.querySelector('#txtMobileNo')||document.body).scope();"
+                + " for(let i=0;i<12&&s;i++){ if(s.CfgMobileNoDigit){ return s.CfgMobileNoDigit; } s=s.$parent; } return 10; }");
+        int digits = cfg instanceof Number && ((Number) cfg).intValue() > 2 ? ((Number) cfg).intValue() : 10;
+        String mobile = "19" + (suffix + "00000000000000").substring(0, digits - 2);
+        page.evaluate("(v) => window.__setInp('PatientData.MobileNo', v)", mobile);
+        System.out.println("fillMandatoryDetails: Mobile No " + mobile + " (" + digits + " digits)");
         waitForAngular(500);
         // Doctor (loads after department)
         page.evaluate("() => window.__setSel('PatientData.DoctorModalityID','Demo Doctor')");
@@ -312,6 +332,29 @@ public class BookAppointmentPage extends BasePage {
     public java.util.List<String> capturedAlerts() {
         Object r = page.evaluate("() => window.__alerts || []");
         return r instanceof java.util.List ? (java.util.List<String>) r : new java.util.ArrayList<>();
+    }
+
+    /**
+     * The messages the screen showed after Save, without the bare toast-type labels ("Error", "Success"…) the alert hook also records beside each message — those are labels, not messages.
+     */
+    public java.util.List<String> capturedMessages() {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        for (String a : capturedAlerts()) {
+            String t = a == null ? "" : a.trim();
+            if (!t.isEmpty() && !t.matches("(?i)error|success|warning|info|alert|notice")) out.add(t);
+        }
+        return out;
+    }
+
+    /** True when the screen said the appointment was saved ("…Saved Successfully", "…Booked") and none of its messages refused the save (Please …, Enter Valid …, already …, failed). */
+    public static boolean saveSucceeded(java.util.List<String> messages) {
+        boolean said = false, refused = false;
+        for (String m : messages) {
+            String t = m.toLowerCase();
+            if (t.matches(".*(success|saved|booked).*")) said = true;
+            if (t.matches(".*(please|enter valid|fail|invalid|already|not saved).*")) refused = true;
+        }
+        return said && !refused;
     }
 
     // ---- screenshot -------------------------------------------------------

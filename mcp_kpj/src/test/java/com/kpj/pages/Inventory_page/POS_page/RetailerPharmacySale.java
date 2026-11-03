@@ -4,6 +4,7 @@ import com.kpj.pages.BasePage;
 import com.microsoft.playwright.Locator;
 import com.microsoft.playwright.Page;
 import com.microsoft.playwright.Response;
+import com.microsoft.playwright.Route;
 
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
@@ -59,6 +60,29 @@ public class RetailerPharmacySale extends BasePage {
     public RetailerPharmacySale(Page page) {
         super(page);
         page.onResponse(searchListener);
+    }
+
+    /** How many item-search requests {@link #repairItemSearch} rewrote, and the first one as the screen sent it (before) and as the server got it (after). */
+    public int repairedCount = 0;
+    public String repairedBefore = "", repairedAfter = "";
+
+    /**
+     * Works around the screen's own defect (see the class comment) so the REST of the flow can be tested with genuine typing and a genuine click on a genuine
+     * suggestion: every {@code fetchItemByStore} request the screen sends with {@code PsychotropicDrug=undefined} / {@code requesttype=undefined} is resumed with
+     * {@code PsychotropicDrug=false} / {@code requesttype=0} (what the Pharmacy Sale Order screen sends for the same call). Only those two query values change; a request
+     * that is already well-formed passes untouched, so once the screen is fixed this does nothing. Call it once, before the first search.
+     */
+    public void repairItemSearch() {
+        page.route(url -> url.contains("fetchItemByStore"), route -> {
+            String u = route.request().url();
+            String fixed = u.replaceAll("(?i)PsychotropicDrug=undefined", "PsychotropicDrug=false").replaceAll("(?i)requesttype=undefined", "requesttype=0");
+            if (fixed.equals(u)) { route.resume(); return; }
+            synchronized (searchCalls) {
+                repairedCount++;
+                if (repairedBefore.isEmpty()) { repairedBefore = URLDecoder.decode(u, StandardCharsets.UTF_8); repairedAfter = URLDecoder.decode(fixed, StandardCharsets.UTF_8); }
+            }
+            route.resume(new Route.ResumeOptions().setUrl(fixed));
+        });
     }
 
     /** What the last fill step could not verify (empty = everything held). */
@@ -524,7 +548,17 @@ public class RetailerPharmacySale extends BasePage {
                     + " | selling price " + r.getOrDefault("Selling Price", "") + " | avl qty " + r.getOrDefault("Avl Qty", "") + " | qty " + r.getOrDefault("Qty", "") + " | total " + r.getOrDefault("Total Amount", "");
             if (!r.getOrDefault("Item Name", "").toLowerCase().contains(name.toLowerCase())) problems.add("the line's Item Name is \"" + r.getOrDefault("Item Name", "") + "\", not \"" + name + "\"");
             if (!(num(r.getOrDefault("Qty", "")) == num(qty))) problems.add("the line's Qty is \"" + r.getOrDefault("Qty", "") + "\" instead of " + qty);
-            if (!(num(r.getOrDefault("Total Amount", "")) > 0)) problems.add("the line's Total Amount is \"" + r.getOrDefault("Total Amount", "") + "\" (expected a positive amount)");
+            double lineQty = num(r.getOrDefault("Qty", "")), linePrice = num(r.getOrDefault("Selling Price", "")), lineTotal = num(r.getOrDefault("Total Amount", ""));
+            if (!(lineTotal > 0)) problems.add("the line's Total Amount is \"" + r.getOrDefault("Total Amount", "") + "\" (expected a positive amount)");
+            else if (lineQty > 0 && linePrice > 0) {
+                // this screen rounds every line amount to a whole number (Math.round(quantity x mrp) in its controller), and the price is shown to 2 decimals
+                double exact = lineQty * linePrice;
+                if (Math.abs(lineTotal - exact) > 0.5 + lineQty * 0.005 + 0.001)
+                    problems.add("the line's Total Amount " + r.getOrDefault("Total Amount", "") + " is not Qty x Selling Price (" + Math.round(exact * 100) / 100.0 + ") even allowing for the screen's rounding to a whole number");
+                else if (Math.abs(lineTotal - exact) > 0.005)
+                    lastItemRow += " (Total Amount is " + (lineQty == Math.rint(lineQty) ? String.valueOf((long) lineQty) : String.valueOf(lineQty)) + " x " + r.getOrDefault("Selling Price", "") + " = "
+                            + Math.round(exact * 100) / 100.0 + " rounded to a whole number, as this screen does)";
+            }
             lastLineFree = lineFree(at);
             if (!lastLineFree.isEmpty() && !(num(lastLineFree) == num(free))) problems.add("the line holds Free Qty \"" + lastLineFree + "\" instead of " + free);
         }

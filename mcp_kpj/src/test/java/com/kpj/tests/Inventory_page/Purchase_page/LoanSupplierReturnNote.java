@@ -187,10 +187,17 @@ public class LoanSupplierReturnNote extends DevHisBase {
         // 10) Save; verify report generation
         String reportResult = lsrn.saveAndVerifyReportGeneration();
         boolean saveClickedOk = lsrn.saveClicked();
-        step(page, "Click Save; verify report generation", "Click Save",
-                "The Save action fires and a report is generated",
-                saveClickedOk ? "PASSES: " + reportResult : "FAILS: " + reportResult,
-                saveClickedOk ? "PASS" : "FAIL");
+        boolean reportOk = saveClickedOk && !lsrn.reportBlank;
+        String reportActual = !saveClickedOk ? "FAILS: " + reportResult
+                : (reportOk ? "PASSES because the Save fired and the report tab opened: " + lsrn.lastReport
+                            : "FAILS because the Save fired but " + (lsrn.lastReport.isEmpty() ? "no report tab opened" : "the report tab carries no content: " + lsrn.lastReport));
+        if (lsrn.reportPng != null && lsrn.reportPng.length > 0) {
+            step(lsrn.reportPng, "Click Save; verify report generation", "Click Save and look for the report in the new tab",
+                    "The Save action fires and a report is generated", reportActual, reportOk ? "PASS" : "FAIL");
+        } else {
+            step(page, "Click Save; verify report generation", "Click Save and look for the report in the new tab",
+                    "The Save action fires and a report is generated", reportActual, reportOk ? "PASS" : "FAIL");
+        }
         if (!saveClickedOk) { addSummary("Result", "FAILED — the Save button was not found"); return; }
 
         // 11) Verify success toast

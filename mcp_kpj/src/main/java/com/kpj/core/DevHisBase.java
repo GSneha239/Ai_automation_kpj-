@@ -641,6 +641,14 @@ public abstract class DevHisBase {
     /** Append a Test-Summary key/value row (call anytime during body()). */
     public void addSummary(String key, String value) { summaryRows.add(new String[]{key, value}); }
 
+    private final List<String[]> diagnosticRows = new ArrayList<>(); // {key, value} — only reported when a step failed
+
+    /**
+     * Append a Test-Summary row that is only for diagnosing a failure (for example a dump of the screen's controls): it is left out of the report
+     * when every step passed, so a passing report keeps a short, result-only summary, and is added after the result rows when any step failed.
+     */
+    public void addDiagnostic(String key, String value) { diagnosticRows.add(new String[]{key, value}); }
+
     /** Records the failure as a FAIL step (with a screenshot of the current page if possible). */
     private void failStep(Throwable e) {
         shotCount++;
@@ -800,6 +808,9 @@ public abstract class DevHisBase {
         String reportFile = rid.replaceFirst("^TC\\d+_", "");
         if (reportFile.isBlank()) reportFile = rid;
         reportFile = reportFile.replaceAll("[^A-Za-z0-9._-]", "_") + ".html";
+        boolean anyFailed = false;
+        for (String[] s : steps) if ("FAIL".equalsIgnoreCase(s[5])) { anyFailed = true; break; }
+        if (anyFailed) summaryRows.addAll(diagnosticRows);
         HtmlReport.write(reportDir, reportFile, rTitle, BASE, rModule, rNote, summaryRows, steps);
         System.out.println("Report: " + reportDir.resolve(reportFile).toAbsolutePath());
 

@@ -92,13 +92,14 @@ class LiveTargetReviewTest {
         List<String> hashes = new ArrayList<>();
         Matcher h = Pattern.compile("location\\.hash\\s*=\\s*('#/[a-z]+'|h)").matcher(code);
         while (h.find()) hashes.add(h.group(1));
-        assertEquals(List.of("h", "'#/complaintdetails'"), hashes, "it sets the route to its own screen (fallback) and reads Complaint Details");
+        // 2026-11-02: Complaint Details is reached through the menu, no longer by a URL jump (the app bounces a hash jump, so that read the wrong grid)
+        assertEquals(List.of("h"), hashes, "its only route write is the direct-route fallback to its own screen");
         assertTrue(code.contains("ROUTE = \"#/complaintresolution\""));
-        // in-page clicks are menu links only
+        // in-page clicks are menu links only (the Ancillary Services / Equipment/Asset levels are opened by expandMenuEntry)
         Matcher jsClicks = Pattern.compile("(\\w+)\\.click\\(\\)").matcher(code);
         List<String> js = new ArrayList<>();
         while (jsClicks.find()) js.add(jsClicks.group(1));
-        assertEquals(List.of("a", "a"), js, "the only in-page clicks are the two menu anchors (Ancillary Services, Equipment/Asset)");
+        assertEquals(List.of("a"), js, "the only in-page click is the Complaint Details menu anchor");
     }
 
     @Test
@@ -107,7 +108,8 @@ class LiveTargetReviewTest {
         Set<String> calls = new TreeSet<>();
         Matcher m = Pattern.compile("\\bcr\\.([a-zA-Z]+)\\(").matcher(test);
         while (m.find()) calls.add(m.group(1));
-        assertEquals(Set.of("clickSearchAndVerify", "complaintsInMasterList", "datesSet", "describeControls", "enterDates", "navigateViaMenu",
+        // 2026-11-02: the unsound "is there data" master-list read is replaced by the read-only equipmentBlockers() evidence check
+        assertEquals(Set.of("clickSearchAndVerify", "datesSet", "describeControls", "enterDates", "equipmentBlockers", "navigateViaMenu",
                 "searchReturnedResults", "searchScanningStores", "selectLocation", "selectStore"), calls);
         // the only other collaborator is the shared login page, and the base class's screenshot-only step()
         Set<String> pages = new TreeSet<>();
@@ -127,11 +129,14 @@ class LiveTargetReviewTest {
                 found.add(p.toString().replace('\\', '/') + (Files.readString(p).contains("@org.junit.jupiter.api.Test") || Files.readString(p).contains("@Test") ? " [TEST]" : ""));
             }
         }
+        // the Equipment/Asset screen and (added later by a teammate) the General Maintenance screen each have a page object and a test of this name
         assertEquals(List.of("src/test/java/com/kpj/pages/AncillaryServices_page/Equipment_page/ComplaintResolution.java",
-                "src/test/java/com/kpj/tests/AncillaryServices_page/Equipment_page/ComplaintResolution.java [TEST]"), found);
+                "src/test/java/com/kpj/pages/AncillaryServices_page/GeneralMaintenance_page/ComplaintResolution.java",
+                "src/test/java/com/kpj/tests/AncillaryServices_page/Equipment_page/ComplaintResolution.java [TEST]",
+                "src/test/java/com/kpj/tests/AncillaryServices_page/GeneralMaintenance_page/ComplaintResolution.java [TEST]"), found);
         // and no other class in the tree has a name that -Dtest=ComplaintResolution could match
         try (Stream<Path> s = Files.walk(Paths.get("src"))) {
-            assertEquals(2, s.filter(f -> f.getFileName().toString().matches("(?i).*ComplaintResolution.*\\.java")).count());
+            assertEquals(4, s.filter(f -> f.getFileName().toString().matches("(?i).*ComplaintResolution.*\\.java")).count());
         }
     }
 

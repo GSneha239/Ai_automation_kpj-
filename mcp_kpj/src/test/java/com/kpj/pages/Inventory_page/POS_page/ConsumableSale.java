@@ -508,21 +508,33 @@ public class ConsumableSale extends BasePage {
         problems.clear();
         List<Map<String, String>> rows = gridRows();
         lastRow = "";
-        if (rows.size() != linesBefore + 1) problems.add("Counter Sale Information has " + rows.size() + " line(s), expected " + (linesBefore + 1));
-        Map<String, String> row = null;
-        for (int i = rows.size() - 1; i >= 0; i--) if (rows.get(i).getOrDefault("itemname", "").toLowerCase().contains(name.toLowerCase())) { row = rows.get(i); break; }
-        if (row == null) { problems.add("no line carries the item \"" + name + "\"" + (rows.isEmpty() ? "" : " — the grid holds " + rows)); return false; }
-        double q = num(row.get("quantity")), price = num(row.get("mrp")), amount = num(row.get("totalamount"));
-        lastRow = row.getOrDefault("itemname", "") + " | batch " + row.getOrDefault("batchcode", "") + " | expiry " + row.getOrDefault("expirydate", "") + " | qty " + row.getOrDefault("quantity", "")
-                + " | selling price " + row.getOrDefault("mrp", "") + " | amount " + row.getOrDefault("totalamount", "") + " | tax% " + row.getOrDefault("taxpercentage", "");
-        if (row.getOrDefault("batchcode", "").isEmpty()) problems.add("the line has no Batch Code");
-        if (row.getOrDefault("expirydate", "").isEmpty()) problems.add("the line has no Expiry Date");
-        if (q != num(qty)) problems.add("the line's Quantity is \"" + row.getOrDefault("quantity", "") + "\" instead of " + qty);
-        if (!(price > 0)) problems.add("the line's Selling Price is \"" + row.getOrDefault("mrp", "") + "\" (expected a positive price)");
-        if (!(amount > 0)) problems.add("the line's Amount is \"" + row.getOrDefault("totalamount", "") + "\" (expected a positive amount)");
-        else if (price > 0 && Math.abs(amount - q * price) > 0.02) problems.add("the line's Amount " + amount + " is not Quantity x Selling Price (" + q * price + ")");
+        int added = rows.size() - linesBefore;
+        if (added < 1) { problems.add("Counter Sale Information has " + rows.size() + " line(s), expected more than " + linesBefore); return false; }
+        // The screen allocates the quantity over the item's batches (earliest expiry first): when the first batch holds less than was asked for, the item is added as ONE LINE PER BATCH
+        // (confirmed live 2026-11-02: quantity 2 became batch 123 x 1 + batch QA_C_LOAN1 x 1). So the new lines are judged together: each carries the item, a batch, an expiry, a price and
+        // an amount of quantity x price, and their quantities add up to the quantity entered.
+        List<Map<String, String>> mine = new ArrayList<>();
+        for (int i = rows.size() - added; i < rows.size(); i++) if (rows.get(i).getOrDefault("itemname", "").toLowerCase().contains(name.toLowerCase())) mine.add(rows.get(i));
+        if (mine.isEmpty()) { problems.add("no new line carries the item \"" + name + "\"" + " — the grid holds " + rows); return false; }
+        if (mine.size() != added) problems.add(added + " line(s) were added but only " + mine.size() + " carry the item \"" + name + "\"");
+        double total = 0;
+        List<String> described = new ArrayList<>();
+        for (Map<String, String> row : mine) {
+            double q = num(row.get("quantity")), price = num(row.get("mrp")), amount = num(row.get("totalamount"));
+            total += Double.isNaN(q) ? 0 : q;
+            described.add(row.getOrDefault("itemname", "") + " | batch " + row.getOrDefault("batchcode", "") + " | expiry " + row.getOrDefault("expirydate", "") + " | qty " + row.getOrDefault("quantity", "")
+                    + " | selling price " + row.getOrDefault("mrp", "") + " | amount " + row.getOrDefault("totalamount", "") + " | tax% " + row.getOrDefault("taxpercentage", ""));
+            if (row.getOrDefault("batchcode", "").isEmpty()) problems.add("a line has no Batch Code");
+            if (row.getOrDefault("expirydate", "").isEmpty()) problems.add("a line has no Expiry Date");
+            if (!(price > 0)) problems.add("a line's Selling Price is \"" + row.getOrDefault("mrp", "") + "\" (expected a positive price)");
+            if (!(amount > 0)) problems.add("a line's Amount is \"" + row.getOrDefault("totalamount", "") + "\" (expected a positive amount)");
+            else if (price > 0 && Math.abs(amount - q * price) > 0.02) problems.add("a line's Amount " + amount + " is not Quantity x Selling Price (" + q * price + ")");
+        }
+        lastRow = (mine.size() > 1 ? "quantity " + qty + " split over " + mine.size() + " batches — " : "") + String.join("  ;;  ", described);
+        if (Math.abs(total - num(qty)) > 0.0001) problems.add("the new lines' Quantities add up to " + total + " instead of " + qty);
         String items = boxValue("input[ng-model='PharmacyConsumable.noofitems']");
-        if (!items.isEmpty() && num(items) != rows.size()) problems.add("\"No.of Items\" shows " + items + " for " + rows.size() + " line(s)");
+        long distinct = rows.stream().map(r -> r.getOrDefault("itemname", "")).distinct().count();
+        if (!items.isEmpty() && num(items) != rows.size() && num(items) != distinct) problems.add("\"No.of Items\" shows " + items + " for " + rows.size() + " line(s) / " + distinct + " item(s)");
         return ok();
     }
 
