@@ -91,7 +91,9 @@ public class PriceRevisionApplicability extends BasePage {
     public String fillDetails(int attempt) {
         String code = "PR" + String.format("%06d", Math.abs((System.nanoTime() + attempt * 7919L) % 1000000));
         lastCode = code;
-        lastRemark = REMARKS[attempt % REMARKS.length] + (attempt >= REMARKS.length ? " " + (attempt / REMARKS.length + 1) : "");
+        // The Remark (Description) must be unique and the shared environment keeps every saved row for good: 10 names + a counter had reached "… 3" (26 attempts) and runs out
+        // after a few more — stamp each Remark with the Code's own digits, so it still reads like a real name but is never used up.
+        lastRemark = REMARKS[attempt % REMARKS.length] + " " + code.substring(2);
         page.evaluate("(a) => { const A=window.angular; const set=(ng,v)=>{ const e=[...document.querySelectorAll(\"[ng-model='\"+ng+\"']\")].find(x=>x.offsetParent!==null); if(!e) return; const c=A.element(e).controller('ngModel'); e.value=v; if(c){c.$setViewValue(v);c.$render();} e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true})); };"
                 + " set('tariffDetails.Code',a.code); set('tariffDetails.Description',a.remark); }",
                 java.util.Map.of("code", code, "remark", lastRemark));
@@ -103,6 +105,13 @@ public class PriceRevisionApplicability extends BasePage {
             try { page.locator("#__prLoc").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(4000)); loc = "ticked 1 location"; }
             catch (Exception e) { System.out.println("fillDetails: location tick failed - " + e.getMessage()); }
             page.evaluate("() => { const e=document.getElementById('__prLoc'); if(e) e.removeAttribute('id'); }");
+        } else {
+            // nothing to tick: say WHY — the location box(es) already carry a tick, or the screen shows no location checkbox at all
+            Object n = page.evaluate("() => { const all=[...document.querySelectorAll(\"input[type=checkbox][ng-model='loc.IsSelected']\")].filter(x=>x.offsetParent!==null); return [all.length, all.filter(x=>x.checked).length]; }");
+            if (n instanceof java.util.List && ((java.util.List<?>) n).size() == 2) {
+                int total = ((Number) ((java.util.List<?>) n).get(0)).intValue(), on = ((Number) ((java.util.List<?>) n).get(1)).intValue();
+                loc = total == 0 ? "no location checkbox on screen" : "already ticked (" + on + " of " + total + ")";
+            }
         }
         waitForAngular(300);
         return "Code=" + code + " | Remark=" + lastRemark + " | Location=" + loc;

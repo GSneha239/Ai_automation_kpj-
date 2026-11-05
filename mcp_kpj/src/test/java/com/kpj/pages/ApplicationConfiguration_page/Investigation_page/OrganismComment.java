@@ -208,7 +208,9 @@ public class OrganismComment extends BasePage {
         lastCode = numericCodes ? String.format("%06d", Math.abs((System.nanoTime() + attempt * 7919L) % 1000000))
                                 : "OC" + String.format("%05d", n);
         int i = (int) (Math.abs(System.nanoTime() / 1000 + attempt) % REMARKS.length);
-        lastRemark = REMARKS[i] + (attempt == 0 ? "" : " - " + QUALIFIERS[(attempt - 1) % QUALIFIERS.length]);
+        // The server keeps every saved Description (Remark) for good and refuses a repeat ("Description already exists!"): the pool x a fixed qualifier list was used up (all 40
+        // attempts refused). Stamp the Remark with the Code's own digits, so it still reads like a lab comment but is never used up.
+        lastRemark = REMARKS[i] + " " + lastCode.replaceAll("\\D", "");
         lastRemark2 = REMARKS2[i];
         Object r = page.evaluate("(a) => { const A=window.angular;" + FIND_FIELDS
                 + " const set=(e,v)=>{ if(!e) return '(no field)'; const c=A.element(e).controller('ngModel'); e.value=v; if(c){c.$setViewValue(v);c.$render();}"

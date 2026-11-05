@@ -33,6 +33,18 @@ public class DiagnosisSet extends DevHisBase {
     @org.junit.jupiter.api.Test
     void execute() { try { run(); } finally { stop(); } }
 
+    /** The page as it stands now (BEFORE Submit); the previous picture is kept when this one cannot be taken. */
+    private byte[] shoot(byte[] previous) {
+        try { return page.screenshot(new com.microsoft.playwright.Page.ScreenshotOptions().setTimeout(8000)); }
+        catch (Exception e) { System.out.println("DiagnosisSet: could not shoot the form - " + String.valueOf(e.getMessage()).split("\n")[0]); return previous; }
+    }
+
+    /** A step whose picture is the form as it stood after filling it (falls back to the live page when there is none). */
+    private void stepWith(byte[] png, String name, String desc, String expected, String actual, String status) {
+        if (png != null && png.length > 0) step(png, name, desc, expected, actual, status);
+        else step(page, name, desc, expected, actual, status);
+    }
+
     @Override
     protected void body() {
         meta("Application Configuration - Nursing - Diagnosis Set",
@@ -72,12 +84,17 @@ public class DiagnosisSet extends DevHisBase {
 
         // 4) + 5) Set Code / Set Description, inner Add, Submit — retry with different details on "already exists".
         String setDetails = "", toast = "";
+        byte[] setPng = null, rowPng = null;   // the form after the Set Code / Description, and after the row Add, each shot BEFORE Submit (afterwards the screen is the saved list)
+        int rowsAfterAdd = 0;
         boolean ok = false, exists = false, rowAdded = false;
         int used = 0;
         for (int attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
             setDetails = ds.fillSetDetails(attempt);
+            setPng = shoot(setPng);
             if (ds.detailRowCount() == 0) rowAdded = ds.clickInnerAdd();
             else rowAdded = true;
+            rowsAfterAdd = ds.detailRowCount();
+            rowPng = shoot(rowPng);
             used++;
             toast = ds.submitAndGetToast();
             String tl = toast == null ? "" : toast.toLowerCase();
@@ -88,15 +105,15 @@ public class DiagnosisSet extends DevHisBase {
         }
 
         boolean setOk = setDetails.contains("DiagnosisSetCode=DS") && !setDetails.contains("=(no)");
-        step(page, "Enter Diagnosis Set Code and Diagnosis Set Description",
+        stepWith(setPng, "Enter Diagnosis Set Code and Diagnosis Set Description",
                 "Enter Diagnosis Set Code* (unique) and Diagnosis Set Description*",
                 "Both Diagnosis Set fields are entered",
                 setDetails + (used > 1 ? "  [details changed " + (used - 1) + "x after 'already exists']" : ""),
                 setOk ? "PASS" : "FAIL");
 
-        step(page, "Click Add (commit the diagnosis row)", "Click Add on the form to add the diagnosis as a row",
+        stepWith(rowPng, "Click Add (commit the diagnosis row)", "Click Add on the form to add the diagnosis as a row",
                 "The diagnosis appears as a detail row",
-                rowAdded ? "Detail row added (rows now: " + ds.detailRowCount() + ")" : "Add did NOT produce a detail row",
+                rowAdded ? "Detail row added (rows now: " + rowsAfterAdd + ")" : "Add did NOT produce a detail row",
                 rowAdded ? "PASS" : "FAIL");
 
         String actual = toast == null || toast.isEmpty() ? "No toast appeared"

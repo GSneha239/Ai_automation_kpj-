@@ -2,7 +2,6 @@ package com.kpj.pages.Emergency_page;
 
 import com.kpj.pages.BasePage;
 import com.microsoft.playwright.Page;
-import com.microsoft.playwright.options.WaitUntilState;
 
 /**
  * Emergency &gt; <b>Emergency Registration (Unconscious)</b> (route {@code #/EmergencyRegistration}).
@@ -20,20 +19,43 @@ public class Emergency_Registration_Unconscious extends BasePage {
 
     // ---- navigation -------------------------------------------------------
 
-    public void navigateTo(String baseUrl) {
-        // DOMCONTENTLOADED (not full "load") — the DevHIS SPA can keep a request open on a slow site.
-        try {
-            page.navigate(baseUrl + "/#/EmergencyRegistration",
-                    new Page.NavigateOptions().setWaitUntil(WaitUntilState.DOMCONTENTLOADED).setTimeout(60000));
-        } catch (Exception e) {
-            System.out.println("EmergencyRegistration.navigateTo: navigation slow — continuing");
+    private static final String HREF = "#/emergencyregistration";
+
+    /**
+     * Click <b>Emergency</b> → <b>Emergency Registration (Unconscious)</b> in the sidebar (no direct URL jump - a jump to a route is
+     * bounced to the dashboard on this app). The link is looked up by its exact href INSIDE the Emergency entry, because the
+     * sibling "Emergency Registration (Conscious)" has a similar name. Returns true when the registration form (Save button) is up.
+     */
+    public boolean navigateViaMenu() {
+        try { page.waitForFunction("() => window.angular", null, new Page.WaitForFunctionOptions().setTimeout(30000)); } catch (Exception ignore) { }
+        for (int attempt = 1; attempt <= 3 && !onScreen(); attempt++) {
+            expandMenuEntry(null, "^\\s*emergency\\s*$");
+            Object tagged = page.evaluate("(h) => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const vis=e=>!!e && !!(e.offsetWidth||e.offsetHeight||e.getClientRects().length);"
+                    + " const top=[...document.querySelectorAll('a')].find(x=>/^\\s*emergency\\s*$/i.test(norm(x.textContent)) && vis(x));"
+                    + " const root=top ? top.closest('li') : document;"
+                    + " const a=[...root.querySelectorAll('a[href]')].filter(vis).find(x=>(x.getAttribute('href')||'').toLowerCase()===h);"
+                    + " if(!a) return false; a.id='__erUncLink'; return true; }", HREF);
+            if (Boolean.TRUE.equals(tagged)) {
+                try { page.locator("#__erUncLink").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000)); }
+                catch (Exception e) { System.out.println("EmergencyRegistration.nav: click failed - " + String.valueOf(e.getMessage()).split("\n")[0]); }
+                page.evaluate("() => { const e=document.getElementById('__erUncLink'); if(e) e.removeAttribute('id'); }");
+                waitForAngular(2500);
+            } else {
+                page.waitForTimeout(1500);
+            }
         }
         try {
-            page.waitForFunction(
-                    "() => window.angular && document.querySelector(\"button[ng-click='IUDRegistration();']\")",
+            page.waitForFunction("() => window.angular && document.querySelector(\"button[ng-click='IUDRegistration();']\")",
                     null, new Page.WaitForFunctionOptions().setTimeout(30000));
-        } catch (Exception ignore) { System.out.println("EmergencyRegistration.navigateTo: form not ready in time"); }
+        } catch (Exception ignore) { System.out.println("EmergencyRegistration.nav: form not ready in time"); }
         waitForAngular(1500);
+        return onScreen();
+    }
+
+    /** On this screen - the route AND its Save button, so a bounce to the dashboard cannot pass. */
+    public boolean onScreen() {
+        if (!page.url().toLowerCase().matches(".*#/emergencyregistration/?$")) return false;
+        return Boolean.TRUE.equals(page.evaluate("() => !!document.querySelector(\"button[ng-click='IUDRegistration();']\")"));
     }
 
     // ---- registration -----------------------------------------------------
@@ -110,11 +132,40 @@ public class Emergency_Registration_Unconscious extends BasePage {
         waitForAngular(500);
         // Belt-and-suspenders: make sure Gender actually committed (the mandatory field) — retry via the model if not.
         ensureGenderCommitted();
-        String res = r == null ? "" : r.toString();
+        String res = (r == null ? "" : r.toString()) + " | " + ensureCashCounterSelected();
         // Name the dropdown(s) that had NOTHING to pick, so the report says why Save is later rejected.
         java.util.regex.Matcher noOpt = java.util.regex.Pattern.compile("(\\w+)=\\(no-opt\\)").matcher(res);
         java.util.List<String> empty = new java.util.ArrayList<>(); while (noOpt.find()) empty.add(noOpt.group(1));
         if (!empty.isEmpty()) com.kpj.core.Reasons.add("the " + String.join(", ", empty) + " dropdown(s) had NO options (list empty on this environment), so they could not be set" + (empty.contains("Dept") ? " - Doctor cascades from Department, which is why Save answers 'Please Select Department First Then Doctor!'" : ""));
+        return res;
+    }
+
+    /**
+     * <b>Cash Counter*</b> in Visit Information - mandatory on this build (v2026.11.03.392.5): with it on "--Select--" Save answers
+     * "Please Select Cash Counter!" (2026-11-04) and the fill step above never touched it. The box is found by its model / id / name
+     * (anything with "CashCounter"), else by its label; its list loads a moment after Visit Location, so it is polled for up to ~6 s,
+     * then the first real option is picked through the select's own change handling and read back. Reports "(no cash counter field)"
+     * when the form has none and "(no options)" when the list is empty, so a missing box is not mistaken for a selected one.
+     */
+    public String ensureCashCounterSelected() {
+        Object r = page.evaluate("async () => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                + " const real=o=>o.value && !/^-*\\s*select\\s*-*$/i.test(norm(o.textContent));"
+                + " const find=()=>{ let e=[...document.querySelectorAll('select')].find(x=>/cash\\s*counter/i.test((x.getAttribute('ng-model')||'')+' '+(x.id||'')+' '+(x.name||'')));"
+                + "   if(e) return e;"
+                + "   const lab=[...document.querySelectorAll('label')].find(l=>/cash\\s*counter/i.test(norm(l.textContent)));"
+                + "   if(!lab) return null;"
+                + "   return (lab.htmlFor && document.getElementById(lab.htmlFor)) || [...document.querySelectorAll('select')].find(x=>lab.compareDocumentPosition(x)&Node.DOCUMENT_POSITION_FOLLOWING); };"
+                + " let sel=null; for(let w=0;w<12;w++){ sel=find(); if(sel && [...sel.options].some(real)) break; await new Promise(r=>setTimeout(r,500)); }"
+                + " if(!sel) return 'CashCounter=(no cash counter field)';"
+                + " const cur=sel.options[sel.selectedIndex]; if(cur && real(cur)) return 'CashCounter='+norm(cur.textContent)+' (already selected)';"
+                + " const i=[...sel.options].findIndex(real); if(i<0) return 'CashCounter=(no options: '+sel.options.length+')';"
+                + " sel.selectedIndex=i; sel.dispatchEvent(new Event('change',{bubbles:true}));"
+                + " try{ window.angular.element(sel).triggerHandler('change'); }catch(e){} const $=window.jQuery; if($){try{$(sel).trigger('change');}catch(e){}}"
+                + " await new Promise(r=>setTimeout(r,600));"
+                + " return 'CashCounter='+norm(sel.options[sel.selectedIndex].textContent)+' ['+(sel.getAttribute('ng-model')||'?')+']'; }");
+        waitForAngular(400);
+        String res = r == null ? "CashCounter=(null)" : r.toString();
+        if (res.contains("(no options")) com.kpj.core.Reasons.add("the Cash Counter dropdown had NO options (list empty on this environment), so Save answers 'Please Select Cash Counter!'");
         return res;
     }
 
@@ -152,6 +203,7 @@ public class Emergency_Registration_Unconscious extends BasePage {
         // RegistrationPage save path. Run the SHARED Visit Type guard here so a fix there reaches this screen too
         // — otherwise Save can answer "Please Select Visit Type!" exactly as OP Registration did.
         new com.kpj.pages.Op_page.RegistrationPage(page).ensureVisitTypeSelected();
+        { String cc = ensureCashCounterSelected(); if (!cc.contains("selected") && !cc.contains("[")) System.out.println("saveRegistration: " + cc); }
         page.evaluate("async () => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
                 + " window.__erToasts=[]; if(window.__erObs) window.__erObs.disconnect();"
                 + " const grab=()=>{ document.querySelectorAll('.toast-message,.toast,[id^=toast]').forEach(el=>{ const t=norm(el.textContent); if(t && !window.__erToasts.includes(t)) window.__erToasts.push(t); }); };"

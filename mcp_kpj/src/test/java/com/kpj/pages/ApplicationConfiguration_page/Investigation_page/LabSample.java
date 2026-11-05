@@ -212,8 +212,9 @@ public class LabSample extends BasePage {
         // The screen's own rows read SAM00001, SAM00002 … — match that rather than inventing a new prefix.
         lastCode = numericCodes ? String.format("%06d", Math.abs((System.nanoTime() + attempt * 7919L) % 1000000))
                                 : "SAM" + String.format("%05d", n);
-        lastName = NAMES[(int) (Math.abs(System.nanoTime() / 1000 + attempt) % NAMES.length)]
-                + (attempt == 0 ? "" : " - " + QUALIFIERS[(attempt - 1) % QUALIFIERS.length]);
+        // The server keeps every saved Sample Type Name for good and refuses a repeat: 6 names x a fixed list of qualifiers was used up (all 40 attempts "already exists").
+        // Stamp the name with the Code's own digits, so it still reads like a specimen type but is never used up.
+        lastName = NAMES[(int) (Math.abs(System.nanoTime() / 1000 + attempt) % NAMES.length)] + " " + lastCode.replaceAll("\\D", "");
         lastRemark = REMARKS[(int) (Math.abs(System.nanoTime() / 1000 + attempt) % REMARKS.length)];
         Object r = page.evaluate("(a) => { const A=window.angular;" + FIND_FIELDS
                 + " const set=(e,v)=>{ if(!e) return '(no field)'; const c=A.element(e).controller('ngModel'); e.value=v; if(c){c.$setViewValue(v);c.$render();}"

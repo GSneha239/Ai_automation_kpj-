@@ -8,7 +8,7 @@ import com.microsoft.playwright.Page;
 // name (com.kpj.pages.Emergency_page.Emergency_Admission) — importing it would clash with this class name.
 
 /**
- * TC12 - Emergency &gt; <b>Emergency Admission</b> (full IPD admission).
+ * Emergency &gt; <b>Emergency Admission</b> (full IPD admission).
  *
  * <ol>
  *   <li>Click Emergency → Emergency Admission (via the menu tab, not a direct URL).</li>
@@ -20,7 +20,7 @@ import com.microsoft.playwright.Page;
  */
 public class Emergency_Admission extends DevHisBase {
 
-    public Emergency_Admission() { super("TC12_EmergencyAdmission"); }
+    public Emergency_Admission() { super("emergency_EmergencyAdmission"); }
 
     public static void main(String[] args) {
         Emergency_Admission t = new Emergency_Admission();
@@ -42,10 +42,10 @@ public class Emergency_Admission extends DevHisBase {
         com.kpj.pages.Emergency_page.Emergency_Admission ea = new com.kpj.pages.Emergency_page.Emergency_Admission(page);
 
         boolean opened = ea.navigateViaMenu();
-        step(page, "Open Emergency Admission (via menu tab)", "Click Emergency → Emergency Admission (menu, not direct URL)",
-                "The Emergency Admission form is shown", opened ? "Emergency Admission opened" : "Did NOT reach Emergency Admission",
+        step(page, "Open Emergency Admission screen", "Click Emergency -> Emergency Admission",
+                "The Emergency Admission screen is shown", opened ? "Opened " + page.url() : "Did NOT reach the screen (" + page.url() + ")",
                 opened ? "PASS" : "FAIL");
-        if (!opened) return;
+        if (!opened) { addSummary("Result", "FAILED - Emergency Admission not reached"); return; }
 
         // Section 1 — Patient Information (screenshot the filled section).
         String patient = ea.fillPatientSection();

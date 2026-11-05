@@ -192,13 +192,21 @@ public class DischargeCheckList extends BasePage {
         for (int i = 0; i < 4; i++) {
             // cache-bust + no-store: the plain URL is served from the browser cache and answers with the
             // PRE-save list, which makes a row that really saved look missing.
+            // The list is paged by the SERVER (PageIndex/PageSize, 128+ rows): a request without paging makes the stored procedure fail ("rows provided for a FETCH
+            // clause must be greater than zero", HTTP 500), so ask page by page the way the screen does, until the code turns up or every row has been seen.
             Object r = page.evaluate("async (code) => { try {"
-                    + " const res = await fetch('/api/DischargeCheckListMaster/fetch?_cb=' + Date.now(),"
-                    + "   {method:'POST', cache:'no-store', headers:{'Content-Type':'application/json','Accept':'application/json'},"
-                    + "    body: JSON.stringify({ExecFlag:'GRID'})});"
-                    + " const d = await res.json(); if(!Array.isArray(d)) return 'fetch failed: HTTP '+res.status+' non-list answer: '+JSON.stringify(d).slice(0,400); const row=(d||[]).find(x=>(''+x.code).trim()===code);"
-                    + " window.__dclSeen = 'API answered HTTP '+res.status+' with '+((d||[]).length)+' row(s); last codes: '+(d||[]).slice(-5).map(x=>x.code).join(', ');"
-                    + " return row ? ('id='+row.id+' code='+row.code+' description='+row.description+' mandatory='+row.ismandantory) : ''; }"
+                    + " let total=0, seen=0, last=[], pages=0;"
+                    + " for (let idx=0; idx<40; idx++) {"
+                    + "   const res = await fetch('/api/DischargeCheckListMaster/fetch?_cb=' + Date.now(),"
+                    + "     {method:'POST', cache:'no-store', headers:{'Content-Type':'application/json','Accept':'application/json'},"
+                    + "      body: JSON.stringify({ExecFlag:'GRID', PageIndex:idx, PageSize:125, GridSearch:null})});"
+                    + "   const d = await res.json(); if(!Array.isArray(d)) return 'fetch failed: HTTP '+res.status+' non-list answer: '+JSON.stringify(d).slice(0,400);"
+                    + "   if (d.length===0) break; pages++; seen+=d.length; total=d[0].TotalRecords||total; last=d.slice(-5).map(x=>x.code);"
+                    + "   const row=d.find(x=>(''+x.code).trim()===code);"
+                    + "   if (row) return 'id='+row.id+' code='+row.code+' description='+row.description+' mandatory='+row.ismandantory;"
+                    + "   if (seen>=total) break; }"
+                    + " window.__dclSeen = 'API paged '+pages+' page(s): '+seen+' of '+total+' row(s) read; last codes: '+last.join(', ');"
+                    + " return ''; }"
                     + " catch(e) { return 'fetch failed: '+e; } }", code);
             String s = r == null ? "" : r.toString();
             if (s.startsWith("fetch failed")) { lastFetchNote = s; return ""; }
@@ -215,13 +223,15 @@ public class DischargeCheckList extends BasePage {
     public byte[] listPng;
 
     private static final String GRID_TEXT_JS =
+            // The grid has TWO visible containers (the pinned selection column and the data columns): read them all, the Code text is in the second one.
             "() => { const vis=e=>e.offsetWidth||e.offsetHeight||e.getClientRects().length;"
-            + " const g=[...document.querySelectorAll(\"[id$='-grid-container']\")].find(vis); if(!g) return null;"
-            + " return {rows:[...g.querySelectorAll('.ui-grid-row')].filter(vis).length, text:(g.textContent||'').replace(/\\\\s+/g,' ').trim()}; }";
+            + " const gs=[...document.querySelectorAll(\"[id$='-grid-container']\")].filter(vis); if(!gs.length) return null;"
+            + " return {rows:gs.reduce((n,g)=>Math.max(n,[...g.querySelectorAll('.ui-grid-row')].filter(vis).length),0),"
+            + "   text:gs.map(g=>(g.textContent||'').replace(/\\s+/g,' ').trim()).join(' | ')}; }";
 
     /**
-     * Look for the saved row IN THE LIST: wait for the grid data to load, search the Code column filter for the code, and if that
-     * does not show it, page through EVERY page of the list (a new row lands on a later page). Sets {@link #listFound}.
+     * Look for the saved row IN THE LIST: wait for the grid data to load, then page through EVERY page of the list with the pager
+     * (a new row lands on a later page). The Code filter is a separate check, {@link #searchCodeFilter}. Sets {@link #listFound}.
      */
     public String verifyInList(String code) {
         listFound = false;
@@ -236,31 +246,13 @@ public class DischargeCheckList extends BasePage {
         // Wait for the data to load (up to 20 s): a row must carry text.
         try {
             page.waitForFunction("() => { const vis=e=>e.offsetWidth||e.offsetHeight||e.getClientRects().length;"
-                    + " const g=[...document.querySelectorAll(\"[id$='-grid-container']\")].find(vis); if(!g) return false;"
-                    + " return [...g.querySelectorAll('.ui-grid-row')].filter(vis).some(r=>(r.textContent||'').replace(/\\s+/g,' ').trim().length>0); }",
+                    + " const gs=[...document.querySelectorAll(\"[id$='-grid-container']\")].filter(vis); if(!gs.length) return false;"
+                    + " return gs.some(g=>[...g.querySelectorAll('.ui-grid-row')].filter(vis).some(r=>(r.textContent||'').replace(/\\s+/g,' ').trim().length>0)); }",
                     null, new Page.WaitForFunctionOptions().setTimeout(20000));
         } catch (Exception ignore) { }
         waitForAngular(800);
 
-        // 1) Search: the Code column's own filter box.
-        String viaFilter = "no column filter box";
-        try {
-            com.microsoft.playwright.Locator filter = page.locator("input[ng-model='colFilter.term']:visible").first();
-            if (filter.count() > 0) {
-                filter.click(); filter.pressSequentially(code, new com.microsoft.playwright.Locator.PressSequentiallyOptions().setDelay(60)); filter.press("Enter");
-                waitForAngular(2500);
-                try { listPng = page.screenshot(new Page.ScreenshotOptions().setTimeout(8000)); } catch (Exception ignore) { }
-                Object g = page.evaluate(GRID_TEXT_JS);
-                String txt = g instanceof java.util.Map ? String.valueOf(((java.util.Map<?, ?>) g).get("text")) : "";
-                boolean hit = txt.contains(code);
-                viaFilter = "filter \"" + code + "\" -> " + (hit ? "FOUND" : "not shown") + (g instanceof java.util.Map ? " (" + ((java.util.Map<?, ?>) g).get("rows") + " row(s))" : "");
-                if (hit) { listFound = true; return "searched the Code filter: " + viaFilter; }
-                filter.fill("");
-                waitForAngular(1500);
-            }
-        } catch (Exception e) { viaFilter = "filter failed: " + e.getMessage().split("\n")[0]; }
-
-        // 2) Page through all pages.
+        // Page through every page with the pager (no search typed, so the screen asks for plain pages): a new row lands on a later page.
         int pages = 0;
         String lastText = null;
         try {
@@ -270,15 +262,62 @@ public class DischargeCheckList extends BasePage {
         for (int p = 0; p < 80; p++) {
             Object g = page.evaluate(GRID_TEXT_JS);
             String txt = g instanceof java.util.Map ? String.valueOf(((java.util.Map<?, ?>) g).get("text")) : "";
+            if (txt.equals(lastText)) {
+                // the next page did not show yet (a slow answer looks like "nothing changed"): give it a moment before calling this the last page
+                page.waitForTimeout(1500);
+                g = page.evaluate(GRID_TEXT_JS);
+                txt = g instanceof java.util.Map ? String.valueOf(((java.util.Map<?, ?>) g).get("text")) : "";
+                if (txt.equals(lastText)) break;
+            }
             pages++;
-            if (txt.contains(code)) { listFound = true; return viaFilter + "; found on page " + pages + " while paging through the list"; }
-            if (txt.equals(lastText)) break;   // the next click changed nothing: last page reached
+            if (txt.contains(code)) {
+                listFound = true;
+                try { listPng = page.screenshot(new Page.ScreenshotOptions().setTimeout(8000)); } catch (Exception ignore) { }
+                return "found on page " + pages + " while paging through the list";
+            }
             lastText = txt;
             Object moved = page.evaluate("() => { const b=document.querySelector(\"[ng-click^='pageNextPageClick']\"); if(!b||b.disabled) return false; b.click(); return true; }");
             if (!Boolean.TRUE.equals(moved)) break;
             waitForAngular(900);
         }
-        return viaFilter + "; paged through " + pages + " page(s) of the list without finding \"" + code + "\"";
+        return "paged through " + pages + " page(s) of the list without finding \"" + code + "\"";
+    }
+
+    public String filterNote = "";
+    public int filterStatus = 0;
+    public boolean filterFound = false;
+    public byte[] filterPng;
+
+    /**
+     * Search the list the way a user does: type the code into the Code column's own filter. The screen then asks the SERVER to search the whole master
+     * ({@code GridSearch}); report what the server answered and whether the row is shown. Sets {@link #filterFound}, {@link #filterStatus}, {@link #filterNote}.
+     */
+    public boolean searchCodeFilter(String code) {
+        filterFound = false; filterStatus = 0; filterNote = ""; filterPng = null;
+        com.microsoft.playwright.Locator filter = page.locator("input[ng-model='colFilter.term']:visible").first();
+        if (filter.count() == 0) { filterNote = "the Code filter box is not on screen"; return false; }
+        try {
+            com.microsoft.playwright.Response r = page.waitForResponse(
+                    x -> x.url().toLowerCase().contains("dischargechecklistmaster/fetch") && String.valueOf(x.request().postData()).contains("\"GridSearch\":\""),
+                    new Page.WaitForResponseOptions().setTimeout(20000),
+                    () -> { filter.click(); filter.pressSequentially(code, new com.microsoft.playwright.Locator.PressSequentiallyOptions().setDelay(60)); });
+            filterStatus = r.status();
+            if (r.status() >= 400) {
+                String body = "";
+                try { body = r.text(); } catch (Exception ignore) { }
+                java.util.regex.Matcher m = java.util.regex.Pattern.compile("\"ExceptionMessage\":\"([^\"]*)\"").matcher(body);
+                filterNote = "the server answered HTTP " + r.status() + (m.find() ? ": " + m.group(1) : "");
+            }
+        } catch (Exception e) {
+            filterNote = "the server never answered the search: " + String.valueOf(e.getMessage()).split("\n")[0];
+        }
+        waitForAngular(2000);
+        try { filterPng = page.screenshot(new Page.ScreenshotOptions().setTimeout(8000)); } catch (Exception ignore) { }
+        Object g = page.evaluate(GRID_TEXT_JS);
+        String txt = g instanceof java.util.Map ? String.valueOf(((java.util.Map<?, ?>) g).get("text")) : "";
+        filterFound = filterStatus > 0 && filterStatus < 400 && txt.contains(code);
+        if (filterNote.isEmpty() && !filterFound) filterNote = "the search was answered (HTTP " + filterStatus + ") but the row is not shown";
+        return filterFound;
     }
 
     /** The save API's status + body, captured while Submit runs (a bare "Message Not Found." toast says nothing). */

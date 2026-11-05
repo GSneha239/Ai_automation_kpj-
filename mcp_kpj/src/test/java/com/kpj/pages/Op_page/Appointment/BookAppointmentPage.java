@@ -76,6 +76,51 @@ public class BookAppointmentPage extends BasePage {
     }
 
     /**
+     * Click <b>OP</b> → <b>Appointment</b> → <b>Book Appointment</b> in the sidebar and say whether the form came up, with its master
+     * data loaded and the helpers installed. Unlike {@link #navigateTo(String)} it never falls back to a direct {@code #/New} jump
+     * (a route jump can land on a form the menu would not have opened) and never reports success it did not see. The entries are
+     * opened with {@code expandMenuEntry} (an open entry is left alone — a plain click would CLOSE it) and the leaf is looked up by its
+     * exact href INSIDE the OP entry, so the sibling "Existing" screen ({@code #/Existing}) cannot be clicked instead.
+     */
+    public boolean navigateViaMenu() {
+        try { page.waitForFunction("() => window.angular", null, new Page.WaitForFunctionOptions().setTimeout(30000)); } catch (Exception ignore) { }
+        for (int attempt = 1; attempt <= 3 && !onScreen(); attempt++) {
+            expandMenuEntry(null, "^\\s*op\\s*$");
+            expandMenuEntry("^\\s*op\\s*$", "^\\s*appointment\\s*$");
+            Object tagged = page.evaluate("(h) => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const vis=e=>!!e && !!(e.offsetWidth||e.offsetHeight||e.getClientRects().length);"
+                    + " const top=[...document.querySelectorAll('a')].find(x=>/^\\s*op\\s*$/i.test(norm(x.textContent)) && vis(x));"
+                    + " const root=top ? top.closest('li') : document;"
+                    + " const a=[...root.querySelectorAll('a[href]')].filter(vis).find(x=>(x.getAttribute('href')||'').toLowerCase()===h);"
+                    + " if(!a) return false; a.id='__baLink'; return true; }", "#/new");
+            if (Boolean.TRUE.equals(tagged)) {
+                try { page.locator("#__baLink").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000)); }
+                catch (Exception e) { System.out.println("BookAppointment.nav: click failed - " + String.valueOf(e.getMessage()).split("\n")[0]); }
+                page.evaluate("() => { const e=document.getElementById('__baLink'); if(e) e.removeAttribute('id'); }");
+                waitForAngular(2500);
+            } else {
+                page.waitForTimeout(1500);
+            }
+        }
+        try { page.waitForSelector("#txtFirstName", new Page.WaitForSelectorOptions().setTimeout(30000)); }
+        catch (Exception ignore) { System.out.println("BookAppointment.nav: the form is not up"); }
+        if (!onScreen()) return false;
+        try {
+            page.waitForFunction(
+                    "() => { const e = [...document.querySelectorAll('select')].find(x => x.getAttribute('ng-model') === 'PatientData.receivabletypeid'); return e && e.options.length > 1; }",
+                    null, new Page.WaitForFunctionOptions().setTimeout(40000));
+        } catch (Exception e) { System.out.println("BookAppointment.nav: Payor Type options did not load in time"); }
+        waitForAngular(1500);
+        installHelpers();
+        return true;
+    }
+
+    /** On this screen — the route AND its first-name box, so a bounce to the dashboard cannot pass. */
+    public boolean onScreen() {
+        if (!page.url().toLowerCase().matches(".*#/new/?$")) return false;
+        return Boolean.TRUE.equals(page.evaluate("() => !!document.querySelector('#txtFirstName')"));
+    }
+
+    /**
      * Attach to a Book Appointment form that is ALREADY open — reached from another screen (e.g. Work Order List &gt; Appointment) instead of the OP menu:
      * wait for the form and its master data, then install the helpers every other method of this class relies on.
      */

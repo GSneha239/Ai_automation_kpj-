@@ -32,43 +32,87 @@ public class EmergencyVisits extends OutPatientQueueManagementPage {
      */
     @Override
     public void navigateTo(String baseUrl) {
-        RuntimeException lastFailure = null;
-        for (int attempt = 1; attempt <= 3; attempt++) {
+        if (!navigateViaMenu()) {
+            String title = String.valueOf(page.evaluate("() => document.title"));
+            throw new RuntimeException("EmergencyVisits.navigateTo: could not reach the Emergency Visits screen "
+                    + "after 3 attempts (kept landing on \"" + title + "\" instead). This is the generic Queue Management "
+                    + "view of the same route and always returns 0 rows for this search — do not treat that as a data gap.");
+        }
+    }
+
+    /**
+     * Click <b>Emergency</b> → <b>Emergency Visits</b> in the sidebar, retrying up to 3 times, and say whether the REAL screen came up
+     * (see {@link #navigateTo(String)} for why the title is checked). The Emergency entry is opened with
+     * {@code expandMenuEntry}, which leaves it alone when it is already open — the old plain click TOGGLED it, so the second and later
+     * sections (which come back to this screen over and over) closed the menu they were about to use and fell into a full reload. The
+     * leaf is looked up INSIDE the Emergency entry, so OP's own "Outpatient Queue Management" (same route) cannot be clicked instead.
+     */
+    public boolean navigateViaMenu() {
+        try { page.waitForFunction("() => window.angular", null, new Page.WaitForFunctionOptions().setTimeout(30000)); } catch (Exception ignore) { }
+        for (int attempt = 1; attempt <= 3 && !onScreen(); attempt++) {
             if (attempt > 1) {
                 try {
-                    page.navigate(baseUrl, new Page.NavigateOptions()
+                    String origin = String.valueOf(page.evaluate("() => location.origin"));
+                    page.navigate(origin + "/", new Page.NavigateOptions()
                             .setWaitUntil(com.microsoft.playwright.options.WaitUntilState.DOMCONTENTLOADED)
                             .setTimeout(60000));
-                } catch (Exception e) { System.out.println("EmergencyVisits.navigateTo: retry " + attempt + " reload slow — continuing"); }
+                } catch (Exception e) { System.out.println("EmergencyVisits.nav: retry " + attempt + " reload slow — continuing"); }
                 waitForAngular(1500);
             }
+            expandMenuEntry(null, "^\\s*emergency\\s*$");
+            Object tagged = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const vis=e=>!!e && !!(e.offsetWidth||e.offsetHeight||e.getClientRects().length);"
+                    + " const top=[...document.querySelectorAll('a')].find(x=>/^\\s*emergency\\s*$/i.test(norm(x.textContent)) && vis(x));"
+                    + " const root=top ? top.closest('li') : document;"
+                    + " const a=[...root.querySelectorAll('a[href]')].filter(vis).find(x=>/emergency visits/i.test(norm(x.textContent)) || /queuemanagement/i.test(x.getAttribute('href')||''));"
+                    + " if(!a) return false; a.id='__evLink'; return true; }");
+            if (Boolean.TRUE.equals(tagged)) {
+                try { page.locator("#__evLink").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000)); }
+                catch (Exception e) { System.out.println("EmergencyVisits.nav: click failed - " + String.valueOf(e.getMessage()).split("\n")[0]); }
+                page.evaluate("() => { const e=document.getElementById('__evLink'); if(e) e.removeAttribute('id'); }");
+            }
             try {
-                page.waitForFunction("() => window.angular && [...document.querySelectorAll('li > a')].some(a=>/^\\s*Emergency\\s*$/i.test((a.textContent||'').trim()))",
-                        null, new Page.WaitForFunctionOptions().setTimeout(20000));
-            } catch (Exception ignore) { }
-            // Expand the Emergency menu, then click the Emergency Visits link.
-            page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                    + " const em=[...document.querySelectorAll('li > a')].find(a=>/^\\s*Emergency\\s*$/i.test(norm(a.textContent))); if(em) em.click(); }");
-            waitForAngular(800);
-            page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                    + " const a=[...document.querySelectorAll('a')].find(x=>/emergency visits/i.test(norm(x.textContent)) && x.offsetParent!==null)"
-                    + "   || [...document.querySelectorAll('a')].find(x=>/queuemanagement/i.test(x.getAttribute('href')||'') && x.offsetParent!==null); if(a) a.click(); }");
-            try {
-                page.waitForFunction(
-                        "() => window.angular && /queuemanagement/i.test(location.hash) && /emergency visits/i.test(document.title||'')",
+                page.waitForFunction("() => window.angular && /queuemanagement/i.test(location.hash) && /emergency visits/i.test(document.title||'')",
                         null, new Page.WaitForFunctionOptions().setTimeout(20000));
                 waitForAngular(1500);
-                return; // confirmed on the real Emergency Visits screen, not the generic lookalike
             } catch (Exception e) {
-                String title = String.valueOf(page.evaluate("() => document.title"));
-                System.out.println("EmergencyVisits.navigateTo: attempt " + attempt + "/3 landed on \"" + title
-                        + "\" instead of Emergency Visits — retrying");
-                lastFailure = new RuntimeException("EmergencyVisits.navigateTo: could not reach the Emergency Visits screen "
-                        + "after 3 attempts (kept landing on \"" + title + "\" instead). This is the generic Queue Management "
-                        + "view of the same route and always returns 0 rows for this search — do not treat that as a data gap.");
+                System.out.println("EmergencyVisits.nav: attempt " + attempt + "/3 landed on \"" + page.evaluate("() => document.title")
+                        + "\" instead of Emergency Visits" + (attempt < 3 ? " — retrying" : ""));
             }
         }
-        throw lastFailure;
+        return onScreen();
+    }
+
+    /** On the real Emergency Visits screen — the route AND its title (the generic OP queue shares the route but not the title). */
+    public boolean onScreen() {
+        return Boolean.TRUE.equals(page.evaluate("() => !!window.angular && /queuemanagement/i.test(location.hash) && /emergency visits/i.test(document.title||'')"));
+    }
+
+    /**
+     * Why a footer button cannot be used — "" when it is enabled, else a ready-made sentence fragment starting with " - " (it also names
+     * the selected visit's discharge flag, since Close Visit is switched off for a discharged visit as well).
+     *
+     * <p>Several queue buttons are switched off by the LOGGED-IN USER's profile, not by the patient: <b>New Case</b> is enabled only
+     * for the roles "CA" / "Nurse Staff" ({@code ng-disabled="OutPatientQueueRolename != 'CA' && ... != 'Nurse Staff'"}, BW875,
+     * 17-09-2026) and <b>Close Visit</b> needs the user's "allow visit closed" right (set in User Details) and a visit that is not
+     * already discharged. SANCY4696 has neither (role null, allowvisitclosed false), so those buttons stay disabled for every
+     * patient and the click opens nothing. Without this the report only said "modal did NOT open", which reads like a test fault.</p>
+     *
+     * @param ngClickFn text of the button's ng-click (e.g. "OpenNewCase")
+     * @param label     the button's name for the sentence
+     */
+    public String blockedReason(String ngClickFn, String label) {
+        Object r = page.evaluate("([fn, label]) => { const b=[...document.querySelectorAll('button')].find(x=>(x.getAttribute('ng-click')||'').indexOf(fn)>=0);"
+                + " if(!b) return ' - the '+label+' button is not on the screen';"
+                + " if(!b.disabled) return '';"
+                + " let sc=null; try{ sc=angular.element(b).scope(); }catch(e){}"
+                + " const v=k=>{ try{ return sc ? JSON.stringify(sc[k]) : '?'; }catch(e){ return '?'; } };"
+                + " let sel=null; try{ let g=null; document.querySelectorAll('*').forEach(el=>{ if(g) return; try{ const s=angular.element(el).scope(); if(s&&s.grid&&s.grid.api&&s.grid.options&&s.grid.options.data&&s.grid.options.data.length) g=s.grid.api; }catch(e){} });"
+                + "   const rows=g?g.selection.getSelectedRows():[]; sel=rows.length?rows[0]:null; }catch(e){}"
+                + " return ' - the '+label+' button is DISABLED for this login, so nothing can open (ng-disabled: '+(b.getAttribute('ng-disabled')||'?')"
+                + "   +'; this user: role='+v('OutPatientQueueRolename')+', allowvisitclosed='+v('allowvisitclosed')"
+                + "   +(sel?'; selected visit isvisitdischarge='+JSON.stringify(sel.isvisitdischarge):'')"
+                + "   +') - the account needs that right/role in User Details (not a test fault)'; }", java.util.Arrays.asList(ngClickFn, label));
+        return r == null ? "" : r.toString();
     }
 
     // ---- Return MRD File (Emergency Visits) -------------------------------

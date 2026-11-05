@@ -58,14 +58,17 @@ public class VipMaster extends DevHisBase {
         if (!added) { addSummary("Result", "FAILED - add form not opened"); return; }
 
         String details = vip.fillDetails();
-        boolean detOk = details.contains("Code=VIP") && !details.contains("=(no)") && !details.contains("=(no-opt)");
+        boolean detOk = details.contains("Code=VIP") && !details.contains("=(no)") && !details.contains("=(no-opt)")
+                && !details.contains("NOT bound");
         step(page, "Fill all the details",
                 "Code*, Name*, NRIC*, Passport*, Gender*, Marital Status, Religion, Mobile No*, Designation, Expiry Date, "
                         + "VIP Category, Organization, DOB*, Address*, Post Code*, Remark*, State*, City*",
                 "Every field on the VIP form is filled", details, detOk ? "PASS" : "FAIL");
 
         String dep = vip.fillDependentAndAdd();
-        boolean depOk = dep.contains("->") && !dep.endsWith("-> 0") && !dep.contains("=(no)") && !dep.contains("=(no-opt)");
+        // "Add said:" is appended by the page object only when the row count did not grow (the Add was refused).
+        boolean depOk = dep.contains("dependent rows") && !dep.contains("Add said:") && !dep.contains("(no Add button)")
+                && !dep.contains("=(no)") && !dep.contains("=(no-opt)");
         // Evidence screenshot is the one taken BEFORE Add — Add moves the values into the grid and blanks the
         // entry fields, so a screenshot taken afterwards shows them empty.
         if (vip.dependentPng != null && vip.dependentPng.length > 0) {

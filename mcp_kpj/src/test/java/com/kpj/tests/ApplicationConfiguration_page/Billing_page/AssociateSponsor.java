@@ -49,6 +49,9 @@ public class AssociateSponsor extends DevHisBase {
                 onScreen ? "PASS" : "FAIL");
         if (!onScreen) { addSummary("Result", "FAILED — screen not reached"); return; }
 
+        // The environment keeps every saved row for good: read the list first so a combination that is already there is skipped, not submitted.
+        java.util.Set<String> taken = as.existingCombinations();
+
         // 2) Add
         boolean added = as.clickAdd();
         step(page, "Click Add", "Click Add", "The Associate Sponsor add form opens",
@@ -70,14 +73,16 @@ public class AssociateSponsor extends DevHisBase {
         // block whose Payor list never loads, so the middle is where a free, workable combination actually is.
         // From the midpoint walk towards the top, then fall back to the second half.
         String fill = "", toast = "", submittedFill = "";
+        byte[] filledPng = null;   // the form with the four fields filled, shot just BEFORE Submit (after a save the screen has moved on to the list)
         boolean ok = false, exists = false;
-        int maxTariffs = Math.min(Math.max(tariffCount, 1), 16), maxPayors = 4, maxAssoc = 4, maxAttempts = 40;
+        // Every Pricing Policy is a candidate (189 here, almost all with one Payor and one Associate): a fixed window of 16 was used up by earlier runs.
+        int maxTariffs = Math.max(tariffCount, 1), maxPayors = 4, maxAssoc = 4, maxAttempts = 40;
         int mid = Math.max(1, (Math.max(tariffCount, 1) + 1) / 2);
         java.util.List<Integer> order = new java.util.ArrayList<>();
         for (int t = mid; t >= 1; t--) order.add(t);                          // middle -> top
         for (int t = mid + 1; t <= Math.max(tariffCount, 1); t++) order.add(t); // then middle -> bottom
         if (order.size() > maxTariffs) order = order.subList(0, maxTariffs);
-        int used = 0, skippedPolicies = 0;
+        int used = 0, skippedPolicies = 0, alreadyListed = 0;
         outer:
         for (int t : order) {
             payors:
@@ -96,8 +101,16 @@ public class AssociateSponsor extends DevHisBase {
                         continue outer;
                     }
                     if (fill.contains("AssociateSponsor=(no-opt)")) break;         // no associates under this payor
+                    if (taken.contains(as.lastCombinationKey())) {      // already in the list: not worth a Submit
+                        alreadyListed++;
+                        int[] c = as.cascadeCounts();
+                        if (c[1] <= a) { if (c[0] <= p) continue outer; break; }   // no further Associate / Payor under this Pricing Policy
+                        continue;
+                    }
                     used++;
                     submittedFill = fill;
+                    try { filledPng = page.screenshot(new com.microsoft.playwright.Page.ScreenshotOptions().setTimeout(8000)); }
+                    catch (Exception e) { System.out.println("AssociateSponsor: could not shoot the filled form - " + String.valueOf(e.getMessage()).split("\n")[0]); }
                     toast = as.submitAndGetToast();
                     String tl = toast == null ? "" : toast.toLowerCase();
                     ok = tl.contains("saved") || tl.contains("success") || tl.contains("added") || tl.contains("updated");
@@ -114,12 +127,15 @@ public class AssociateSponsor extends DevHisBase {
         // Report what was actually selected on the attempt that got submitted (or the last one tried).
         String shown = submittedFill.isEmpty() ? fill : submittedFill;
         boolean fillOk = shown.contains("Location=") && !shown.contains("=(no") && !shown.contains("=(exhausted)");
-        step(page, "Select Location, Pricing Policy, Payor, Associate Sponsor",
-                "Select Location, then the cascading Pricing Policy, Payor and Associate Sponsor "
-                        + "(Pricing Policy taken from the MIDDLE of the list, walking towards the top on 'already exists')",
-                "All four dropdowns are selected",
-                shown + (skippedPolicies > 0 ? "  [skipped " + skippedPolicies + " Pricing Policy option(s) with no Payor list]" : ""),
-                fillOk ? "PASS" : "FAIL");
+        // The picture is the form as it stood with the four fields filled, just before Submit (the live page has moved on to the list after a save).
+        String fillDesc = "Select Location, then the cascading Pricing Policy, Payor and Associate Sponsor "
+                + "(Pricing Policy taken from the MIDDLE of the list, walking towards the top; a combination the list already holds is skipped)";
+        String fillActual = shown + (skippedPolicies > 0 ? "  [skipped " + skippedPolicies + " Pricing Policy option(s) with no Payor list]" : "")
+                + (alreadyListed > 0 ? "  [passed over " + alreadyListed + " combination(s) the list already holds (" + taken.size() + " rows in the list)]" : "");
+        if (filledPng != null && filledPng.length > 0)
+            step(filledPng, "Select Location, Pricing Policy, Payor, Associate Sponsor", fillDesc, "All four dropdowns are selected", fillActual, fillOk ? "PASS" : "FAIL");
+        else
+            step(page, "Select Location, Pricing Policy, Payor, Associate Sponsor", fillDesc, "All four dropdowns are selected", fillActual, fillOk ? "PASS" : "FAIL");
 
         String actual = toast == null || toast.isEmpty() ? "No toast appeared"
                 : (ok ? toast : (exists ? "Still 'already exists' after trying " + used + " Pricing Policy x Payor x Associate combination(s): \"" + toast + "\""

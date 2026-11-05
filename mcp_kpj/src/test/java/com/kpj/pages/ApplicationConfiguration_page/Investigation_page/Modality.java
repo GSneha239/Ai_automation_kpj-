@@ -239,7 +239,9 @@ public class Modality extends BasePage {
         lastCode = numericCodes ? String.format("%06d", Math.abs((System.nanoTime() + attempt * 7919L) % 1000000))
                                 : "MD" + String.format("%05d", n);
         int i = (int) (Math.abs(System.nanoTime() / 1000 + attempt) % REMARKS.length);
-        lastRemark = REMARKS[i] + (attempt == 0 ? "" : " - " + QUALIFIERS[(attempt - 1) % QUALIFIERS.length]);
+        // The server keeps every saved Description (Remark) for good and refuses a repeat ("Description already exists!"): the pool of names x a fixed list of qualifiers was used up
+        // (all 40 attempts refused). Stamp the Remark with the Code's own digits, so it still reads like a modality but is never used up.
+        lastRemark = REMARKS[i] + " " + lastCode.replaceAll("\\D", "");
         // AE titles are unique per device — suffix it so a retry is a genuinely different entity, not a duplicate.
         lastAeTitle = AE_TITLES[i] + (attempt == 0 ? "" : "_" + (attempt + 1));
         lastTimeSlot = String.valueOf(10 + (attempt % 4) * 5);      // 10/15/20/25 minutes per slot

@@ -65,6 +65,42 @@ public class AssociateSponsor extends BasePage {
 
     // ---- actions ---------------------------------------------------------
 
+    /**
+     * The combinations the list ({@code #/associatereceivableMaster}) already holds, as upper-case "policy | payor | associate" keys — read from the grid's own data
+     * once it has loaded. The shared environment keeps every saved row for good, so a run has to know which combinations are taken before it picks one.
+     */
+    @SuppressWarnings("unchecked")
+    public java.util.Set<String> existingCombinations() {
+        try {
+            page.waitForFunction("() => { const g=document.querySelector('[ui-grid]'); if(!g) return false; try{ const d=angular.element(g).scope().$eval(g.getAttribute('ui-grid')+'.data')||[]; return d.length>0; }catch(e){ return false; } }",
+                    null, new Page.WaitForFunctionOptions().setTimeout(15000));
+        } catch (Exception ignore) { System.out.println("AssociateSponsor.existingCombinations: the list did not load"); }
+        Object r = page.evaluate("() => { const up=s=>(s||'').replace(/\\s+/g,' ').trim().toUpperCase(); const g=document.querySelector('[ui-grid]'); if(!g) return [];"
+                + " let d=[]; try{ d=angular.element(g).scope().$eval(g.getAttribute('ui-grid')+'.data')||[]; }catch(e){}"
+                + " return d.map(x=>up(x.tariffname)+' | '+up(x.receivablename)+' | '+up(x.associatereceivablename)); }");
+        java.util.Set<String> out = new java.util.LinkedHashSet<>();
+        if (r instanceof java.util.List) for (Object o : (java.util.List<Object>) r) out.add(String.valueOf(o));
+        return out;
+    }
+
+    /** How many real (non "-Select-") options the Payor and the Associate Sponsor lists hold right now: {payors, associates}. */
+    public int[] cascadeCounts() {
+        Object r = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                + " const n=ng=>{ const e=document.querySelector(\"select[ng-model='\"+ng+\"']\"); return e ? [...e.options].filter(o=>o.value && !/^-*\\s*select/i.test(norm(o.textContent))).length : 0; };"
+                + " return [n('associatereceivable.Receivableid'), n('associatereceivable.ReceivableAssociateid')]; }");
+        int[] out = {0, 0};
+        if (r instanceof java.util.List && ((java.util.List<?>) r).size() == 2) {
+            out[0] = ((Number) ((java.util.List<?>) r).get(0)).intValue();
+            out[1] = ((Number) ((java.util.List<?>) r).get(1)).intValue();
+        }
+        return out;
+    }
+
+    /** The key {@link #existingCombinations()} uses for the combination chosen by the last {@link #fillCascade}. */
+    public String lastCombinationKey() {
+        return (lastPricingPolicy + " | " + lastPayor + " | " + lastAssociate).replaceAll("\\s+", " ").trim().toUpperCase();
+    }
+
     /** Real-click the <b>Add</b> button (polls). Lands on {@code #/add-associatereceivable}. */
     public boolean clickAdd() {
         boolean tagged = false;
@@ -142,17 +178,22 @@ public class AssociateSponsor extends BasePage {
             try { page.evaluate("(h) => { window.location.hash = h; }", LIST_ROUTE); } catch (Exception ignore) { }
         }
         try {
-            page.waitForFunction("() => [...document.querySelectorAll('.ui-grid-row, table tr')].length > 1",
-                    null, new Page.WaitForFunctionOptions().setTimeout(12000));
+            page.waitForFunction("() => { const g=document.querySelector('[ui-grid]'); if(!g) return false; try{ return (angular.element(g).scope().$eval(g.getAttribute('ui-grid')+'.data')||[]).length>0; }catch(e){ return false; } }",
+                    null, new Page.WaitForFunctionOptions().setTimeout(15000));
         } catch (Exception ignore) { }
         waitForAngular(1000);
+        // Read the grid's own DATA, not its DOM rows: the grid draws only the rows that fit its viewport and a new row lands LAST, out of view. Match the names EXACTLY — a shorter
+        // name ("EUROP ASSISTANCE SERVICES (M) SDN BHD") is contained in longer ones ("… C/O AXA AFFIN …"), so a substring match found an OLDER row and could pass with no new row.
         Object r = page.evaluate("(v) => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const up=s=>norm(s).toUpperCase();"
-                + " const loc=up(v.loc), pol=up(v.pol), pay=up(v.pay), asc=up(v.asc);"
-                + " const rows=[...document.querySelectorAll('.ui-grid-row')].length ? [...document.querySelectorAll('.ui-grid-row')] : [...document.querySelectorAll('table tr')];"
-                + " for(const row of rows){ const cells=[...row.querySelectorAll('.ui-grid-cell-contents, td')].map(c=>up(c.textContent)); const joined=cells.join(' | ');"
-                + "   const has=x=>x && cells.some(c=>c===x || c.includes(x));"
-                + "   if(has(pol) && has(pay) && has(asc) && (has(loc)||!loc)){ return norm(row.textContent).slice(0,180); } }"
-                + " return ''; }", java.util.Map.of("loc", lastLocation, "pol", lastPricingPolicy, "pay", lastPayor, "asc", lastAssociate));
+                + " const g=document.querySelector('[ui-grid]'); if(!g) return '';"
+                + " let d=[]; try{ d=angular.element(g).scope().$eval(g.getAttribute('ui-grid')+'.data')||[]; }catch(e){}"
+                + " const hit=d.find(x=>up(x.tariffname)===up(v.pol) && up(x.receivablename)===up(v.pay) && up(x.associatereceivablename)===up(v.asc) && (!v.loc || up(x.locationname)===up(v.loc)));"
+                + " if(!hit) return '';"
+                // bring the new row into view, so the screenshot of this step shows it
+                + " [...document.querySelectorAll('.ui-grid-viewport')].forEach(vp=>{ vp.scrollTop=vp.scrollHeight; });"
+                + " return 'row '+hit.AssociateReceivableid+' of '+d.length+': '+[hit.locationname,hit.tariffname,hit.receivablename,hit.associatereceivablename].join(' | '); }",
+                java.util.Map.of("loc", lastLocation, "pol", lastPricingPolicy, "pay", lastPayor, "asc", lastAssociate));
+        waitForAngular(600);
         return r == null ? "" : r.toString().trim();
     }
 

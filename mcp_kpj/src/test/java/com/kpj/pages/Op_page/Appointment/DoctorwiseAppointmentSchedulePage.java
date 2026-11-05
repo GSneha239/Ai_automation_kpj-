@@ -25,44 +25,51 @@ public class DoctorwiseAppointmentSchedulePage extends BasePage {
 
     // ---- navigation -------------------------------------------------------
 
-    /** Open the Doctorwise Appointment Schedule page and wait for the Department dropdown to load. */
-    public void navigateTo(String baseUrl) {
-        // Retry the whole navigate-and-wait sequence — confirmed live (2026-09-30) the devhis backend can be
-        // slow enough that a single 20s wait for the Department select isn't always enough (same class of
-        // slowness already hardened for in BookAppointmentPage.navigateTo() and LoginPage), so one timeout here
-        // should not fail the whole run when a second attempt would succeed.
-        boolean formUp = false;
-        for (int attempt = 0; attempt < 3 && !formUp; attempt++) {
-            // Use in-app hash navigation instead of page.goto() to avoid AngularJS SPA reloading issues
-            page.evaluate("() => { window.location.hash = '#/DoctorwiseAppointmentSchedule'; }");
-            waitForAngular(2000);
+    private static final String DEPT_SELECT = "select[ng-model='DoctorwiseAppointmentSchedule.DepartmentID']";
+    private static final String HREF = "#/doctorwiseappointmentschedule";
 
-            // Fallback: if not rendered, expand OP menu and click
-            boolean ready = Boolean.TRUE.equals(page.evaluate(
-                    "() => !!document.querySelector(\"select[ng-model='DoctorwiseAppointmentSchedule.DepartmentID']\")"));
-            if (!ready) {
-                page.evaluate("() => { const op=[...document.querySelectorAll('a')].find(x=>x.textContent.trim()==='OP'); if(op) op.click(); }");
-                waitForAngular(1000);
-                page.evaluate("() => { const a=[...document.querySelectorAll('a')].find(x=>x.getAttribute('href')==='#/DoctorwiseAppointmentSchedule'); if(a) a.click(); }");
-                waitForAngular(1000);
-            }
-
-            try {
-                page.waitForSelector("select[ng-model='DoctorwiseAppointmentSchedule.DepartmentID']",
-                        new Page.WaitForSelectorOptions().setTimeout(30000));
-                formUp = true;
-            } catch (Exception e) {
-                System.out.println("DoctorwiseAppointmentSchedule.navigateTo: Department select not up (attempt " + (attempt + 1) + ") — retrying");
+    /**
+     * OP &gt; Appointment &gt; Doctorwise Appointment Schedule through the sidebar, like the other pages: each level is opened only if shut (scoped to its parent, so a same-named
+     * module elsewhere is never clicked) and the leaf is looked up by its exact route inside the OP group. A direct {@code location.hash} jump is NOT used — the app bounces it
+     * to the dashboard. Returns true only when the screen really is on view ({@link #onScreen()}).
+     */
+    public boolean navigateViaMenu() {
+        try { page.waitForFunction("() => window.angular", null, new Page.WaitForFunctionOptions().setTimeout(30000)); } catch (Exception ignore) { }
+        for (int attempt = 1; attempt <= 3 && !onScreen(); attempt++) {
+            expandMenuEntry(null, "^\\s*op\\s*$");
+            expandMenuEntry("^\\s*op\\s*$", "^\\s*appointment\\s*$");
+            Object tagged = page.evaluate("(h) => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const vis=e=>!!e && !!(e.offsetWidth||e.offsetHeight||e.getClientRects().length);"
+                    + " const top=[...document.querySelectorAll('a')].find(x=>/^\\s*op\\s*$/i.test(norm(x.textContent)) && vis(x));"
+                    + " const root=top ? top.closest('li') : document;"
+                    + " const a=[...root.querySelectorAll('a[href]')].filter(vis).find(x=>(x.getAttribute('href')||'').toLowerCase()===h);"
+                    + " if(!a) return false; a.id='__dwsLink'; return true; }", HREF);
+            if (Boolean.TRUE.equals(tagged)) {
+                try { page.locator("#__dwsLink").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000)); }
+                catch (Exception e) { System.out.println("DoctorwiseAppointmentSchedule.nav: click failed - " + String.valueOf(e.getMessage()).split("\n")[0]); }
+                page.evaluate("() => { const e=document.getElementById('__dwsLink'); if(e) e.removeAttribute('id'); }");
+                waitForAngular(2500);
+            } else {
+                page.waitForTimeout(1500);
             }
         }
-        page.waitForSelector("select[ng-model='DoctorwiseAppointmentSchedule.DepartmentID']",
-                new Page.WaitForSelectorOptions().setTimeout(30000));
-        page.waitForFunction(
-                "() => { const e=document.querySelector(\"select[ng-model='DoctorwiseAppointmentSchedule.DepartmentID']\"); return e && e.options.length > 1; }",
-                null, new Page.WaitForFunctionOptions().setTimeout(30000));
+        try { page.waitForSelector(DEPT_SELECT, new Page.WaitForSelectorOptions().setTimeout(30000)); }
+        catch (Exception ignore) { System.out.println("DoctorwiseAppointmentSchedule.nav: the Department select is not up"); }
+        return onScreen();
+    }
+
+    /** On this screen — the route AND its Department select, so a bounce to the dashboard cannot pass. */
+    public boolean onScreen() {
+        if (!page.url().toLowerCase().matches(".*#/doctorwiseappointmentschedule/?$")) return false;
+        return Boolean.TRUE.equals(page.evaluate("(s) => !!document.querySelector(s)", DEPT_SELECT));
+    }
+
+    /** After the screen is open: wait for the Department list, install the helpers and set the Month — the slot grid stays EMPTY for every doctor until the Month is set. */
+    public String prepareScreen() {
+        page.waitForFunction("(s) => { const e=document.querySelector(s); return e && e.options.length > 1; }",
+                DEPT_SELECT, new Page.WaitForFunctionOptions().setTimeout(30000));
         waitForAngular(800);
         installHelpers();
-        setMonthToCurrent(); // the slot grid stays EMPTY for every doctor until the Month is set
+        return setMonthToCurrent();
     }
 
     /**
@@ -247,12 +254,19 @@ public class DoctorwiseAppointmentSchedulePage extends BasePage {
                 + "window.__setInp('PatientData.NationalId','9004040' + (s+'00000').slice(0,5));"
                 + "window.__setInp('PatientData.DateOfBirth','04/04/1990');"
                 + "window.__setInp('PatientData.Email','autosched' + s + '@example.com');"
-                + "window.__setInp('PatientData.MobileNo','19' + (s+'0000000').slice(0,7));"
                 + "window.__setInp('PatientData.AgeYear','36');"
                 + "window.__setInp('PatientData.AgeMonth','0');"
                 + "window.__setInp('PatientData.AgeDays','0');"
                 + "return out.join(' | '); }", suffix);
         System.out.println("fillPatientDetails: " + dropdownResults);
+        // Mobile No: since the 28-10-26 build Save refuses ("Enter Valid Mobile No.") any number whose length differs from the configured digit count
+        // (CfgMobileNoDigit, 10 until GetConfigData answers) — a fixed 9-digit number no longer passes, so build one of the configured length.
+        Object cfg = page.evaluate("() => { let s=angular.element(document.querySelector('#txtMobileNo')||document.body).scope();"
+                + " for(let i=0;i<12&&s;i++){ if(s.CfgMobileNoDigit){ return s.CfgMobileNoDigit; } s=s.$parent; } return 10; }");
+        int digits = cfg instanceof Number && ((Number) cfg).intValue() > 2 ? ((Number) cfg).intValue() : 10;
+        String mobile = "19" + (suffix + "00000000000000").substring(0, digits - 2);
+        page.evaluate("(v) => window.__setInp('PatientData.MobileNo', v)", mobile);
+        System.out.println("fillPatientDetails: Mobile No " + mobile + " (" + digits + " digits)");
         // Ensure Doctor + a valid future date are set (the schedule can leave Doctor unset / date=today)
         if (doctor != null) page.evaluate("(d) => window.__setSel('PatientData.DoctorModalityID', d)", doctor);
         // Keep the slot's OWN pre-filled appointment date whenever it is today-or-future (that date came from

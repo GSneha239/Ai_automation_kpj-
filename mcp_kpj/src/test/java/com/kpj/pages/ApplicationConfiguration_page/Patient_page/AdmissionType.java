@@ -59,13 +59,13 @@ public class AdmissionType extends BasePage {
      * BOTH values so a retry after an "already exists" toast submits genuinely different details.
      */
     public String fillDetails(int attempt) {
-        String code = "AT" + String.format("%05d", Math.abs((System.nanoTime() + attempt * 7919L) % 100000));
+        String code = "AT" + String.format("%05d", Math.abs((System.currentTimeMillis() + attempt * 7919L) % 100000));
         lastCode = code;
         // Always uniquely stamped, not just once the DESCRIPTIONS pool cycles — on this shared, long-lived
         // QA environment a fixed pool of canned descriptions gets exhausted permanently, so even attempt 0
         // needs a unique suffix (same lesson as InvestigationTemplate/Notification).
         lastDescription = DESCRIPTIONS[attempt % DESCRIPTIONS.length] + " "
-                + String.format("%06d", Math.abs((System.nanoTime() + attempt * 7919L) % 1000000));
+                + String.format("%06d", Math.abs((System.currentTimeMillis() + attempt * 7919L) % 1000000));
         page.evaluate("(a) => { const A=window.angular; const set=(ng,v)=>{ const e=[...document.querySelectorAll(\"[ng-model='\"+ng+\"']\")].find(x=>x.offsetParent!==null); if(!e) return; const c=A.element(e).controller('ngModel'); e.value=v; if(c){c.$setViewValue(v);c.$render();} e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true})); }; set('admissionType.Code',a.code); set('admissionType.Description',a.description); }",
                 java.util.Map.of("code", code, "description", lastDescription));
         waitForAngular(300);
@@ -84,6 +84,8 @@ public class AdmissionType extends BasePage {
     /** Click <b>Submit</b> ({@code fnIUDAdmissionType}) and return the toast (toastr cleared first). */
     public String submitAndGetToast() {
         Object tagged = page.evaluate("() => { window.__atToasts=[]; if(window.__atObs) window.__atObs.disconnect();"
+                // Keep the toast on screen so the screenshot below can show it (toastr otherwise fades it out).
+                + " try{ if(window.toastr && toastr.options){ toastr.options.timeOut=0; toastr.options.extendedTimeOut=0; toastr.options.fadeOut=0; toastr.options.hideDuration=0; } }catch(e){}"
                 + " try{ if(window.toastr) toastr.clear(); }catch(e){} document.querySelectorAll('#toast-container .toast, .toast-message').forEach(t=>t.remove());"
                 + " const grab=()=>{ document.querySelectorAll('.toast-message,.toast,[id^=toast]').forEach(el=>{ const t=(el.textContent||'').replace(/\\s+/g,' ').trim(); if(t && !window.__atToasts.includes(t)) window.__atToasts.push(t); }); };"
                 + " window.__atObs=new MutationObserver(grab); window.__atObs.observe(document.body,{childList:true,subtree:true}); grab();"
@@ -99,8 +101,16 @@ public class AdmissionType extends BasePage {
             page.waitForTimeout(2500);
             page.evaluate("() => { document.querySelectorAll('.toast-message,.toast,[id^=toast]').forEach(el=>{ const t=(el.textContent||'').replace(/\\s+/g,' ').trim(); if(t && !(window.__atToasts||[]).includes(t)) (window.__atToasts=window.__atToasts||[]).push(t); }); }");
         }
+        // Screenshot WHILE the toast is still showing (the app returns to the list right after a save). Let the
+        // toast finish fading in and the list reload first — timeOut=0 above keeps the toast from fading out.
+        waitForAngular(2500);
+        try { toastPng = page.screenshot(new Page.ScreenshotOptions().setTimeout(6000)); }
+        catch (Exception e) { System.out.println("AdmissionType: toast screenshot failed - " + e.getMessage()); }
         Object r = page.evaluate("() => { const a=window.__atToasts||[]; return a.find(x=>/saved|added|success/i.test(x)) || a.find(x=>x) || ''; }");
         waitForAngular(400);
         return r == null ? "" : r.toString().trim();
     }
+
+    /** Screenshot taken while the save toast was still on screen. */
+    public byte[] toastPng;
 }

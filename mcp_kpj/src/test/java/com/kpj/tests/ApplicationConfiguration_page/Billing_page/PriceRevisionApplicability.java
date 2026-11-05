@@ -59,11 +59,14 @@ public class PriceRevisionApplicability extends DevHisBase {
 
         // 3) + 4) Enter fields, Submit — retry with different details on "already exists".
         String fill = "", toast = "";
+        byte[] filledPng = null;   // the form with Code, Remark and Location filled, shot just BEFORE Submit (after a save the screen has moved on to the list)
         boolean ok = false, exists = false;
         int used = 0;
         for (int attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
             fill = pr.fillDetails(attempt);
             used++;
+            try { filledPng = page.screenshot(new com.microsoft.playwright.Page.ScreenshotOptions().setTimeout(8000)); }
+            catch (Exception e) { System.out.println("PriceRevisionApplicability: could not shoot the filled form - " + String.valueOf(e.getMessage()).split("\n")[0]); }
             toast = pr.submitAndGetToast();
             String tl = toast == null ? "" : toast.toLowerCase();
             ok = tl.contains("saved") || tl.contains("success") || tl.contains("added") || tl.contains("updated");
@@ -74,8 +77,10 @@ public class PriceRevisionApplicability extends DevHisBase {
 
         boolean fillOk = fill != null && fill.contains("Code=PR");
         String fillActual = fill + (used > 1 ? "  [details changed " + (used - 1) + "x after 'already exists']" : "");
-        step(page, "Enter Code, Remark", "Enter Code and Remark (+ tick a mandatory Location)",
-                "Code and Remark are entered", fillActual, fillOk ? "PASS" : "FAIL");
+        if (filledPng != null && filledPng.length > 0)
+            step(filledPng, "Enter Code, Remark", "Enter Code and Remark (+ tick a mandatory Location)", "Code and Remark are entered", fillActual, fillOk ? "PASS" : "FAIL");
+        else
+            step(page, "Enter Code, Remark", "Enter Code and Remark (+ tick a mandatory Location)", "Code and Remark are entered", fillActual, fillOk ? "PASS" : "FAIL");
 
         String actual = toast == null || toast.isEmpty() ? "No toast appeared"
                 : (ok ? toast : (exists ? "Still 'already exists' after " + used + " attempt(s) with different details: \"" + toast + "\""

@@ -123,7 +123,9 @@ public class VipMaster extends BasePage {
                 + " " + String.format("%05d", ms % 100000);
         // 12-digit NRIC, unique per run (the app rejects duplicates).
         lastNric = "8" + String.format("%011d", ms % 100000000000L);
-        String expiry = java.time.LocalDate.now().plusYears(1).toString();          // input[type=date] → yyyy-MM-dd
+        // Expiry Date / DOB use the app's dmy-date directive (placeholder dd/MM/yyyy): typed as ISO yyyy-MM-dd the
+        // model stays NULL (the field LOOKS filled but the VIP is saved without it), dd/MM/yyyy binds it.
+        String expiry = dmy(java.time.LocalDate.now().plusYears(1));
         String mobile = "60" + String.format("%09d", ms % 1000000000L);
         lastRemark = "Board member - priority admission " + String.format("%05d", ms % 100000);
         Object r = page.evaluate("(a) => new Promise(async (resolve) => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const A=window.angular; const $=window.jQuery; const sleep=ms=>new Promise(r=>setTimeout(r,ms));"
@@ -164,9 +166,18 @@ public class VipMaster extends BasePage {
                 + " resolve(out.join(' | ')); })",
                 java.util.Map.of("code", code, "name", lastName, "nric", lastNric,
                         "passport", "P" + code, "mobile", mobile, "expiry", expiry, "remark", lastRemark,
-                        "dob", java.time.LocalDate.now().minusYears(40).toString()));
+                        "dob", dmy(java.time.LocalDate.now().minusYears(40))));
         waitForAngular(600);
-        return r == null ? "" : r.toString();
+        // Verify the dmy-date fields really reached the model (a wrong format leaves it null without any error).
+        Object unbound = page.evaluate("() => { const bad=[]; ['commonmaster.ExpiryDate','commonmaster.DOB'].forEach(ng=>{ const e=document.querySelector(\"[ng-model='\"+ng+\"']\"); if(!e) return; const c=window.angular.element(e).controller('ngModel'); if(!c || c.$modelValue===null || c.$modelValue===undefined) bad.push(ng.split('.')[1]); }); return bad.join(', '); }");
+        String res = r == null ? "" : r.toString();
+        if (unbound != null && !unbound.toString().isEmpty()) res += " | date NOT bound to the model: " + unbound;
+        return res;
+    }
+
+    /** dd/MM/yyyy — the only format the app's dmy-date inputs turn into a model value. */
+    private static String dmy(java.time.LocalDate d) {
+        return d.format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"));
     }
 
     /**
@@ -209,10 +220,13 @@ public class VipMaster extends BasePage {
                 // Neutral wording — Relationship takes the first real option, so don't name a specific relation here.
                 + " out.push('Remark='+set('dependent.Remarks','Immediate family - VIP privileges apply'));"
                 + " resolve(out.join(' | ')); })",
-                java.util.Map.of("name", "Aishah binti Ahmad", "dob", java.time.LocalDate.now().minusYears(10).toString(),
+                java.util.Map.of("name", "Aishah binti Ahmad", "dob", dmy(java.time.LocalDate.now().minusYears(10)),
                         "nric", dnric, "passport", "D" + lastCode));
         waitForAngular(600);
-        // Capture the fields WHILE STILL FILLED — Add clears them, so evidence must be taken first.
+        // Capture the fields WHILE STILL FILLED — Add clears them, so evidence must be taken first. Scroll the
+        // dependent entry fields into view first: the viewport is otherwise still at the top of the VIP form.
+        try { page.evaluate("() => { const e=document.querySelector(\"[ng-model='dependent.Name']\"); if(e) e.scrollIntoView({block:'center'}); }"); } catch (Exception ignore) { }
+        waitForAngular(400);
         try { dependentPng = page.screenshot(new Page.ScreenshotOptions().setTimeout(6000)); }
         catch (Exception e) { System.out.println("dependent screenshot: " + e.getMessage()); }
         // Commit the dependent row with its own Add (addDependent).
@@ -222,7 +236,14 @@ public class VipMaster extends BasePage {
         catch (Exception e) { System.out.println("fillDependentAndAdd: Add click failed - " + e.getMessage()); }
         page.evaluate("() => { const e=document.getElementById('__vipAddDep'); if(e) e.removeAttribute('id'); }");
         waitForAngular(1500);
-        return (r == null ? "" : r.toString()) + " | dependent rows " + before + " -> " + dependentRowCount();
+        int after = dependentRowCount();
+        String said = "";
+        if (after <= before) {
+            // The Add refused — say what the app told us (e.g. "Please fill all required fields!").
+            Object t = page.evaluate("() => [...document.querySelectorAll('.toast-message,.toast')].map(e=>(e.textContent||'').replace(/\\s+/g,' ').trim()).filter(x=>x).join(' | ')");
+            said = " | Add said: " + (t == null || t.toString().isEmpty() ? "(no message)" : t.toString());
+        }
+        return (r == null ? "" : r.toString()) + " | dependent rows " + before + " -> " + after + said;
     }
 
     /**

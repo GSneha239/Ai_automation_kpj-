@@ -456,15 +456,25 @@ public class ConsultationRoom extends BasePage {
      * pushes the sequence further along so a retry after an "already exists" toast submits different details.
      */
     public String fillDetails(int attempt) {
-        // Attempt 0 continues the sequence. On a retry the LETTERS move instead of the number (CB… -> CC…):
-        // pushing the number further just walks into the next code that already exists, and the screen's own
-        // codes are "two letters + eight digits", so a different letter pair is still the table's format.
-        String code = nextLike(tableCodes, 0);
-        if (code != null && attempt > 0) code = withShiftedPrefix(code, attempt);
-        String remark = nextLike(tableRemarks, attempt);
+        // A UNIQUE Code in the table's own format. Continuing the table's sequence (max + 1, then shifting the letters) kept walking into codes earlier runs had saved
+        // ("Code already exists!" 11 times, 12 attempts) — the shared environment keeps every saved code for good. Keep the table's letters and digit width
+        // ("CB00000064" = two letters + eight digits) but fill the digits from the clock, so every run (and every retry) gets a code nobody has used.
+        String code = null, remark = null;
+        String c0 = tableCodes.isEmpty() ? "" : tableCodes.get(0).trim();
+        if (c0.matches("^[A-Za-z]+\\d+$")) {
+            String letters = c0.replaceAll("\\d+$", ""), digits = c0.substring(letters.length());
+            int width = Math.min(digits.length(), 9);
+            long stamp = (System.currentTimeMillis() + attempt * 7919L) % (long) Math.pow(10, width);
+            code = letters + String.format("%0" + digits.length() + "d", stamp);
+        }
+        String r0 = tableRemarks.isEmpty() ? "" : tableRemarks.get(0).trim();
+        if (code != null && r0.matches("^.*\\D\\d+$")) {
+            // same shape as the table's remarks ("A-L1-00" -> "A-L1-" + 3 digits), the digits taken from the new code so they match it
+            remark = r0.replaceAll("\\d+$", "") + code.substring(code.length() - 3);
+        }
         String how;
         if (code != null && remark != null) {
-            how = "continuing the table (" + head(tableCodes) + " -> " + code + ", " + head(tableRemarks) + " -> " + remark + ")";
+            how = "unique code in the table's format (" + head(tableCodes) + " -> " + code + ", " + head(tableRemarks) + " -> " + remark + ")";
         } else {
             // Nothing numbered to continue: keep whatever WAS learned and invent only the missing half.
             if (code == null) code = "RM" + String.format("%05d", Math.abs((System.nanoTime() + attempt * 7919L) % 100000));

@@ -175,7 +175,8 @@ public class DiagnosisSet extends BasePage {
      * submits genuinely different details.
      */
     public String fillSetDetails(int attempt) {
-        String code = "DS" + String.format("%05d", Math.abs((System.nanoTime() + attempt * 7919L) % 100000));
+        // Stamped from the wall clock: nanoTime remainders end in "00" on this machine (only ~1,000 distinct codes) and the server keeps every saved Set Code for good.
+        String code = "DS" + String.format("%05d", (System.currentTimeMillis() + attempt * 7919L) % 100000);
         lastSetCode = code;
         lastSetDescription = SET_DESCRIPTIONS[(int) (Math.abs(System.nanoTime() / 1000 + attempt) % SET_DESCRIPTIONS.length)];
         Object r = page.evaluate("(a) => { const A=window.angular;"

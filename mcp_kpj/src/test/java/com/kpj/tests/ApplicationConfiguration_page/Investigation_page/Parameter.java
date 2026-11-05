@@ -35,6 +35,18 @@ public class Parameter extends DevHisBase {
     @org.junit.jupiter.api.Test
     void execute() { try { run(); } finally { stop(); } }
 
+    /** The page as it stands now (BEFORE Submit); the previous picture is kept when this one cannot be taken. */
+    private byte[] shoot(byte[] previous) {
+        try { return page.screenshot(new com.microsoft.playwright.Page.ScreenshotOptions().setTimeout(8000)); }
+        catch (Exception e) { System.out.println("Parameter: could not shoot the form - " + String.valueOf(e.getMessage()).split("\n")[0]); return previous; }
+    }
+
+    /** A step whose picture is the form as it stood after filling it (falls back to the live page when there is none). */
+    private void stepWith(byte[] png, String name, String desc, String expected, String actual, String status) {
+        if (png != null && png.length > 0) step(png, name, desc, expected, actual, status);
+        else step(page, name, desc, expected, actual, status);
+    }
+
     @Override
     protected void body() {
         meta("Application Configuration - Investigation - Parameter",
@@ -72,12 +84,16 @@ public class Parameter extends DevHisBase {
 
         // 3) .. 6) details -> range -> inner Add -> Submit; retry with different details on "already exists".
         String details = "", range = "", rowAdd = "", toast = "";
+        byte[] detPng = null, rangePng = null, rowPng = null;   // the form after each fill step, shot BEFORE Submit (afterwards the form has moved on)
         boolean ok = false, exists = false;
         int used = 0;
         for (int attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
             details = pr.fillParameterDetails(attempt);
+            detPng = shoot(detPng);
             range = pr.fillAgeWiseRange(attempt);
+            rangePng = shoot(rangePng);
             rowAdd = pr.clickAddDetail();
+            rowPng = shoot(rowPng);
             used++;
             toast = pr.submitAndGetToast();
             String tl = toast == null ? "" : toast.toLowerCase();
@@ -89,7 +105,7 @@ public class Parameter extends DevHisBase {
         }
 
         boolean detOk = !details.contains("(no field)");
-        step(page, "Enter Parameter Details",
+        stepWith(detPng, "Enter Parameter Details",
                 "Enter Parameter Code, Parameter Name, Print Name, Parameter Unit, Parameter SSI Unit, "
                         + "LOINC Code and Conver. Factor",
                 "All seven Parameter Details values are entered",
@@ -97,14 +113,14 @@ public class Parameter extends DevHisBase {
                 detOk ? "PASS" : "FAIL");
 
         boolean rangeOk = !range.contains("(no field)") && !range.contains("(not selected)");
-        step(page, "Enter the Age Wise Range",
+        stepWith(rangePng, "Enter the Age Wise Range",
                 "Select Gender and enter Lower Value, Alert Low, Critical Low, Upper Value, Alert High and Critical High",
                 "The age-wise range is entered",
                 rangeOk ? range : range + "\n" + pr.describeForm(), rangeOk ? "PASS" : "FAIL");
 
         // The range only reaches the server once the inner Add has appended it to the list.
         boolean rowOk = pr.hasRangeRow();
-        step(page, "Click Add (append the range row)", "Click Add under the Age Wise Range fields",
+        stepWith(rowPng, "Click Add (append the range row)", "Click Add under the Age Wise Range fields",
                 "The range row is appended to the list",
                 rowOk ? rowAdd : rowAdd + "\n" + pr.describeForm(), rowOk ? "PASS" : "FAIL");
 

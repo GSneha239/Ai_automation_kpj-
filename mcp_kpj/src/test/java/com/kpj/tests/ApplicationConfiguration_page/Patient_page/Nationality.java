@@ -11,7 +11,8 @@ import com.kpj.pages.LoginPage;
  * <ol>
  *   <li>Open <b>Application Configuration</b> → <b>Patient</b> → <b>Nationality</b> (clicking <b>Add</b>
  *       first if the screen has one — a no-op on inline-add screens).</li>
- *   <li>Enter <b>Code*</b> and <b>Nationality*</b>.</li>
+ *   <li>Enter <b>Code*</b> and <b>Nationality*</b> and pick the <b>Country*</b> (mandatory since build
+ *       2026.11.03.392.5).</li>
  *   <li>Click <b>Submit</b>; wait for the success toast. If the toast says the code/remark already exists,
  *       change the details and Submit again.</li>
  * </ol>
@@ -84,14 +85,15 @@ public class Nationality extends DevHisBase {
             System.out.println("Nationality: attempt " + used + " (" + details + ") already exists — changing the details");
         }
 
-        boolean detOk = details.contains("Code=NT") && !details.contains("(no field)");
+        boolean detOk = details.contains("Code=NT") && !details.contains("(no field)")
+                && !nt.lastCountry.isEmpty() && !nt.lastCountry.startsWith("(");
         String detActual = details + (used > 1 ? "  [details changed " + (used - 1) + "x after 'already exists']" : "");
         if (filledPng != null && filledPng.length > 0) {
-            step(filledPng, "Enter Code and Nationality", "Enter Code* (unique) and Nationality*",
-                    "Code and Nationality are entered", detActual, detOk ? "PASS" : "FAIL");
+            step(filledPng, "Enter Code, Nationality and Country", "Enter Code* (unique), Nationality* (unique) and pick Country*",
+                    "Code, Nationality and Country are entered", detActual, detOk ? "PASS" : "FAIL");
         } else {
-            step(page, "Enter Code and Nationality", "Enter Code* (unique) and Nationality*",
-                    "Code and Nationality are entered", detActual, detOk ? "PASS" : "FAIL");
+            step(page, "Enter Code, Nationality and Country", "Enter Code* (unique), Nationality* (unique) and pick Country*",
+                    "Code, Nationality and Country are entered", detActual, detOk ? "PASS" : "FAIL");
         }
 
         String actual = toast == null || toast.isEmpty() ? "No toast appeared\n" + nt.describeForm()
@@ -111,6 +113,7 @@ public class Nationality extends DevHisBase {
 
         addSummary("Nationality Code", nt.lastCode);
         addSummary("Nationality", nt.lastRemark);
+        addSummary("Country", nt.lastCountry);
         addSummary("Field models", nt.lastCodeModel + " / " + nt.lastRemarkModel);
         addSummary("Attempts", String.valueOf(used));
         addSummary("Result", ok ? toast : (toast == null || toast.isEmpty() ? "Not confirmed" : toast));

@@ -92,7 +92,9 @@ public class ConcessionTemplate extends BasePage {
     public String fillDetails(int attempt) {
         String code = "CT" + String.format("%06d", Math.abs((System.nanoTime() + attempt * 7919L) % 1000000));
         lastCode = code;
-        lastRemark = REMARKS[attempt % REMARKS.length] + (attempt >= REMARKS.length ? " " + (attempt / REMARKS.length + 1) : "");
+        // The Remark (Description) must be unique and the shared environment keeps every saved template for good: a fixed pool of 8 names + a counter was down to
+        // "… 5" (34 attempts) — stamp each Remark with the Code's own digits instead, so it still reads like a real name but is never used up.
+        lastRemark = REMARKS[attempt % REMARKS.length] + " " + code.substring(2);
         page.evaluate("(a) => { const A=window.angular; const set=(ng,v)=>{ const e=[...document.querySelectorAll(\"[ng-model='\"+ng+\"']\")].find(x=>x.offsetParent!==null); if(!e) return; const c=A.element(e).controller('ngModel'); e.value=v; if(c){c.$setViewValue(v);c.$render();} e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true})); };"
                 + " set('ConcessionTemplate.Code',a.code); set('ConcessionTemplate.Description',a.remark); set('ConcessionTemplate.percentage','10'); }",
                 java.util.Map.of("code", code, "remark", lastRemark));
@@ -167,14 +169,25 @@ public class ConcessionTemplate extends BasePage {
             try { page.evaluate("(h) => { window.location.hash = h; }", LIST_ROUTE); } catch (Exception ignore) { }
         }
         try {
-            page.waitForFunction("() => [...document.querySelectorAll('.ui-grid-row, table tr')].length > 1",
-                    null, new Page.WaitForFunctionOptions().setTimeout(12000));
+            page.waitForFunction("() => { const g=document.querySelector('[ui-grid]'); if(!g) return false; try{ return (angular.element(g).scope().$eval(g.getAttribute('ui-grid')+'.data')||[]).length>0; }catch(e){ return false; } }",
+                    null, new Page.WaitForFunctionOptions().setTimeout(15000));
         } catch (Exception ignore) { }
         waitForAngular(1000);
-        Object r = page.evaluate("(code) => { const up=s=>(s||'').replace(/\\s+/g,' ').trim().toUpperCase(); const cc=up(code);"
-                + " const rows=[...document.querySelectorAll('.ui-grid-row')].length ? [...document.querySelectorAll('.ui-grid-row')] : [...document.querySelectorAll('table tr')];"
-                + " for(const row of rows){ const cells=[...row.querySelectorAll('.ui-grid-cell-contents, td')].map(c=>up(c.textContent)); if(cells.some(c=>c===cc || c.includes(cc))) return (row.textContent||'').replace(/\\s+/g,' ').trim().slice(0,160); }"
-                + " return ''; }", lastCode);
-        return r == null ? "" : r.toString().trim();
+        // The list holds ALL templates in the grid's data and pages them 25 at a time on the client, so a new row is on a later page: the DOM only holds the page on show.
+        // Read the grid's DATA (exact Code), then page to the row so the screenshot shows it.
+        Object r = page.evaluate("(code) => { const up=s=>(s||'').replace(/\\s+/g,' ').trim().toUpperCase(); const g=document.querySelector('[ui-grid]'); if(!g) return '';"
+                + " let d=[]; try{ d=angular.element(g).scope().$eval(g.getAttribute('ui-grid')+'.data')||[]; }catch(e){}"
+                + " const i=d.findIndex(x=>up(x.Code)===up(code)); if(i<0) return ''; return 'row '+(i+1)+' of '+d.length+': '+d[i].Code+' | '+d[i].Description; }", lastCode);
+        String found = r == null ? "" : r.toString().trim();
+        if (found.isEmpty()) return "";
+        for (int p = 0; p < 40; p++) {
+            Object shown = page.evaluate("(code) => { const vis=e=>e.offsetWidth||e.offsetHeight||e.getClientRects().length;"
+                    + " return [...document.querySelectorAll(\"[id$='-grid-container']\")].filter(vis).some(g=>(g.textContent||'').toUpperCase().indexOf(code.toUpperCase())>=0); }", lastCode);
+            if (Boolean.TRUE.equals(shown)) return found + " (shown on page " + (p + 1) + " of the list)";
+            Object moved = page.evaluate("() => { const b=document.querySelector(\"[ng-click^='pageNextPageClick']\"); if(!b||b.disabled) return false; b.click(); return true; }");
+            if (!Boolean.TRUE.equals(moved)) break;
+            waitForAngular(700);
+        }
+        return found;
     }
 }

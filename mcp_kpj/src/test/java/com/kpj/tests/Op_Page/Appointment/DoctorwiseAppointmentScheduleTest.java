@@ -30,7 +30,7 @@ public class DoctorwiseAppointmentScheduleTest extends DevHisBase {
     private static final String PREFERRED_DOCTOR     = "Doctor 12";
 
     public DoctorwiseAppointmentScheduleTest() {
-        super("TC05_DoctorwiseAppointmentSchedule");
+        super("op_appointment_DoctorwiseAppointmentSchedule");
     }
 
     public static void main(String[] args) {
@@ -58,9 +58,13 @@ public class DoctorwiseAppointmentScheduleTest extends DevHisBase {
         step("Login", USER + " / " + PASS, "Authenticated; Patient Dashboard", "Logged in", "PASS");
 
         // 2) Open Doctorwise Appointment Schedule (Month defaults to the current month)
-        sched.navigateTo(BASE);
-        step("Open Doctorwise Appointment Schedule", "OP > Appointment > Doctorwise Appointment Schedule; Month = current",
-                "Schedule filters loaded", "Page loaded (current month)", "PASS");
+        boolean onScreen = sched.navigateViaMenu();
+        String month = onScreen ? sched.prepareScreen() : "";
+        step(page, "Open Doctorwise Appointment Schedule screen", "Click OP -> Appointment -> Doctorwise Appointment Schedule; Month = current",
+                "The Doctorwise Appointment Schedule screen is shown with its filters loaded",
+                onScreen ? "Opened " + page.url() + " (Month " + month + ")" : "Did NOT reach the screen (" + page.url() + ")",
+                onScreen ? "PASS" : "FAIL");
+        if (!onScreen) { addSummary("Result", "FAILED - screen not reached"); return; }
 
         // 3) Department + doctor with available slots (Emergency has none → fall back to Cardiology)
         String department = REQUESTED_DEPARTMENT;
@@ -126,7 +130,7 @@ public class DoctorwiseAppointmentScheduleTest extends DevHisBase {
 
         // --- Summary ---
         addSummary("Application URL", BASE + "/#/DoctorwiseAppointmentSchedule");
-        addSummary("Month", "Current (July 2026)");
+        addSummary("Month", "Current (" + java.time.YearMonth.now() + ")");
         addSummary("Department", department + (department.equals(FALLBACK_DEPARTMENT) ? " (fallback; Emergency has no schedules)" : ""));
         addSummary("Doctor", doctor == null ? "(none)" : doctor);
         addSummary("Slot", slot == null ? "(none)" : slot);

@@ -252,8 +252,9 @@ public class Parameter extends BasePage {
         long n = Math.abs((System.nanoTime() + attempt * 7919L) % 100000);
         lastCode = numericCodes ? String.format("%06d", Math.abs((System.nanoTime() + attempt * 7919L) % 1000000))
                                 : "PR" + String.format("%05d", n);
-        // Uniqueness on sibling screens here is enforced on the NAME, not the Code — qualify it on every retry.
-        lastName = p[0] + (attempt == 0 ? "" : " - Method " + (attempt + 1));
+        // Uniqueness here is enforced on the NAME ("Parameter name already exists!") and the server keeps every saved name for good: "<name>" then "<name> - Method N" was being used
+        // up (the last run needed 3 attempts). Stamp the name with the Code's own digits, so it still reads like a parameter but is never used up.
+        lastName = p[0] + " " + lastCode.replaceAll("\\D", "");
         lastPrintName = p[1];
         lastUnit = p[2];
         lastSsiUnit = p[3];

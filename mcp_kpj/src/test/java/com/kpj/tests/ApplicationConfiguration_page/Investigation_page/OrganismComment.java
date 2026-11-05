@@ -68,11 +68,14 @@ public class OrganismComment extends DevHisBase {
 
         // 3) + 4) Code / both Remarks, Submit — retry with different details on "already exists".
         String details = "", toast = "";
+        byte[] filledPng = null;   // the form with Code and both Remarks filled, shot just BEFORE Submit (after a save the form has moved on)
         boolean ok = false, exists = false;
         int used = 0;
         for (int attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
             details = oc.fillDetails(attempt);
             used++;
+            try { filledPng = page.screenshot(new com.microsoft.playwright.Page.ScreenshotOptions().setTimeout(8000)); }
+            catch (Exception e) { System.out.println("OrganismComment: could not shoot the filled form - " + String.valueOf(e.getMessage()).split("\n")[0]); }
             toast = oc.submitAndGetToast();
             String tl = toast == null ? "" : toast.toLowerCase();
             // "succes" (one s) is deliberate — sibling screens here return "Record added succesfully".
@@ -83,10 +86,11 @@ public class OrganismComment extends DevHisBase {
         }
 
         boolean detOk = !details.contains("(no field)");
-        step(page, "Enter Code and both Remarks", "Enter Code* (unique) and both Remark boxes",
-                "Code and both Remarks are entered",
-                details + "  [" + codeStyle + "]" + (used > 1 ? "  [details changed " + (used - 1) + "x after 'already exists']" : ""),
-                detOk ? "PASS" : "FAIL");
+        String detShown = details + "  [" + codeStyle + "]" + (used > 1 ? "  [details changed " + (used - 1) + "x after 'already exists']" : "");
+        if (filledPng != null && filledPng.length > 0)
+            step(filledPng, "Enter Code and both Remarks", "Enter Code* (unique) and both Remark boxes", "Code and both Remarks are entered", detShown, detOk ? "PASS" : "FAIL");
+        else
+            step(page, "Enter Code and both Remarks", "Enter Code* (unique) and both Remark boxes", "Code and both Remarks are entered", detShown, detOk ? "PASS" : "FAIL");
 
         String actual = toast == null || toast.isEmpty() ? "No toast appeared\n" + oc.describeForm()
                 : (ok ? toast

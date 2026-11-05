@@ -116,17 +116,27 @@ public class RequestReasonMaster extends BasePage {
 
     /** Enter <b>Code*</b> and <b>Remark*</b>, located BY LABEL (this screen's ng-model prefix is not assumed). */
     public String fillDetails() {
-        String code = "RR" + String.format("%05d", Math.abs(System.nanoTime() % 100000));
+        String code = "RR" + String.format("%05d", Math.abs(System.currentTimeMillis() % 100000));
         lastCode = code;
-        lastRemark = REMARKS[(int) (Math.abs(System.nanoTime()) % REMARKS.length)];
+        // Stamp the name with the Code digits so it is unique by construction — the fixed pool is used up on the
+        // shared QA environment ("Description already exists!" on the clean name, 2026-11-05).
+        lastRemark = REMARKS[(int) (Math.abs(System.nanoTime()) % REMARKS.length)] + " " + code.substring(2);
         Object r = page.evaluate("(a) => { const A=window.angular; " + BY_LABEL
                 + " const fill=(e,v)=>{ if(!e) return '(no field)'; const c=A.element(e).controller('ngModel'); e.value=v; if(c){c.$setViewValue(v);c.$render();} e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true})); return v+' [ng='+(e.getAttribute('ng-model')||'?')+']'; };"
                 + " const cd=fill(byLabel(/^code/i), a.code); const rm=fill(byLabel(/remark/i), a.remark);"
                 + " return 'Code='+cd+' | Remark='+rm; }",
                 java.util.Map.of("code", code, "remark", lastRemark));
         waitForAngular(600);
-        return r == null ? "" : r.toString();
+        lastDetails = r == null ? "" : r.toString();
+        return lastDetails;
     }
+
+    /** The Code / Remark that were entered last (after any 'already exists' retry — i.e. what was really submitted). */
+    public String lastDetails = "";
+    /** How many times Submit was pressed (&gt; 1 means the details were changed after 'already exists'). */
+    public int submitAttempts = 0;
+    /** Screenshot of the FILLED form taken just before the last Submit (the Submit can clear the form). */
+    public byte[] filledPng;
 
     /**
      * Submit the inline commonmaster form and return the toast. The Submit button has no {@code ng-click} — the
@@ -144,6 +154,10 @@ public class RequestReasonMaster extends BasePage {
         String last = "";
         for (int attempt = 0; attempt < 3; attempt++) {
             waitForAngular(500);
+            submitAttempts++;
+            // The form is already filled (fillDetails) — screenshot it BEFORE Submit, which clears the form / shows a toast.
+            try { filledPng = page.screenshot(new Page.ScreenshotOptions().setTimeout(8000)); }
+            catch (Exception e) { System.out.println("RequestReasonMaster: filled-form screenshot failed - " + e.getMessage()); }
             Object res = page.evaluate("(a) => { const A=window.angular; const code=a.code, desc=a.remark;"
                     + " const setInp=(ng,v)=>{ const e=[...document.querySelectorAll(\"[ng-model='\"+ng+\"']\")].find(x=>x.offsetParent!==null); if(!e) return; const c=A.element(e).controller('ngModel'); e.value=v; if(c){c.$setViewValue(v);c.$render();} e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true})); };"
                     + " setInp('commonmaster.Code', code); setInp('commonmaster.Description', desc);"
@@ -177,15 +191,8 @@ public class RequestReasonMaster extends BasePage {
             // Code plus a different Remark) and push them into the DOM before retrying.
             if (last.toLowerCase().matches(".*(exist|already).*")) {
                 System.out.println("submitAndGetToast: \"" + last + "\" — regenerating the details and retrying");
+                // fillDetails() picks a fresh Code and stamps the name with its digits, so the retry is unique too.
                 fillDetails();
-                // The realistic-name pool is SMALL and can already be exhausted in this environment, so picking
-                // another name can still collide — append a short number so the retry is genuinely unique, while
-                // still reading like configuration ("Peanut 4821", not machine noise). The FIRST attempt keeps
-                // the clean name; fillDetails() already wrote the un-suffixed value, so re-push the suffixed one.
-                lastRemark = lastRemark + " " + (Math.abs(System.nanoTime()) % 10000);
-                page.evaluate("(v) => { const A=window.angular; " + BY_LABEL
-                        + " const e=byLabel(/remark/i); if(!e) return; const c=A.element(e).controller('ngModel'); e.value=v; if(c){c.$setViewValue(v);c.$render();} e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true})); }",
-                        lastRemark);
             }
             page.evaluate("() => { window.__rrToasts=[]; document.querySelectorAll('.toast-message,.toast').forEach(t=>t.remove()); }");
         }

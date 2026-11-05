@@ -80,8 +80,19 @@ public class Cluster extends DevHisBase {
         boolean ok = tl.contains("saved") || tl.contains("success") || tl.contains("added") || tl.contains("updated");
         String actual = toast == null || toast.isEmpty() ? "No toast appeared"
                 : (ok ? toast : "Submit not confirmed - server returned: \"" + toast + "\"");
-        step(page, "Click Submit & success toast", "Click Submit (fnIUDCluster); wait for the success toast",
-                "A '... saved successfully' success toast is shown", actual, ok ? "PASS" : "FAIL");
+        // If the first Submit was refused as a duplicate the page object changed Code/Remark and submitted again —
+        // say so, so step 4's entered values and the saved ones can be told apart.
+        if (cl.submitAttempts > 1) {
+            actual += "  [Code/Remark changed " + (cl.submitAttempts - 1) + "x after 'already exists' -> " + cl.lastDetails + "]";
+        }
+        // The app returns to the Cluster list right after a save, so use the screenshot taken while the toast showed.
+        if (cl.toastPng != null && cl.toastPng.length > 0) {
+            step(cl.toastPng, "Click Submit & success toast", "Click Submit (fnIUDCluster); wait for the success toast",
+                    "A '... saved successfully' success toast is shown", actual, ok ? "PASS" : "FAIL");
+        } else {
+            step(page, "Click Submit & success toast", "Click Submit (fnIUDCluster); wait for the success toast",
+                    "A '... saved successfully' success toast is shown", actual, ok ? "PASS" : "FAIL");
+        }
 
         addSummary("Cluster Code", cl.lastCode);
         addSummary("Doctor", cl.lastDoctor.isEmpty() ? "(none)" : cl.lastDoctor);

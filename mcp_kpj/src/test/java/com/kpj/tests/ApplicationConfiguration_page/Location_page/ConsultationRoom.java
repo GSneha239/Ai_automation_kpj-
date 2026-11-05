@@ -82,11 +82,14 @@ public class ConsultationRoom extends DevHisBase {
 
         // 3) + 4) Code / Remark, Submit — move along the sequence on "already exists".
         String details = "", toast = "";
+        byte[] filledPng = null;   // the form with Code and Remark filled, shot just BEFORE Submit (after a save the form is blank again)
         boolean ok = false, exists = false;
         int used = 0;
         for (int attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
             details = rn.fillDetails(attempt);
             used++;
+            try { filledPng = page.screenshot(new com.microsoft.playwright.Page.ScreenshotOptions().setTimeout(8000)); }
+            catch (Exception e) { System.out.println("ConsultationRoom: could not shoot the filled form - " + String.valueOf(e.getMessage()).split("\n")[0]); }
             toast = rn.submitAndGetToast();
             String tl = toast == null ? "" : toast.toLowerCase();
             // "succes" (one s) is deliberate — sibling screens here return "Record added succesfully".
@@ -97,10 +100,11 @@ public class ConsultationRoom extends DevHisBase {
         }
 
         boolean detOk = !details.contains("(no field)");
-        step(page, "Enter Code and Remark", "Enter Code* and Remark* in the same format as the existing rows",
-                "Code and Remark are entered and match the table's format",
-                details + (used > 1 ? "  [moved " + (used - 1) + "x along the sequence after 'already exists']" : ""),
-                detOk ? "PASS" : "FAIL");
+        String detShown = details + (used > 1 ? "  [retried " + (used - 1) + "x after 'already exists']" : "");
+        if (filledPng != null && filledPng.length > 0)
+            step(filledPng, "Enter Code and Remark", "Enter Code* and Remark* in the same format as the existing rows", "Code and Remark are entered and match the table's format", detShown, detOk ? "PASS" : "FAIL");
+        else
+            step(page, "Enter Code and Remark", "Enter Code* and Remark* in the same format as the existing rows", "Code and Remark are entered and match the table's format", detShown, detOk ? "PASS" : "FAIL");
 
         String actual = toast == null || toast.isEmpty() ? "No toast appeared\n" + rn.describeForm()
                 : (ok ? toast

@@ -8,7 +8,7 @@ import com.microsoft.playwright.Page;
 import java.util.List;
 
 /**
- * TC04 - OP &gt; Appointment &gt; Book Appointment (#/New).
+ * OP &gt; Appointment &gt; Book Appointment (#/New).
  *
  * Two-step login; open Book Appointment; fill the mandatory patient + appointment details;
  * pick a free schedule slot; Save; confirm the "Do You Want To Save" dialog; accept the optional
@@ -17,7 +17,7 @@ import java.util.List;
 public class BookAppointmentTest extends DevHisBase {
 
     public BookAppointmentTest() {
-        super("TC04_BookAppointment");
+        super("op_appointment_BookAppointment");
     }
 
     public static void main(String[] args) {
@@ -44,9 +44,11 @@ public class BookAppointmentTest extends DevHisBase {
         step("Login", USER + " / " + PASS, "Authenticated; Patient Dashboard", "Logged in", "PASS");
 
         // 2) Navigate to Book Appointment
-        bookPage.navigateTo(BASE);
-        step("Open Book Appointment", "OP > Appointment > Book Appointment (#/New)",
-                "Book Appointment form + master data loaded", "Book Appointment page loaded", "PASS");
+        boolean opened = bookPage.navigateViaMenu();
+        step(page, "Open Book Appointment screen", "Click OP -> Appointment -> Book Appointment",
+                "The Book Appointment form is shown with its master data loaded",
+                opened ? "Opened " + page.url() : "Did NOT reach the screen (" + page.url() + ")", opened ? "PASS" : "FAIL");
+        if (!opened) { addSummary("Result", "FAILED - Book Appointment not reached"); return; }
 
         // 3) Fill mandatory details
         bookPage.fillMandatoryDetails();

@@ -52,6 +52,11 @@ public class DepartmentSchedule extends DevHisBase {
             return;
         }
         System.out.println("--- LIST SCREEN ---\n" + ds.describeForm());
+        // Each Department can hold only ONE schedule and most are already used on the shared environment: read the list and pick a Department
+        // that has none, instead of trying Departments one after another (each rejected try cost ~25 s, up to 40 tries, with nothing in the report until the end).
+        java.util.Set<String> used = ds.scheduledDepartments();
+        final boolean usedKnown = !used.isEmpty();
+        System.out.println("Departments that already hold a schedule: " + (usedKnown ? used.size() : "(list could not be read - falling back to trying Departments one by one)"));
 
         boolean added = ds.clickAdd() && ds.addFormOpen();
         step(page, "Click Add", "Click Add", "The add form opens",
@@ -67,9 +72,13 @@ public class DepartmentSchedule extends DevHisBase {
         System.out.println("Location (mandatory, not in the flow) = " + loc);
 
         // 3) Department
-        String dept = ds.selectDepartment(0);
-        step(page, "Select Department", "Choose the Department", "A Department is selected",
-                dept.isEmpty() ? "Department NOT selected" : "Department = " + dept, dept.isEmpty() ? "FAIL" : "PASS");
+        String dept = usedKnown ? ds.selectFreeDepartment(used) : ds.selectDepartment(0);
+        step(page, "Select Department", "Choose a Department that holds no schedule yet", "A Department is selected",
+                dept.isEmpty() ? (usedKnown ? "Department NOT selected - every Department in the list already holds a schedule (" + used.size() + " scheduled); each can hold only one"
+                                            : "Department NOT selected")
+                               : "Department = " + dept + (usedKnown ? " (none of the " + used.size() + " already scheduled)" : ""),
+                dept.isEmpty() ? "FAIL" : "PASS");
+        if (dept.isEmpty() && usedKnown) { addSummary("Result", "FAILED - every Department already holds a schedule"); return; }
 
         // 4) Start / End time
         String times = ds.fillTimes("09:00 AM", "05:00 PM");
@@ -101,7 +110,8 @@ public class DepartmentSchedule extends DevHisBase {
         // rejected try costs ~35 s), so the retries start further into the list: -DdeptStart= (default 20).
         int deptIndex = ds.lastDepartmentIndex + 1 + Integer.getInteger("deptStart", 20);
         // Up to 40 departments by default (-DdeptTries= to change).
-        int maxTries = Integer.getInteger("deptTries", 40);
+        // With the list read, the Department is already a free one, so only a few tries are needed (a Department taken meanwhile by someone else).
+        int maxTries = Integer.getInteger("deptTries", usedKnown ? 8 : 40);
         for (int attempt = 0; attempt < maxTries && !ok; attempt++) {
             int held = ds.scheduleId();
             if (held > 0) {
@@ -115,9 +125,11 @@ public class DepartmentSchedule extends DevHisBase {
                 if (ok) break;
                 if (!ds.lastToasts.toLowerCase().contains("already")) break;
             }
+            if (usedKnown && !ds.lastDepartment.isEmpty()) used.add(com.kpj.pages.ApplicationConfiguration_page.Location_page.DepartmentSchedule.normName(ds.lastDepartment));
             if (!ds.clickBack()) break;
             if (!(ds.clickAdd() && ds.addFormOpen())) break;
-            String refilled = ds.fillAll(deptIndex, "09:00 AM", "05:00 PM", "Monday", "Tuesday", "Wednesday");
+            String refilled = usedKnown ? ds.fillAllFree(used, "09:00 AM", "05:00 PM", "Monday", "Tuesday", "Wednesday")
+                                        : ds.fillAll(deptIndex, "09:00 AM", "05:00 PM", "Monday", "Tuesday", "Wednesday");
             deptIndex = ds.lastDepartmentIndex + 1;
             System.out.println("Submit retry " + (attempt + 1) + ": " + refilled);
             if (ds.lastDepartment.isEmpty()) break;

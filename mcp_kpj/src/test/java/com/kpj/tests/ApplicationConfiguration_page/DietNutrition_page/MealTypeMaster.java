@@ -51,11 +51,14 @@ public class MealTypeMaster extends DevHisBase {
 
         // Enter Code, Meal Type, Stipulated Time, then Submit — retry with different details on "already exists".
         String fill = "", toast = "";
+        byte[] filledPng = null;   // the form with Code, Meal Type and Stipulated Time filled, shot just BEFORE Submit (after a save the form is blank again)
         boolean ok = false, exists = false;
         int used = 0;
         for (int attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
             fill = mt.fillDetails(attempt);
             used++;
+            try { filledPng = page.screenshot(new com.microsoft.playwright.Page.ScreenshotOptions().setTimeout(8000)); }
+            catch (Exception e) { System.out.println("MealTypeMaster: could not shoot the filled form - " + String.valueOf(e.getMessage()).split("\n")[0]); }
             toast = mt.submitAndGetToast();
             String tl = toast == null ? "" : toast.toLowerCase();
             ok = tl.contains("saved") || tl.contains("success") || tl.contains("added") || tl.contains("updated");
@@ -66,8 +69,11 @@ public class MealTypeMaster extends DevHisBase {
 
         boolean fillOk = fill != null && fill.contains("Code=MT") && !fill.contains("(not found)");
         String fillActual = fill + (used > 1 ? "  [details changed " + (used - 1) + "x after 'already exists']" : "");
-        step(page, "Enter Code, Meal Type, Stipulated Time", "Enter Code, Meal Type and Stipulated Time",
-                "All three fields are entered", fillActual + (fillOk ? "" : "\n" + mt.describeForm()), fillOk ? "PASS" : "FAIL");
+        String fillShown = fillActual + (fillOk ? "" : "\n" + mt.describeForm());
+        if (filledPng != null && filledPng.length > 0)
+            step(filledPng, "Enter Code, Meal Type, Stipulated Time", "Enter Code, Meal Type and Stipulated Time", "All three fields are entered", fillShown, fillOk ? "PASS" : "FAIL");
+        else
+            step(page, "Enter Code, Meal Type, Stipulated Time", "Enter Code, Meal Type and Stipulated Time", "All three fields are entered", fillShown, fillOk ? "PASS" : "FAIL");
 
         String actual = toast == null || toast.isEmpty() ? "No toast appeared\n" + mt.describeForm()
                 : (ok ? toast : (exists ? "Still 'already exists' after " + used + " attempt(s) with different details: \"" + toast + "\""

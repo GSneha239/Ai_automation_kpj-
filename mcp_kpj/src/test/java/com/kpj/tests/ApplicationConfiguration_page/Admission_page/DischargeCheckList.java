@@ -13,7 +13,7 @@ import com.kpj.pages.LoginPage;
  *   <li>Click <b>Add</b>.</li>
  *   <li>Enter <b>Code</b> + <b>Remark</b>.</li>
  *   <li>Tick the <b>Mandatory</b> checkbox.</li>
- *   <li>Click <b>Submit</b> → success toast.</li>
+ *   <li>Click <b>Submit</b> → success toast; the new row exists (master API, then paging through the list); the <b>Code filter</b> finds it.</li>
  * </ol>
  */
 public class DischargeCheckList extends DevHisBase {
@@ -70,14 +70,22 @@ public class DischargeCheckList extends DevHisBase {
         // 5) Submit — the record must really be created (the list grid is paged, so verify via the master API).
         String toast = dcl.submitAndGetToast();
         String saved = dcl.fetchSavedRow(dcl.lastCode);
-        // The new row may be on another page of the list: search the Code filter, then page through every page.
+        // The new row may be on another page of the list: page through every page of the list.
         String inList = dcl.verifyInList(dcl.lastCode);
         boolean savedOk = (saved != null && saved.startsWith("id=")) || dcl.listFound;
-        step(dcl.listPng != null && dcl.listPng.length > 0 ? dcl.listPng : dcl.toastPng, "Click Submit", "Click Submit; verify the new Discharge CheckList row exists (search the list, then check every page)",
+        step(dcl.listPng != null && dcl.listPng.length > 0 ? dcl.listPng : dcl.toastPng, "Click Submit", "Click Submit; verify the new Discharge CheckList row exists (master API, then page through every page of the list)",
                 "The Discharge CheckList row is created (Code, Remark, Mandatory = true)",
                 savedOk ? "Saved: " + (saved != null && saved.startsWith("id=") ? saved + "  ||  " : "") + "list check: " + inList
                         : "Row NOT created (" + dcl.lastCode + ") — the save toast said: \"" + toast + "\"; list check: " + inList + "; master API: " + dcl.lastFetchNote,
                 savedOk ? "PASS" : "FAIL");
+
+        // The Code filter asks the server to search the whole master — last, so a failing search cannot disturb the checks above.
+        boolean filtered = dcl.searchCodeFilter(dcl.lastCode);
+        step(dcl.filterPng != null && dcl.filterPng.length > 0 ? dcl.filterPng : dcl.toastPng, "Search the new row (Code filter)", "Type the Code " + dcl.lastCode + " in the Code filter of the list",
+                "The list shows the new Discharge CheckList row",
+                filtered ? "The Code filter lists " + dcl.lastCode
+                        : "FAILED - searching the Code filter did not work: " + dcl.filterNote + " (the screen shows its red toast \"Error in getting record!\")",
+                filtered ? "PASS" : "FAIL");
 
         // 6) Success toast.
         String tl = toast == null ? "" : toast.toLowerCase();
@@ -91,6 +99,7 @@ public class DischargeCheckList extends DevHisBase {
         addSummary("Checklist Code", dcl.lastCode);
         addSummary("Remark", dcl.lastRemark);
         addSummary("Saved row", savedOk ? saved : "not found");
+        addSummary("Code filter", filtered ? "finds the new row" : "FAILED - " + dcl.filterNote);
         addSummary("Result", ok ? toast : "FAILED — no success message; the screen showed \"" + toast + "\"");
     }
 }

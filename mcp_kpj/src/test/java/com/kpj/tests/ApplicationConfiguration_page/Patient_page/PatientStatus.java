@@ -9,8 +9,8 @@ import com.kpj.pages.LoginPage;
  * Application Configuration &gt; Patient &gt; <b>Patient Status</b> ({@code #/PatientStatus}) — INLINE-ADD screen.
  *
  * <ol>
- *   <li>Open <b>Application Configuration</b> → <b>Nursing</b> → <b>Allergy</b> (no Add button — the form
- *       is on the screen).</li>
+ *   <li>Open <b>Application Configuration</b> → <b>Patient</b> → <b>Patient Status</b> (no Add button — the
+ *       form is on the screen).</li>
  *   <li>Enter <b>Code*</b> and <b>Remark*</b>.</li>
  *   <li>Click <b>Submit</b> ({@code fnIUDCommonMaster}); wait for the success toast.</li>
  * </ol>
@@ -49,12 +49,23 @@ public class PatientStatus extends DevHisBase {
                 on ? "PASS" : "FAIL");
         if (!on) { addSummary("Result", "FAILED - wrong page opened: " + landed); return; }
 
-        String details = am.fillDetails();
-        boolean detOk = details.contains("Code=PS") && !details.contains("Remark=(no)");
-        step(page, "Enter Code and Remark", "Enter Code* (unique) and Remark*",
-                "Code and Remark are entered", details, detOk ? "PASS" : "FAIL");
-
+        am.fillDetails();
         String toast = am.submitAndGetToast();
+
+        // Step 3 is recorded AFTER Submit so it reports the Code/Remark that were really submitted (the page
+        // object changes them and retries on "already exists") with the filled-form screenshot taken just
+        // before that Submit.
+        String details = am.lastDetails;
+        boolean detOk = details.contains("Code=PS") && !details.contains("Remark=(no)");
+        String detActual = details + (am.submitAttempts > 1 ? "  [details changed " + (am.submitAttempts - 1) + "x after 'already exists']" : "");
+        if (am.filledPng != null && am.filledPng.length > 0) {
+            step(am.filledPng, "Enter Code and Remark", "Enter Code* (unique) and Remark*",
+                    "Code and Remark are entered", detActual, detOk ? "PASS" : "FAIL");
+        } else {
+            step(page, "Enter Code and Remark", "Enter Code* (unique) and Remark*",
+                    "Code and Remark are entered", detActual, detOk ? "PASS" : "FAIL");
+        }
+
         String tl = toast == null ? "" : toast.toLowerCase();
         boolean ok = tl.contains("saved") || tl.contains("success") || tl.contains("added") || tl.contains("updated");
         String actual = toast == null || toast.isEmpty() ? "No toast appeared"

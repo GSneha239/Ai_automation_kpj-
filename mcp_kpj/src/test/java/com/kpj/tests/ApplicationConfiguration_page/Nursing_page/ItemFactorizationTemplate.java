@@ -102,7 +102,14 @@ public class ItemFactorizationTemplate extends DevHisBase {
                 catch (Exception ignore) { }
                 boolean shot = reportPng != null && reportPng.length > 0;
                 String title = ""; try { title = ift.reportPage.title(); } catch (Exception ignore) { }
-                if (shot) {
+                // A tab that opens is not a report that worked: the Crystal pages serve "Server Error in '/'
+                // Application" and a screenshot captures that just as happily (see DevHisBase.reportPageError).
+                String reportErr = reportPageError(ift.reportPage);
+                if (shot && !reportErr.isEmpty()) {
+                    step(reportPng, "Screenshot of the report (full page, all data)", "Capture the report tab",
+                            "The report with all its data is captured",
+                            "Report FAILED to render - " + reportErr + "  (" + ift.reportPage.url() + ")", "FAIL");
+                } else if (shot) {
                     step(reportPng, "Screenshot of the report (full page, all data)", "Capture the report tab",
                             "The report with all its data is captured", "Tab title \"" + title + "\"; text: " + (body.isEmpty() ? "(none - viewer/PDF)" : body), "PASS");
                 } else {
@@ -116,7 +123,9 @@ public class ItemFactorizationTemplate extends DevHisBase {
                 boolean matches = pdfRead && !wanted.isEmpty() && pdfText.replaceAll("[^A-Za-z0-9]", "").toLowerCase().contains(wanted);
                 step(page, "Verify the report shows the selected item", "Compare the report's content with the selected Item Fraction List row",
                         "The report contains the item shown in Item Fraction Details (\"" + expectedItem.split(" \\| ")[0] + "\")",
-                        !pdfRead ? "The report text could not be read from " + ift.reportPage.url()
+                        !pdfRead ? (reportErr.isEmpty() ? "The report text could not be read from " + ift.reportPage.url()
+                                        : "There is no report content to compare - the report page is a server error (" + reportErr
+                                          + ") - see the previous step. Report address: " + ift.reportPage.url())
                                  : (matches ? "PASSES: the report contains the selected item. Report text: " + pdfText.substring(0, Math.min(300, pdfText.length()))
                                             : "FAILS: the selected item \"" + expectedItem.split(" \\| ")[0] + "\" (row \"" + rowText
                                               + "\") is NOT in the report, which shows other data. CAUSE (app defect, checked live 2026-10-29 on rows 1-7): Print puts the row's POSITION"

@@ -60,11 +60,14 @@ public class ConcessionTemplate extends DevHisBase {
 
         // 3) + 4) Enter fields, add the detail line, Save — retry with different details on "already exists".
         String fill = "", lineToast = "", toast = "";
+        byte[] filledPng = null;   // the form with Code, Remark, Group and Percentage filled, shot before the detail line is added / saved (afterwards the screen has moved on)
         boolean ok = false, exists = false;
         int used = 0;
         for (int attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
             fill = ct.fillDetails(attempt);
             used++;
+            try { filledPng = page.screenshot(new com.microsoft.playwright.Page.ScreenshotOptions().setTimeout(8000)); }
+            catch (Exception e) { System.out.println("ConcessionTemplate: could not shoot the filled form - " + String.valueOf(e.getMessage()).split("\n")[0]); }
             lineToast = ct.addDetailLine();
             toast = ct.saveAndGetToast();
             String tl = toast == null ? "" : toast.toLowerCase();
@@ -76,8 +79,10 @@ public class ConcessionTemplate extends DevHisBase {
 
         boolean fillOk = fill != null && fill.contains("Code=CT") && !fill.contains("Group=(no");
         String fillActual = fill + (used > 1 ? "  [details changed " + (used - 1) + "x after 'already exists']" : "");
-        step(page, "Enter Code, Remark, Group, Percentage", "Enter Code, Remark, Group, Percentage",
-                "All fields are entered", fillActual, fillOk ? "PASS" : "FAIL");
+        if (filledPng != null && filledPng.length > 0)
+            step(filledPng, "Enter Code, Remark, Group, Percentage", "Enter Code, Remark, Group, Percentage", "All fields are entered", fillActual, fillOk ? "PASS" : "FAIL");
+        else
+            step(page, "Enter Code, Remark, Group, Percentage", "Enter Code, Remark, Group, Percentage", "All fields are entered", fillActual, fillOk ? "PASS" : "FAIL");
 
         // 4a) Click Add (add the detail line)
         boolean lineOk = lineToast != null && (lineToast.toLowerCase().contains("added")

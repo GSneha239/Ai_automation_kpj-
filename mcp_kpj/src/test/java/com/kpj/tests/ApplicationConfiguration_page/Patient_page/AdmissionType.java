@@ -56,10 +56,15 @@ public class AdmissionType extends DevHisBase {
         String fill = "", toast = "";
         boolean fillOk = false, ok = false, exists = false;
         int used = 0;
+        byte[] filledPng = null;
         for (int attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
             fill = at.fillDetails(attempt);
             used++;
             fillOk = fill.contains("Code=AT") && !fill.contains("Location=(no");
+            // Screenshot the FILLED form here — before Submit, which returns to the list and shows a toast that
+            // would otherwise be what this step's screenshot ends up showing instead of the entered values.
+            try { filledPng = page.screenshot(new com.microsoft.playwright.Page.ScreenshotOptions().setTimeout(8000)); }
+            catch (Exception e) { System.out.println("AdmissionType: filled-form screenshot failed - " + e.getMessage()); }
             toast = at.submitAndGetToast();
             String tl = toast == null ? "" : toast.toLowerCase();
             ok = tl.contains("saved") || tl.contains("success") || tl.contains("added") || tl.contains("updated");
@@ -68,15 +73,26 @@ public class AdmissionType extends DevHisBase {
             System.out.println("AdmissionType: attempt " + used + " (" + fill + ") already exists — changing the details");
         }
         String fillActual = fill + (used > 1 ? "  [details changed " + (used - 1) + "x after 'already exists']" : "");
-        step(page, "Enter Admission Type & select Location KPJ", "Enter Code + Admission Type; select Location = KPJ",
-                "The Admission Type + Location are set", fillActual, fillOk ? "PASS" : "FAIL");
+        if (filledPng != null && filledPng.length > 0) {
+            step(filledPng, "Enter Admission Type & select Location KPJ", "Enter Code + Admission Type; select Location = KPJ",
+                    "The Admission Type + Location are set", fillActual, fillOk ? "PASS" : "FAIL");
+        } else {
+            step(page, "Enter Admission Type & select Location KPJ", "Enter Code + Admission Type; select Location = KPJ",
+                    "The Admission Type + Location are set", fillActual, fillOk ? "PASS" : "FAIL");
+        }
 
         String actual = toast == null || toast.isEmpty() ? "No toast appeared"
                 : (ok ? toast
                       : (exists ? "Still 'already exists' after " + used + " attempt(s) with different details: \"" + toast + "\""
                                 : "Submit not confirmed — server returned: \"" + toast + "\""));
-        step(page, "Click Submit & success toast", "Click Submit (fnIUDAdmissionType); wait for the success toast",
-                "'... saved successfully' toast", actual, ok ? "PASS" : "FAIL");
+        // Use the screenshot taken while the toast was on screen (toastr fades before a later screenshot lands).
+        if (at.toastPng != null && at.toastPng.length > 0) {
+            step(at.toastPng, "Click Submit & success toast", "Click Submit (fnIUDAdmissionType); wait for the success toast",
+                    "'... saved successfully' toast", actual, ok ? "PASS" : "FAIL");
+        } else {
+            step(page, "Click Submit & success toast", "Click Submit (fnIUDAdmissionType); wait for the success toast",
+                    "'... saved successfully' toast", actual, ok ? "PASS" : "FAIL");
+        }
 
         addSummary("Admission Type Code", at.lastCode);
         addSummary("Admission Type", at.lastDescription);

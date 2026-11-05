@@ -4,7 +4,7 @@ import com.kpj.core.DevHisBase;
 import com.kpj.pages.LoginPage;
 
 /**
- * TC17 - Emergency &gt; <b>Emergency Visits</b> (route {@code #/QueueManagement}).
+ * Emergency &gt; <b>Emergency Visits</b> (route {@code #/QueueManagement}).
  *
  * <p>Emergency Visits is the SAME queue screen as OP Outpatient Queue Management, reached from the Emergency
  * menu. This test reuses the queue page object (via {@link com.kpj.pages.Emergency_page.EmergencyVisits}, which
@@ -25,7 +25,7 @@ public class EmergencyVisits extends DevHisBase {
     private static final String FROM_DATE = java.time.LocalDate.now().minusMonths(1).format(DMY);
     private static final String TO_DATE   = java.time.LocalDate.now().format(DMY);
 
-    public EmergencyVisits() { super("TC17_EmergencyVisits"); }
+    public EmergencyVisits() { super("emergency_EmergencyVisits"); }
 
     public static void main(String[] args) {
         EmergencyVisits t = new EmergencyVisits();
@@ -43,6 +43,12 @@ public class EmergencyVisits extends DevHisBase {
         LoginPage loginPage = new LoginPage(page);
         loginPage.login(BASE, USER, PASS);
         step("Login", USER + " / " + PASS, "Authenticated; Patient Dashboard", "Logged in", "PASS");
+
+        boolean opened = new com.kpj.pages.Emergency_page.EmergencyVisits(page).navigateViaMenu();
+        step(page, "Open Emergency Visits screen", "Click Emergency -> Emergency Visits",
+                "The Emergency Visits screen is shown", opened ? "Opened " + page.url() : "Did NOT reach the screen (" + page.url() + ")",
+                opened ? "PASS" : "FAIL");
+        if (!opened) { addSummary("Result", "FAILED - Emergency Visits not reached"); return; }
 
         sectionChangeDoctor();
         sectionConsentForms();
@@ -437,7 +443,7 @@ public class EmergencyVisits extends DevHisBase {
 
         boolean opened = qm.clickCloseVisit();
         step(page, "Close Visit · Open popup", "Click 'Close Visit' (OpenDischargeTypeModal); the Close Visit modal opens",
-                "The Close Visit modal opens", opened ? "Close Visit modal opened" : "Close Visit modal did NOT open",
+                "The Close Visit modal opens", opened ? "Close Visit modal opened" : "Close Visit modal did NOT open" + qm.blockedReason("OpenDischargeTypeModal", "Close Visit"),
                 opened ? "PASS" : "FAIL");
         if (!opened) return;
 
@@ -517,7 +523,7 @@ public class EmergencyVisits extends DevHisBase {
 
         boolean opened = qm.clickNewCase();
         step(page, "New Case · Click New Case", "Click 'New Case' (OpenNewCase)",
-                "New Case modal opens", opened ? "New Case modal opened" : "New Case modal did NOT open",
+                "New Case modal opens", opened ? "New Case modal opened" : "New Case modal did NOT open" + qm.blockedReason("OpenNewCase", "New Case"),
                 opened ? "PASS" : "FAIL");
         if (!opened) return;
 

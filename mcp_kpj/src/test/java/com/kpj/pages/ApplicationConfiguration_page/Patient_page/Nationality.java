@@ -171,9 +171,11 @@ public class Nationality extends BasePage {
      * "already exists" toast submits genuinely different details.
      */
     public String fillDetails(int attempt) {
-        String code = "NT" + String.format("%05d", Math.abs((System.nanoTime() + attempt * 7919L) % 100000));
+        String code = "NT" + String.format("%05d", Math.abs((System.currentTimeMillis() + attempt * 7919L) % 100000));
         lastCode = code;
-        lastRemark = REMARKS[attempt % REMARKS.length] + (attempt >= REMARKS.length ? " " + (attempt / REMARKS.length + 1) : "");
+        // Stamp the name with the Code digits so it is unique by construction — the fixed pool (+ " 2", " 3" ...)
+        // is used up on the shared QA environment (28 'already exists' in a row on 2026-11-04).
+        lastRemark = REMARKS[attempt % REMARKS.length] + " " + code.substring(2);
         Object r = page.evaluate("(a) => { const A=window.angular;" + FIND_FIELDS
                 + " const set=(e,v)=>{ if(!e) return '(no field)'; const c=A.element(e).controller('ngModel'); e.value=v; if(c){c.$setViewValue(v);c.$render();} e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true})); return v; };"
                 + " const cd=set(codeEl, a.code); const rm=set(remEl, a.remark);"
@@ -184,7 +186,41 @@ public class Nationality extends BasePage {
         String res = r == null ? "" : r.toString();
         java.util.regex.Matcher m = java.util.regex.Pattern.compile("\\[models: ([^/]+) / ([^\\]]+)\\]").matcher(res);
         if (m.find()) { lastCodeModel = m.group(1).trim(); lastRemarkModel = m.group(2).trim(); }
-        return res;
+        // Country* became mandatory (build 2026.11.03.392.5): without it the INSERT fails with
+        // "Cannot insert the value NULL into column 'CountryId'".
+        return res + " | Country=" + ensureCountry();
+    }
+
+    /** The Country the form was last given (for the report). */
+    public String lastCountry = "";
+
+    /**
+     * Pick a Country in the mandatory <b>Country*</b> dropdown ({@code #drpCountry}, model
+     * {@code commonmaster.CountryId}, select2-wrapped): Malaysia when listed, else the first real option. Leaves
+     * an already chosen country alone. Returns the chosen country name, or a note when it could not be set.
+     */
+    public String ensureCountry() {
+        Object r = page.evaluate("() => { const A=window.angular;"
+                + " const sel=document.getElementById('drpCountry') || [...document.querySelectorAll('select')].find(s=>/country/i.test(s.getAttribute('ng-model')||''));"
+                + " if(!sel) return '(no Country field)';"
+                + " const real=[...sel.options].filter(o=>o.value && o.text.trim() && !/^ *-*select/i.test(o.text.trim()));"
+                + " if(!real.length) return '(Country list empty)';"
+                + " const cur=sel.selectedOptions && sel.selectedOptions[0];"
+                + " if(cur && cur.value && !/^ *-*select/i.test(cur.text.trim())) return cur.text.trim();"
+                + " const pick=real.find(o=>o.text.trim().toLowerCase()==='malaysia') || real[0];"
+                + " sel.value=pick.value; sel.dispatchEvent(new Event('change',{bubbles:true}));"
+                + " try{ if(window.jQuery && jQuery(sel).data('select2')) jQuery(sel).select2('val', pick.value); }catch(e){}"
+                // The option VALUE is Angular's hash ("number:134"); the MODEL must be the number 134. Never feed
+                // the hash to $setViewValue (that stores the string) — if the change event did not bind it, set the
+                // number on the scope's model directly.
+                + " try{ const c=A.element(sel).controller('ngModel'); if(c && (c.$modelValue===undefined || c.$modelValue===null || c.$modelValue==='')){"
+                + "   const sc=A.element(sel).scope(); const n=Number(String(pick.value).split(':').pop());"
+                + "   sc.$apply(function(){ sc.commonmaster = sc.commonmaster || {}; sc.commonmaster.CountryId = n; }); } }catch(e){}"
+                + " try{ if(window.jQuery && jQuery(sel).data('select2')) jQuery(sel).select2('val', pick.value); }catch(e){}"
+                + " return pick.text.trim(); }");
+        waitForAngular(400);
+        lastCountry = r == null ? "" : r.toString();
+        return lastCountry;
     }
 
     /**
@@ -213,6 +249,7 @@ public class Nationality extends BasePage {
         };
         page.onResponse(onResp);
 
+        ensureCountry();   // re-assert: the form can re-render between fill and Submit
         Object how = page.evaluate("(a) => { const A=window.angular; const norm=s=>(s||'').replace(/\\s+/g,' ').trim();" + FIND_FIELDS
                 + " const set=(e,v)=>{ if(!e) return; const c=A.element(e).controller('ngModel'); e.value=v; if(c){c.$setViewValue(v);c.$render();} e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true})); };"
                 + " set(codeEl, a.code); set(remEl, a.remark);"

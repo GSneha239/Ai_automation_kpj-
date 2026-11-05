@@ -80,24 +80,28 @@ public class Cluster extends BasePage {
             "Oncology Specialist Cluster", "General Surgery Cluster", "Womens Health Cluster"
     };
 
-    /** Bumped on every "already exists" retry so the regenerated description is genuinely unique. */
-    private int dupRetry = 0;
+    /** The Code / Remark entered last (after any 'already exists' retry — i.e. what was really submitted). */
+    public String lastDetails = "";
+    /** How many times Submit was pressed (&gt; 1 means the details were changed after 'already exists'). */
+    public int submitAttempts = 0;
+    /** Screenshot taken while the save toast was still on screen (the app navigates back to the list right after). */
+    public byte[] toastPng;
 
     public String fillCodeAndRemark() {
-        String code = "CL" + String.format("%05d", Math.abs(System.nanoTime() % 100000));
+        String code = "CL" + String.format("%05d", Math.abs(System.currentTimeMillis() % 100000));
         lastCode = code;
-        // The description used to be the HARD-CODED "Cardiology Specialist Cluster", so every run submitted the
-        // identical value and the save always came back "Description already exist!". Pick from a pool, and on a
-        // retry append a short number so the value cannot collide again.
-        lastRemark = REMARKS[(int) (Math.abs(System.nanoTime() / 1000) % REMARKS.length)]
-                + (dupRetry > 0 ? " " + (Math.abs(System.nanoTime()) % 10000) : "");
+        // The description used to be the HARD-CODED "Cardiology Specialist Cluster", then a 6-name pool — both used
+        // up on the shared QA environment ("Description already exists!" on the clean name, 2026-11-05). Stamp the
+        // name with the Code digits so it is unique by construction, on the first attempt and on any retry.
+        lastRemark = REMARKS[(int) (Math.abs(System.nanoTime() / 1000) % REMARKS.length)] + " " + code.substring(2);
         Object r = page.evaluate("(a) => { const A=window.angular;"
                 + " const set=(ng,v)=>{ const e=[...document.querySelectorAll(\"input[ng-model='\"+ng+\"'],textarea[ng-model='\"+ng+\"']\")].find(x=>x.offsetParent!==null); if(!e) return '(no)'; const c=A.element(e).controller('ngModel'); e.value=v; if(c){c.$setViewValue(v);c.$render();} e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true})); return v; };"
                 + " const cd=set('Cluster.code', a.code); const rm=set('Cluster.description', a.remark);"
                 + " return 'Code='+cd+' | Remark='+rm; }",
                 java.util.Map.of("code", code, "remark", lastRemark));
         waitForAngular(400);
-        return r == null ? "" : r.toString();
+        lastDetails = r == null ? "" : r.toString();
+        return lastDetails;
     }
 
     /** Rows in the "Select · Doctor Name · Delete" grid. */
@@ -191,7 +195,10 @@ public class Cluster extends BasePage {
     public String submitAndGetToast() { return submitAndGetToast(0); }
 
     private String submitAndGetToast(int attempt) {
+        submitAttempts++;
         Object tagged = page.evaluate("() => { window.__clToasts=[]; if(window.__clObs) window.__clObs.disconnect();"
+                // Keep the toast on screen so the screenshot below can show it (toastr otherwise fades it out).
+                + " try{ if(window.toastr && toastr.options){ toastr.options.timeOut=0; toastr.options.extendedTimeOut=0; toastr.options.fadeOut=0; toastr.options.hideDuration=0; } }catch(e){}"
                 + " try{ if(window.toastr) toastr.clear(); }catch(e){} document.querySelectorAll('#toast-container .toast, .toast-message').forEach(t=>t.remove());"
                 + " const grab=()=>{ document.querySelectorAll('.toast-message,.toast,[id^=toast]').forEach(el=>{ const t=(el.textContent||'').replace(/\\s+/g,' ').trim(); if(t && !window.__clToasts.includes(t)) window.__clToasts.push(t); }); };"
                 + " window.__clObs=new MutationObserver(grab); window.__clObs.observe(document.body,{childList:true,subtree:true}); grab();"
@@ -214,6 +221,11 @@ public class Cluster extends BasePage {
             page.waitForTimeout(2500);
             page.evaluate("() => { document.querySelectorAll('.toast-message,.toast,[id^=toast]').forEach(el=>{ const t=(el.textContent||'').replace(/\\s+/g,' ').trim(); if(t && !(window.__clToasts||[]).includes(t)) (window.__clToasts=window.__clToasts||[]).push(t); }); }");
         }
+        // Screenshot WHILE the toast is still showing (the app returns to the Cluster list right after a save). Let
+        // the toast finish fading in and the list reload first — timeOut=0 above keeps the toast from fading out.
+        waitForAngular(2500);
+        try { toastPng = page.screenshot(new Page.ScreenshotOptions().setTimeout(6000)); }
+        catch (Exception e) { System.out.println("Cluster: toast screenshot failed - " + e.getMessage()); }
         Object r = page.evaluate("() => { const a=window.__clToasts||[]; return a.find(x=>/(cluster|record|master).*(saved|added)|saved success|added success|success/i.test(x)) || a.find(x=>x) || ''; }");
         waitForAngular(400);
         String toast = r == null ? "" : r.toString().trim();
@@ -221,7 +233,6 @@ public class Cluster extends BasePage {
         // (dupRetry makes the description unique) and submit again. The doctor row already sits in the grid.
         if (attempt < 2 && toast.toLowerCase().matches(".*(exist|already).*")) {
             System.out.println("submitAndGetToast: \"" + toast + "\" — regenerating the details and retrying");
-            dupRetry++;
             fillCodeAndRemark();
             return submitAndGetToast(attempt + 1);
         }

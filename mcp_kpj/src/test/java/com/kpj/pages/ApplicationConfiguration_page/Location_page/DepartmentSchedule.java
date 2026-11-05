@@ -205,6 +205,55 @@ public class DepartmentSchedule extends BasePage {
         return lastDepartment;
     }
 
+    /** A Department name as compared here: lower case, single spaces. */
+    public static String normName(String s) { return s == null ? "" : s.replaceAll("\\s+", " ").trim().toLowerCase(); }
+
+    /**
+     * The Departments that already hold a schedule, read from the LIST screen's grid (call it before clicking Add). Each Department can hold only
+     * ONE schedule, and on the shared environment most are used up: picking blindly cost ~25 s per rejected try, up to 40 tries. Returns the
+     * normalised names (see {@link #normName}); empty when the grid could not be read, in which case the caller falls back to the index walk.
+     */
+    public java.util.Set<String> scheduledDepartments() {
+        java.util.Set<String> out = new java.util.HashSet<>();
+        try {
+            Object r = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim().toLowerCase(); const A=window.angular;"
+                    + " const byDept=new Set(), anyStr=new Set(); let rows=0;"
+                    + " [...document.querySelectorAll('[ui-grid],.ui-grid,[id^=grid]')].forEach(g=>{ let d=null;"
+                    + "   try{ const sc=A.element(g).scope(); d=sc && sc.gridOptions && sc.gridOptions.data; }catch(e){}"
+                    + "   if(Array.isArray(d)) d.forEach(row=>{ rows++; Object.keys(row||{}).forEach(k=>{ const v=row[k];"
+                    + "     if(typeof v==='string' && v.trim()){ anyStr.add(norm(v)); if(/depart/i.test(k)) byDept.add(norm(v)); } }); }); });"
+                    + " return rows ? [...(byDept.size?byDept:anyStr)] : []; }");
+            if (r instanceof java.util.List) for (Object o : (java.util.List<?>) r) out.add(String.valueOf(o));
+        } catch (Exception e) { System.out.println("DepartmentSchedule.scheduledDepartments: " + e.getMessage()); }
+        return out;
+    }
+
+    /**
+     * Select the first <b>Department</b> that is not in {@code used} (and remember nothing else). Returns its name, or "" when every Department
+     * in the list already holds a schedule.
+     */
+    public String selectFreeDepartment(java.util.Set<String> used) {
+        Object idx = page.evaluate("([m,usedArr]) => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim().toLowerCase(); const u=new Set(usedArr);"
+                + " const s=[...document.querySelectorAll('select')].find(x=>(x.getAttribute('ng-model')||'')===m); if(!s) return -1;"
+                + " const real=[...s.options].filter(o=>o.value && !/^-*\\s*select|^\\s*$/i.test((o.textContent||'').trim()));"
+                + " return real.findIndex(o=>!u.has(norm(o.textContent))); }",
+                java.util.Arrays.asList("deptScheduleInfo.Departmentid", new java.util.ArrayList<>(used)));
+        int n;
+        try { n = (int) Double.parseDouble(String.valueOf(idx)); } catch (Exception e) { n = -1; }
+        if (n < 0) { lastDepartment = ""; return ""; }
+        return selectDepartment(n);
+    }
+
+    /** {@link #fillAll} with the Department chosen from the ones that hold no schedule yet. */
+    public String fillAllFree(java.util.Set<String> used, String start, String end, String... days) {
+        String loc = selectLocation();
+        String dept = selectFreeDepartment(used);
+        String times = fillTimes(start, end);
+        String d = tickDays(days);
+        String added = clickInnerAdd();
+        return "Location=" + loc + " | Department=" + dept + " | " + times + " | Days=" + d + " | " + added;
+    }
+
     /**
      * Enter <b>Start Time</b> and <b>End Time</b>. Each field is a timepicker: a text box (ng-model
      * {@code inputTime}) plus <b>hours</b>/<b>minutes</b> spinners and an AM/PM button — and it is the SPINNERS

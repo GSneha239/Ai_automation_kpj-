@@ -150,7 +150,10 @@ public class PricingPolicyMaster extends BasePage {
         // Base Pricing Policy (a Select2 dropdown over tariffDetails.base_tariffid, ~210 payors) — the first real option.
         // The base policy supplies the services (and their rates) that the Service search offers, so prefer the main Self-Pay /
         // Cash tariff, which carries the full rate list; the first option on the list is an insurer tariff with no rates.
-        lastBasePolicy = selectMatching("tariffDetails.base_tariffid", "^\\s*self\\s*-?\\s*pay\\b.*|.*\\bcash\\s+customer\\b.*");
+        // EXACTLY "SELFPAY / CASH CUSTOMER" first: the looser "Self-Pay …" pattern now also matches policies other runs created ("Self-Pay Rate Update 2" from the Price
+        // Revision test — a bare policy with no rates), and when that one came first in the list the Service search returned nothing and the detail line could not be added.
+        lastBasePolicy = selectMatching("tariffDetails.base_tariffid", "^\\s*self\\s*-?\\s*pay\\s*/\\s*cash\\s+customer\\s*$");
+        if (lastBasePolicy.startsWith("(")) lastBasePolicy = selectMatching("tariffDetails.base_tariffid", "^\\s*self\\s*-?\\s*pay\\b.*|.*\\bcash\\s+customer\\b.*");
         if (lastBasePolicy.startsWith("(")) lastBasePolicy = selectOrdinal("tariffDetails.base_tariffid", 1);
         String loc = "(none)";
         Object tagged = page.evaluate("() => { const cb=[...document.querySelectorAll(\"input[type=checkbox][ng-model='loc.IsSelected']\")].find(x=>x.offsetParent!==null && !x.checked); if(!cb) return false; cb.id='__ppLoc'; return true; }");

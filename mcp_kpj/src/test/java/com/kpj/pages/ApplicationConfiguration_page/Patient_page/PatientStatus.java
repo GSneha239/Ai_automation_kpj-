@@ -88,17 +88,28 @@ public class PatientStatus extends BasePage {
 
     /** Enter <b>Code*</b> ({@code commonmaster.Code}) and <b>Remark*</b> ({@code commonmaster.Description}). */
     public String fillDetails() {
-        String code = "PS" + String.format("%05d", Math.abs(System.nanoTime() % 100000));
+        String code = "PS" + String.format("%05d", Math.abs(System.currentTimeMillis() % 100000));
         lastCode = code;
-        lastRemark = new String[]{"Admitted","Discharged","Under Observation","Stable","Critical","Referred Out"}[(int)(Math.abs(System.nanoTime())%6)];
+        // Stamp the name with the Code digits so it is unique by construction — the 6-name pool is used up on the
+        // shared QA environment ("Description already exists!" on the clean name, 2026-11-05).
+        lastRemark = new String[]{"Admitted","Discharged","Under Observation","Stable","Critical","Referred Out"}[(int)(Math.abs(System.nanoTime())%6)]
+                + " " + code.substring(2);
         Object r = page.evaluate("(a) => { const A=window.angular;"
                 + " const set=(ng,v)=>{ const e=[...document.querySelectorAll(\"input[ng-model='\"+ng+\"'],textarea[ng-model='\"+ng+\"']\")].find(x=>x.offsetParent!==null); if(!e) return '(no)'; const c=A.element(e).controller('ngModel'); e.value=v; if(c){c.$setViewValue(v);c.$render();} e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true})); return v; };"
                 + " const cd=set('commonmaster.Code', a.code); const rm=set('commonmaster.Description', a.remark);"
                 + " return 'Code='+cd+' | Remark='+rm; }",
                 java.util.Map.of("code", code, "remark", lastRemark));
         waitForAngular(500);
-        return r == null ? "" : r.toString();
+        lastDetails = r == null ? "" : r.toString();
+        return lastDetails;
     }
+
+    /** The Code / Remark that were entered last (after any 'already exists' retry — i.e. what was really submitted). */
+    public String lastDetails = "";
+    /** How many times Submit was pressed (&gt; 1 means the details were changed after 'already exists'). */
+    public int submitAttempts = 0;
+    /** Screenshot of the FILLED form taken just before the last Submit (the Submit can clear the form). */
+    public byte[] filledPng;
 
     /**
      * Submit the inline commonmaster form ({@code fnIUDCommonMaster()}) and return the toast. Re-applies
@@ -115,6 +126,10 @@ public class PatientStatus extends BasePage {
         String last = "";
         for (int attempt = 0; attempt < 3; attempt++) {
             waitForAngular(500);
+            submitAttempts++;
+            // The form is already filled (fillDetails) — screenshot it BEFORE Submit, which clears the form / shows a toast.
+            try { filledPng = page.screenshot(new Page.ScreenshotOptions().setTimeout(8000)); }
+            catch (Exception e) { System.out.println("PatientStatus: filled-form screenshot failed - " + e.getMessage()); }
             Object res = page.evaluate("(a) => { const A=window.angular; const code=a.code, desc=a.remark;"
                     + " const setInp=(ng,v)=>{ const e=[...document.querySelectorAll(\"[ng-model='\"+ng+\"']\")].find(x=>x.offsetParent!==null); if(!e) return; const c=A.element(e).controller('ngModel'); e.value=v; if(c){c.$setViewValue(v);c.$render();} e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true})); };"
                     + " setInp('commonmaster.Code', code); setInp('commonmaster.Description', desc);"
@@ -148,12 +163,8 @@ public class PatientStatus extends BasePage {
             // details (fillDetails() picks a fresh Code and a different description) and try again.
             if (last.toLowerCase().matches(".*(exist|already).*")) {
                 System.out.println("submitAndGetToast: \"" + last + "\" — regenerating the details and retrying");
+                // fillDetails() picks a fresh Code and stamps the name with its digits, so the retry is unique too.
                 fillDetails();
-                // The realistic-name pool is SMALL and this environment already holds EVERY entry, so
-                // picking another name collides again — that is why the retries kept failing. Append a
-                // short number so the retry is genuinely unique, while still reading like configuration
-                // ("Peanut 4821", not machine noise). The FIRST attempt keeps the clean name.
-                lastRemark = lastRemark + " " + (Math.abs(System.nanoTime()) % 10000);
             }
             page.evaluate("() => { window.__psToasts=[]; document.querySelectorAll('.toast-message,.toast').forEach(t=>t.remove()); }");
         }

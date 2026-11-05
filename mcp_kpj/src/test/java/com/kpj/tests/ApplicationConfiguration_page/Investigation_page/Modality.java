@@ -68,11 +68,16 @@ public class Modality extends DevHisBase {
 
         // 2) .. 4) fields -> dropdowns -> Submit; retry with different details on "already exists".
         String details = "", picks = "", toast = "";
+        byte[] fieldsPng = null, picksPng = null;   // the form after the five values, and after Department + Equipment, each shot BEFORE Submit (afterwards the form has moved on)
         boolean ok = false, exists = false;
         int used = 0;
         for (int attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
             details = md.fillDetails(attempt);
+            try { fieldsPng = page.screenshot(new com.microsoft.playwright.Page.ScreenshotOptions().setTimeout(8000)); }
+            catch (Exception e) { System.out.println("Modality: could not shoot the filled fields - " + String.valueOf(e.getMessage()).split("\n")[0]); }
             picks = md.selectDepartmentAndEquipment();
+            try { picksPng = page.screenshot(new com.microsoft.playwright.Page.ScreenshotOptions().setTimeout(8000)); }
+            catch (Exception e) { System.out.println("Modality: could not shoot the filled form - " + String.valueOf(e.getMessage()).split("\n")[0]); }
             used++;
             toast = md.submitAndGetToast();
             String tl = toast == null ? "" : toast.toLowerCase();
@@ -84,16 +89,18 @@ public class Modality extends DevHisBase {
         }
 
         boolean detOk = !details.contains("(no field)");
-        step(page, "Enter Code, Remark, Ae Title, Time Slot and No. of Patient",
-                "Enter Code* (unique), Remark*, Ae Title, Time Slot and No. of Patient",
-                "All five values are entered",
-                details + "  [" + codeStyle + "]" + (used > 1 ? "  [details changed " + (used - 1) + "x after 'already exists']" : ""),
-                detOk ? "PASS" : "FAIL");
+        String detShown = details + "  [" + codeStyle + "]" + (used > 1 ? "  [details changed " + (used - 1) + "x after 'already exists']" : "");
+        if (fieldsPng != null && fieldsPng.length > 0)
+            step(fieldsPng, "Enter Code, Remark, Ae Title, Time Slot and No. of Patient", "Enter Code* (unique), Remark*, Ae Title, Time Slot and No. of Patient", "All five values are entered", detShown, detOk ? "PASS" : "FAIL");
+        else
+            step(page, "Enter Code, Remark, Ae Title, Time Slot and No. of Patient", "Enter Code* (unique), Remark*, Ae Title, Time Slot and No. of Patient", "All five values are entered", detShown, detOk ? "PASS" : "FAIL");
 
         boolean picksOk = !picks.contains("(not selected)");
-        step(page, "Select Department and Equipment", "Select a Department and an Equipment",
-                "Department and Equipment are selected",
-                picksOk ? picks : picks + "\n" + md.describeForm(), picksOk ? "PASS" : "FAIL");
+        String picksShown = picksOk ? picks : picks + "\n" + md.describeForm();
+        if (picksPng != null && picksPng.length > 0)
+            step(picksPng, "Select Department and Equipment", "Select a Department and an Equipment", "Department and Equipment are selected", picksShown, picksOk ? "PASS" : "FAIL");
+        else
+            step(page, "Select Department and Equipment", "Select a Department and an Equipment", "Department and Equipment are selected", picksShown, picksOk ? "PASS" : "FAIL");
 
         String actual = toast == null || toast.isEmpty() ? "No toast appeared\n" + md.describeForm()
                 : (ok ? toast

@@ -60,11 +60,14 @@ public class Payor extends DevHisBase {
 
         // 3) + 4) Enter fields, Submit — retry with different details on "already exists".
         String fill = "", toast = "";
+        byte[] filledPng = null;   // the form with every field filled, shot just BEFORE Submit (after a save the screen has moved on to the list)
         boolean ok = false, exists = false;
         int used = 0;
         for (int attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
             fill = py.fillDetails(attempt);
             used++;
+            try { filledPng = page.screenshot(new com.microsoft.playwright.Page.ScreenshotOptions().setTimeout(8000)); }
+            catch (Exception e) { System.out.println("Payor: could not shoot the filled form - " + String.valueOf(e.getMessage()).split("\n")[0]); }
             toast = py.submitAndGetToast();
             String tl = toast == null ? "" : toast.toLowerCase();
             ok = tl.contains("saved") || tl.contains("success") || tl.contains("added") || tl.contains("updated");
@@ -76,9 +79,12 @@ public class Payor extends DevHisBase {
         boolean fillOk = fill != null && fill.contains("PayableCode=PY") && !fill.contains("PayorType=(no")
                 && !fill.contains("Payor=(no") && !fill.contains("Email=(no") && !fill.contains("PayorStatus=(no");
         String fillActual = fill + (used > 1 ? "  [details changed " + (used - 1) + "x after 'already exists']" : "");
-        step(page, "Enter Payor Type, Payable Code, Payor, Phone, E-mail, Contact Person, Payor Status",
-                "Enter Payor Type, Payable Code, Payor, Primary Phone No, E-mail, Primary Contact Person and select Payor Status",
-                "All fields are entered", fillActual, fillOk ? "PASS" : "FAIL");
+        String fillName = "Enter Payor Type, Payable Code, Payor, Phone, E-mail, Contact Person, Payor Status";
+        String fillDesc = "Enter Payor Type, Payable Code, Payor, Primary Phone No, E-mail, Primary Contact Person and select Payor Status";
+        if (filledPng != null && filledPng.length > 0)
+            step(filledPng, fillName, fillDesc, "All fields are entered", fillActual, fillOk ? "PASS" : "FAIL");
+        else
+            step(page, fillName, fillDesc, "All fields are entered", fillActual, fillOk ? "PASS" : "FAIL");
 
         String actual = toast == null || toast.isEmpty() ? "No toast appeared"
                 : (ok ? toast : (exists ? "Still 'already exists' after " + used + " attempt(s) with different details: \"" + toast + "\""

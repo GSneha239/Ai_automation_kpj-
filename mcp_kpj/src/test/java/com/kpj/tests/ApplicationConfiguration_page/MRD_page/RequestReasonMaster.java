@@ -55,13 +55,24 @@ public class RequestReasonMaster extends DevHisBase {
                 on ? "PASS" : "FAIL");
         if (!on) { addSummary("Result", "FAILED - the page is wrong: " + landed + why); return; }
 
-        String details = rr.fillDetails();
-        boolean detOk = details.contains("Code=RR") && !details.contains("(no field)");
-        step(page, "Enter Code and Remark", "Enter Code* (unique) and Remark*",
-                "Code and Remark are entered",
-                details + (detOk ? "" : " || form offered: " + rr.describeForm()), detOk ? "PASS" : "FAIL");
-
+        String formBefore = rr.fillDetails();
+        boolean fillOk = formBefore.contains("Code=RR") && !formBefore.contains("(no field)");
+        String formOffered = fillOk ? "" : " || form offered: " + rr.describeForm();
         String toast = rr.submitAndGetToast();
+
+        // Step 3 is recorded AFTER Submit so it reports the Code/Remark that were really submitted (the page
+        // object changes them and retries on "already exists") with the filled-form screenshot taken just
+        // before that Submit.
+        String details = rr.lastDetails;
+        boolean detOk = details.contains("Code=RR") && !details.contains("(no field)");
+        String detActual = details + (rr.submitAttempts > 1 ? "  [details changed " + (rr.submitAttempts - 1) + "x after 'already exists']" : "") + formOffered;
+        if (rr.filledPng != null && rr.filledPng.length > 0) {
+            step(rr.filledPng, "Enter Code and Remark", "Enter Code* (unique) and Remark*",
+                    "Code and Remark are entered", detActual, detOk ? "PASS" : "FAIL");
+        } else {
+            step(page, "Enter Code and Remark", "Enter Code* (unique) and Remark*",
+                    "Code and Remark are entered", detActual, detOk ? "PASS" : "FAIL");
+        }
         String tl = toast == null ? "" : toast.toLowerCase();
         // The message itself is the assertion: ONLY a success toast passes.
         boolean ok = tl.contains("saved") || tl.contains("success") || tl.contains("added") || tl.contains("updated");

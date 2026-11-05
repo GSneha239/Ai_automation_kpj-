@@ -127,7 +127,13 @@ public class ExistingPatientAppointmentPage extends BookAppointmentPage {
      * Booking Type/Appointment Type keep the same values {@link BookAppointmentPage} uses (both resolve
      * correctly). Returns a summary of what was actually selected for each.
      */
-    public String fillAppointmentConfig() {
+    public String fillAppointmentConfig() { return fillAppointmentConfig(true); }
+
+    /**
+     * Same as {@link #fillAppointmentConfig()}; {@code pickDoctor=false} leaves the Doctor box alone. An appointment booked by Appointment Type
+     * "Department" needs no Doctor (the page disables the Doctor box for that type and books against the Department's own schedule).
+     */
+    public String fillAppointmentConfig(boolean pickDoctor) {
         Object r = page.evaluate("() => {"
                 + " const setSelFirst=(ng)=>{ const e=[...document.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')===ng); if(!e) return ng+':no-select';"
                 + "   const i=[...e.options].findIndex(o=>o.value && o.value!=='?' && (o.text||'').trim() && !/^-select-$/i.test((o.text||'').trim()));"
@@ -140,7 +146,7 @@ public class ExistingPatientAppointmentPage extends BookAppointmentPage {
                 + " return {payor, booking, apptType, dept}; }");
         @SuppressWarnings("unchecked") java.util.Map<String, Object> m = (java.util.Map<String, Object>) r;
         waitForAngular(1000);   // Doctor list (re)loads after Department changes
-        Object doctor = page.evaluate("() => { const e=[...document.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')==='PatientData.DoctorModalityID'); if(!e) return 'PatientData.DoctorModalityID:no-select';"
+        Object doctor = !pickDoctor ? "(none - a Department appointment needs no Doctor)" : page.evaluate("() => { const e=[...document.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')==='PatientData.DoctorModalityID'); if(!e) return 'PatientData.DoctorModalityID:no-select';"
                 + " const i=[...e.options].findIndex(o=>o.value && o.value!=='?' && !/^-select-$/i.test((o.text||'').trim())); if(i<0) return 'PatientData.DoctorModalityID:no-real-opt';"
                 + " e.selectedIndex=i; e.dispatchEvent(new Event('change',{bubbles:true})); const $=window.jQuery; if($){try{$(e).trigger('change');}catch(err){}}"
                 + " return 'PatientData.DoctorModalityID:'+e.options[i].text.trim(); }");
@@ -180,9 +186,12 @@ public class ExistingPatientAppointmentPage extends BookAppointmentPage {
      * empty text/date field is reported but not guessed at, since there is no safe generic default for those).
      * Returns "" when everything was already filled, else a description of what was found empty and/or fixed.
      */
-    public String checkAndFillMandatoryFields() {
-        Object r = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                + " const selNgModels=['PatientData.receivabletypeid','PatientData.BookingTypeID','PatientData.AppointmentTypeID','PatientData.DepartmentID','PatientData.DoctorModalityID'];"
+    public String checkAndFillMandatoryFields() { return checkAndFillMandatoryFields(true); }
+
+    /** Same check; {@code doctorRequired=false} (Appointment Type Department) does not fill or flag the Doctor box. */
+    public String checkAndFillMandatoryFields(boolean doctorRequired) {
+        Object r = page.evaluate("(needDoc) => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                + " const selNgModels=['PatientData.receivabletypeid','PatientData.BookingTypeID','PatientData.AppointmentTypeID','PatientData.DepartmentID','PatientData.DoctorModalityID'].filter(n=>needDoc||n!=='PatientData.DoctorModalityID');"
                 + " const fixed=[], stillEmpty=[];"
                 + " selNgModels.forEach(ng => { const e=[...document.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')===ng); if(!e) return;"
                 + "   const cur=norm(e.options[e.selectedIndex] ? e.options[e.selectedIndex].text : '');"
@@ -193,7 +202,7 @@ public class ExistingPatientAppointmentPage extends BookAppointmentPage {
                 + " const inpNgModels=['PatientData.AppointmentDate','PatientData.FromApptTime','PatientData.ToApptTime'];"
                 + " inpNgModels.forEach(ng => { const e=[...document.querySelectorAll('input,textarea')].find(x=>x.getAttribute('ng-model')===ng && x.offsetParent!==null);"
                 + "   if(e && !(e.value||'').trim()) stillEmpty.push(ng+' (empty text field)'); });"
-                + " return {fixed, stillEmpty}; }");
+                + " return {fixed, stillEmpty}; }", doctorRequired);
         @SuppressWarnings("unchecked") java.util.Map<String, Object> m = (java.util.Map<String, Object>) r;
         waitForAngular(500);
         java.util.List<?> fixed = (java.util.List<?>) m.get("fixed");

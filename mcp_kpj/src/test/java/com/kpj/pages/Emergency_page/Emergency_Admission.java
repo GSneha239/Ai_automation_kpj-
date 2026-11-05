@@ -175,7 +175,103 @@ public class Emergency_Admission extends BasePage {
         String doc = ensureDoctorSelected();
         String cash = ensureCashCounterSelected();
         String others = ensureAdmissionDropdowns();
-        return "Admission: " + (rest == null ? "" : rest.toString().trim()) + " | " + dept + " | " + doc + " | " + cash + " | " + others;
+        String bound = bindEmptyMandatorySelects();
+        return "Admission: " + (rest == null ? "" : rest.toString().trim()) + " | " + dept + " | " + doc + " | " + cash + " | " + others
+                + (bound.isEmpty() ? "" : " | bound-after-fill: " + bound);
+    }
+
+    /**
+     * Select a real option in every MANDATORY dropdown of the form that is still empty, then read the model back.
+     *
+     * <p>The known-good ids assigned in {@link #fillAdmissionSection()} cover Department, Doctor, Type, Source, Bed Class, Ward, Billing
+     * Class and Purpose, but the <b>Admission Information</b> panel (collapsed on load) also has <b>Ref Entity Type*</b> and the
+     * dependent <b>Ref Entity Name*</b>, Primary Doctor*, Encounter Type* and Room Type* - nothing here ever touched them, so Save
+     * answered "Please Select Ref Entity type !" (2026-11-04). Same remedy as IP &gt; Admission: expand the panel, bind each empty one to
+     * its first real option and give a dependent list (Ref Entity Name loads from a server call after the type changes) up to three more
+     * passes, ~2 s apart.</p>
+     *
+     * @return the fields it had to fix ("" when everything was already bound)
+     */
+    public String bindEmptyMandatorySelects() {
+        page.evaluate("() => { const p=document.querySelector('#collapseFour');"
+                + " if(p && !p.classList.contains('in')){ const h=document.querySelector(\"a[href='#collapseFour'],[data-target='#collapseFour']\"); if(h) h.click(); } }");
+        waitForAngular(700);
+        StringBuilder all = new StringBuilder();
+        String s = "";
+        for (int pass = 0; pass < 4; pass++) {
+            s = bindOnce();
+            if (!s.isEmpty()) { if (all.length() > 0) all.append(" ; "); all.append(s); }
+            if (!s.contains("(no options)")) break;
+            waitForAngular(2000);
+        }
+        String result = all.toString();
+        if (!result.isEmpty()) {
+            System.out.println("Emergency bindEmptyMandatorySelects: " + result);
+            com.kpj.core.Reasons.add("mandatory dropdown(s) had no value after the fill - " + result
+                    + (s.contains("(no options)") ? " ['(no options)' = that list is EMPTY on this environment]" : " [bound to the first option]"));
+            waitForAngular(900);
+        }
+        return result;
+    }
+
+    /**
+     * "Reason of Admission Payment Type/ Financial Class" ({@code Admission.ReasonOfAdmission}, a plain text box) - mandatory on Save:
+     * with it empty the Emergency Admission answers "Please Enter Reason of Admission Payment Type/ Financial Class!" (2026-11-04, build
+     * v2026.11.03.392.5). Filled only when empty, judged by the Angular MODEL as well as the shown text (a later re-bind can reset the model
+     * while the text stays on screen). Same routine as IP &gt; Admission. Returns what was done, "" when absent or already filled.
+     */
+    public String fillReasonOfAdmissionIfEmpty() {
+        Object r = page.evaluate("() => { const A=window.angular; const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                + " const vis=x=>!!x && !!(x.offsetWidth||x.offsetHeight||x.getClientRects().length);"
+                + " let e=[...document.querySelectorAll('select,input,textarea')].find(x=>(x.getAttribute('ng-model')||'')==='Admission.ReasonOfAdmission');"
+                + " let via='';"
+                + " if(!e){"
+                + "   const lab=[...document.querySelectorAll('label')].find(l=>/reason\\s*of\\s*admission/i.test(norm(l.textContent)) && vis(l));"
+                + "   if(lab){"
+                + "     e=(lab.htmlFor && document.getElementById(lab.htmlFor)) || [...document.querySelectorAll('select,input,textarea')]"
+                + "       .find(x=>(lab.compareDocumentPosition(x)&Node.DOCUMENT_POSITION_FOLLOWING) && vis(x) && !/^(hidden|checkbox|radio)$/i.test(x.type||''));"
+                + "     if(e) via=' [found by its label, ng-model='+(e.getAttribute('ng-model')||'?')+']'; } }"
+                + " if(!e) return '';"
+                + " if(e.tagName==='SELECT'){ const real=o=>o.value && !/^-*\\s*select\\s*-*$/i.test(norm(o.textContent));"
+                + "   const cur=e.options[e.selectedIndex]; if(cur && real(cur)) return '';"
+                + "   const i=[...e.options].findIndex(real); if(i<0) return '(dropdown has no options)';"
+                + "   e.selectedIndex=i; e.dispatchEvent(new Event('change',{bubbles:true})); try{ A.element(e).triggerHandler('change'); }catch(x){}"
+                + "   const $=window.jQuery; if($){ try{ $(e).trigger('change'); }catch(x){} }"
+                + "   return 'dropdown = '+norm(e.options[e.selectedIndex].textContent)+via; }"
+                + " const c=A.element(e).controller('ngModel'); const mv=c?String(c.$modelValue==null?'':c.$modelValue).trim():String(e.value||'').trim();"
+                + " const shown=(e.value||'').trim();"
+                + " if(shown && mv) return '';"
+                + " const v='Auto reason of admission'; e.focus(); e.value=v; if(c){ c.$setViewValue(v); c.$render(); }"
+                + " e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true})); e.dispatchEvent(new Event('blur',{bubbles:true}));"
+                + " return 'text = '+v+via+(shown && !mv ? ' [the box showed text but its model was empty - entered again]' : ''); }");
+        waitForAngular(300);
+        return r == null ? "" : r.toString();
+    }
+
+    /** One pass over the mandatory dropdowns that hold no value: bind each to its first real option (Encounter Type: the emergency one). */
+    private String bindOnce() {
+        Object r = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                + " const A=window.angular; const $=window.jQuery;"
+                + " const labelOf=e=>{ let n=e.closest('.form-group,.form-line,.row,.col-sm-2,.col-sm-3,.col-sm-4,.col-sm-6,.col-md-2,.col-md-3,.col-md-4,.col-md-6,td,div');"
+                + "   for(let i=0;i<5&&n;i++){ const l=n.querySelector('label,.control-label'); if(l && norm(l.textContent)) return norm(l.textContent); n=n.parentElement; } return ''; };"
+                + " const chosen=e=>{ const o=e.options[e.selectedIndex]; const t=o?norm(o.textContent):'';"
+                + "   return (o && o.value && !/^-*\\s*select\\s*-*$/i.test(t)) ? t : ''; };"
+                + " const out=[];"
+                + " [...document.querySelectorAll('select')].filter(e=>e.offsetParent!==null)"
+                + "  .filter(e=>(e.getAttribute('ng-model')||'').indexOf('colFilter')<0 && (e.getAttribute('ng-model')||'').indexOf('grid.')<0)"
+                + "  .forEach(e=>{ const lab=labelOf(e);"
+                // Pricing Policy is only needed (and only populated) for an Insurance payor, so an empty one is not a defect here.
+                + "    if(/pricing\\s*policy/i.test(lab)) return;"
+                + "    const mandatory=/\\*/.test(lab) || e.hasAttribute('required') || e.hasAttribute('ng-required');"
+                + "    if(!mandatory || chosen(e)) return;"
+                + "    const real=[...e.options].filter(o=>o.value && !/^-*\\s*select\\s*-*$/i.test(norm(o.textContent)));"
+                + "    if(!real.length){ out.push(lab.replace(/\\*/g,'').trim()+'=(no options)'); return; }"
+                + "    const pick=((/encounter\\s*type/i.test(lab)) && real.find(o=>/emergency/i.test(norm(o.textContent)))) || real[0];"
+                + "    e.value=pick.value; e.dispatchEvent(new Event('change',{bubbles:true}));"
+                + "    try{A.element(e).triggerHandler('change');}catch(x){} if($){try{$(e).trigger('change');}catch(x){}}"
+                + "    out.push(lab.replace(/\\*/g,'').trim()+'='+(chosen(e)||'(did not bind)')); });"
+                + " return out.join(', '); }");
+        return r == null ? "" : r.toString();
     }
 
     /**
@@ -331,6 +427,11 @@ public class Emergency_Admission extends BasePage {
                             "mobile", pMobile == null ? "" : pMobile, "email", pEmail == null ? "" : pEmail, "nric", pNric == null ? "" : pNric));
             waitForAngular(900);
         }
+        // The Department/Doctor cascades above can drop a mandatory box (Ref Entity Name reloads after its type) - re-bind any left empty.
+        { String b = bindEmptyMandatorySelects(); if (!b.isEmpty()) System.out.println("saveAdmission: re-bound " + b); }
+        // Entered right before Save, not in the fill step: on IP > Admission the same box entered early made Save refuse with an unnamed
+        // "Please fill in all the mandatory fields!", and typed just before Save it saves.
+        { String rsn = fillReasonOfAdmissionIfEmpty(); if (!rsn.isEmpty()) System.out.println("saveAdmission: Reason of Admission " + rsn); }
         page.evaluate("(a) => { window.__adToasts=[]; if(window.__adObs) window.__adObs.disconnect();"
                 + " const grab=()=>{ document.querySelectorAll('.toast-message,.toast,[id^=toast]').forEach(el=>{ const t=(el.textContent||'').replace(/\\s+/g,' ').trim(); if(t && !window.__adToasts.includes(t)) window.__adToasts.push(t); }); };"
                 + " window.__adObs=new MutationObserver(grab); window.__adObs.observe(document.body,{childList:true,subtree:true}); grab();"

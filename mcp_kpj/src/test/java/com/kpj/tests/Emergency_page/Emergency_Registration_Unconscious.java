@@ -7,7 +7,7 @@ import com.kpj.pages.LoginPage;
 import com.microsoft.playwright.Page;
 
 /**
- * TC11 - Emergency &gt; <b>Emergency Registration (Unconscious)</b>.
+ * Emergency &gt; <b>Emergency Registration (Unconscious)</b>.
  *
  * <ol>
  *   <li>Click Emergency → Emergency Registration (Unconscious) ({@code #/EmergencyRegistration}).</li>
@@ -21,7 +21,7 @@ import com.microsoft.playwright.Page;
  */
 public class Emergency_Registration_Unconscious extends DevHisBase {
 
-    public Emergency_Registration_Unconscious() { super("TC11_EmergencyRegistrationUnconscious"); }
+    public Emergency_Registration_Unconscious() { super("emergency_EmergencyRegistrationUnconscious"); }
 
     public static void main(String[] args) {
         Emergency_Registration_Unconscious t = new Emergency_Registration_Unconscious();
@@ -73,9 +73,11 @@ public class Emergency_Registration_Unconscious extends DevHisBase {
 
         com.kpj.pages.Emergency_page.Emergency_Registration_Unconscious er =
                 new com.kpj.pages.Emergency_page.Emergency_Registration_Unconscious(page);
-        er.navigateTo(BASE);
-        step("Open Emergency Registration (Unconscious)", "Emergency → Emergency Registration (Unconscious) (#/EmergencyRegistration)",
-                "The Emergency Registration form is shown", "Form opened", "PASS");
+        boolean opened = er.navigateViaMenu();
+        step(page, "Open Emergency Registration (Unconscious) screen", "Click Emergency -> Emergency Registration (Unconscious)",
+                "The Emergency Registration (Unconscious) screen is shown",
+                opened ? "Opened " + page.url() : "Did NOT reach the screen (" + page.url() + ")", opened ? "PASS" : "FAIL");
+        if (!opened) { addSummary("Result", "FAILED - Emergency Registration (Unconscious) not reached"); return; }
 
         String regType = er.selectRegType(registered ? "Registered" : "New");
         String regDetail;

@@ -157,9 +157,12 @@ public class PatientRelation extends BasePage {
      * "already exists" toast submits genuinely different details.
      */
     public String fillDetails(int attempt) {
-        String code = "PR" + String.format("%05d", Math.abs((System.nanoTime() + attempt * 7919L) % 100000));
+        // Code from the wall clock (nanoTime remainders can end in "00" on this machine, leaving only ~1,000 distinct values).
+        String code = "PR" + String.format("%05d", (System.currentTimeMillis() + attempt * 7919L) % 100000);
         lastCode = code;
-        lastRemark = REMARKS[attempt % REMARKS.length] + (attempt >= REMARKS.length ? " " + (attempt / REMARKS.length + 1) : "");
+        // The server keeps every saved Description (Remark) for good and refuses a repeat ("Description already exists!"): pool name + counter was used up (all 40 attempts refused).
+        // Stamp the Remark with the Code's own digits, so it is unique on the first attempt and never used up.
+        lastRemark = REMARKS[attempt % REMARKS.length] + " " + code.substring(2);
         Object r = page.evaluate("(a) => { const A=window.angular;" + FIND_FIELDS
                 + " const set=(e,v)=>{ if(!e) return '(no field)'; const c=A.element(e).controller('ngModel'); e.value=v; if(c){c.$setViewValue(v);c.$render();} e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true})); return v; };"
                 + " const cd=set(codeEl, a.code); const rm=set(remEl, a.remark);"

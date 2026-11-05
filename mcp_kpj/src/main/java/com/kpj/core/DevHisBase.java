@@ -28,16 +28,86 @@ public abstract class DevHisBase {
 
     /** Runs this test: start browser (unless attached) -> body() -> ALWAYS write its own report. */
     public final void run() {
-        start();
-        installReloadPopupWatcher();
+        // The watchdog starts FIRST, so a hang while the browser starts, in the popup watcher, or in the login (the first lines of a test) is cut off too.
+        java.util.Timer watchdog = startWatchdog();
         try {
-            body();
-        } catch (Throwable e) {
-            System.err.println("[" + testId + "] FAILED: " + e);
-            failStep(e);
+            start();
+            installReloadPopupWatcher();
+            try {
+                body();
+            } catch (Throwable e) {
+                System.err.println("[" + testId + "] FAILED: " + e);
+                if (watchdogFired) {
+                    String m = String.valueOf(e.getMessage()).split("\\R")[0];
+                    failStep(new RuntimeException("TIMED OUT - the test was still running after " + watchdogMinutes + " minutes, so its page was closed and the run moved on."
+                            + " It was blocked at: " + watchdogStack + "  (the step in progress is the one after the last step above; " + m + ")"));
+                } else failStep(e);
+            } finally {
+                writeReport();
+            }
         } finally {
-            writeReport();
+            watchdogDone = true;                 // a watchdog that is still escalating must not touch the NEXT test's browser
+            if (watchdog != null) watchdog.cancel();
         }
+    }
+
+    // A hung browser call (a page.evaluate that never returns, a page that stops answering) used to stall a whole module run for hours with nothing
+    // printed: one Executables run sat 2 h on a single test, a GitHub Actions job sat 12 h right after a test's browser started, and a CI job once sat 13 h.
+    // After a time limit this closes the test's page so the stuck call throws; the test is reported as FAILED ("TIMED OUT ... blocked at <stack>") and the
+    // run goes on with the next test. If the page will not close it closes the browser, and as a last resort ends this JVM's own Playwright / browser
+    // processes (so every pending call fails). The stack of the blocked thread is printed and put in the report, which says WHERE it hung.
+    // -Ddevhis.testTimeoutMin=N changes the limit (default 45, fractions allowed); 0 turns it off. Not used when the browser is shared via attach()
+    // (RunAll), where closing the page would take the other tests with it.
+    private volatile boolean watchdogFired = false;
+    private volatile boolean watchdogDone = false;
+    private volatile String watchdogStack = "";
+    private String watchdogMinutes = "";
+
+    private static String topFrames(Thread t) {
+        StringBuilder sb = new StringBuilder();
+        int n = 0;
+        for (StackTraceElement f : t.getStackTrace()) {
+            String c = f.getClassName();
+            if (c.startsWith("java.") || c.startsWith("jdk.") || c.startsWith("sun.") || c.startsWith("org.junit")) continue;
+            // Playwright's own plumbing (the wait for the driver's answer) says nothing; its API call (PageImpl.evaluate, LocatorImpl.click ...) does
+            if (c.startsWith("com.microsoft.playwright.impl.") && c.matches(".*\\.(Connection|ChannelOwner|PipeTransport|Waitable\\w*|WaitableResult|\\w*Transport|LoggingSupport)(\\$.*)?")) continue;
+            if (sb.length() > 0) sb.append(" <- ");
+            sb.append(c.replaceFirst("^com\\.kpj\\.", "").replaceFirst("^com\\.microsoft\\.playwright\\.impl\\.", "pw.")).append('.').append(f.getMethodName()).append(':').append(f.getLineNumber());
+            if (++n >= 9) break;
+        }
+        return sb.length() == 0 ? "(no application frames)" : sb.toString();
+    }
+
+    private java.util.Timer startWatchdog() {
+        if (attached) return null;
+        double minutes;
+        try { minutes = Double.parseDouble(cfg("devhis.testTimeoutMin", "45")); } catch (NumberFormatException e) { minutes = 45; }
+        if (minutes <= 0) return null;
+        watchdogMinutes = minutes == Math.rint(minutes) ? String.valueOf((long) minutes) : String.valueOf(minutes);
+        final Thread testThread = Thread.currentThread();
+        java.util.Timer t = new java.util.Timer("devhis-watchdog-" + testId, true);
+        t.schedule(new java.util.TimerTask() {
+            @Override public void run() {
+                if (watchdogDone) return;
+                watchdogFired = true;
+                watchdogStack = topFrames(testThread);
+                System.err.println("[" + testId + "] WATCHDOG: still running after " + watchdogMinutes + " minutes - blocked at " + watchdogStack + " - closing the page so the run can go on");
+                final Page p = page;
+                final Browser b = browser;
+                // each close in its own thread: a wedged Playwright connection can block the close call itself
+                Thread t1 = new Thread(() -> { try { if (p != null) p.close(); } catch (Throwable ignore) { } }, "devhis-watchdog-page");
+                t1.setDaemon(true); t1.start();
+                try { Thread.sleep(15_000); } catch (InterruptedException ignore) { return; }
+                if (watchdogDone) return;
+                Thread t2 = new Thread(() -> { try { if (b != null) b.close(); } catch (Throwable ignore) { } }, "devhis-watchdog-browser");
+                t2.setDaemon(true); t2.start();
+                try { Thread.sleep(15_000); } catch (InterruptedException ignore) { return; }
+                if (watchdogDone) return;
+                System.err.println("[" + testId + "] WATCHDOG: the page and browser did not close - ending this test's Playwright / browser processes");
+                try { ProcessHandle.current().descendants().forEach(ph -> { try { ph.destroyForcibly(); } catch (Throwable ignore) { } }); } catch (Throwable ignore) { }
+            }
+        }, (long) (minutes * 60_000L));
+        return t;
     }
 
     // nHIS can raise "Reload page - Are you sure you want to reload the page? You will be logged out of nHIS."

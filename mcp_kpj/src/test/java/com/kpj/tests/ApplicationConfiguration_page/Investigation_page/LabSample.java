@@ -68,11 +68,14 @@ public class LabSample extends DevHisBase {
 
         // 3) + 4) Code / Remark, Submit — retry with different details on "already exists".
         String details = "", toast = "";
+        byte[] filledPng = null;   // the form with Code, Sample Type Name and Remark filled, shot just BEFORE Submit (after a save the form has moved on)
         boolean ok = false, exists = false;
         int used = 0;
         for (int attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
             details = ls.fillDetails(attempt);
             used++;
+            try { filledPng = page.screenshot(new com.microsoft.playwright.Page.ScreenshotOptions().setTimeout(8000)); }
+            catch (Exception e) { System.out.println("LabSample: could not shoot the filled form - " + String.valueOf(e.getMessage()).split("\n")[0]); }
             toast = ls.submitAndGetToast();
             String tl = toast == null ? "" : toast.toLowerCase();
             // "succes" (one s) is deliberate — sibling screens here return "Record added succesfully".
@@ -85,10 +88,11 @@ public class LabSample extends DevHisBase {
         boolean detOk = !details.contains("(no field)");
         // The screen also makes Sample Type Name* mandatory — without it Submit fails with the misleading
         // "Please Enter Description!", so it is filled here alongside the two fields the flow names.
-        step(page, "Enter Code and Remark", "Enter Code* (unique), Sample Type Name* and Remark*",
-                "Code, Sample Type Name and Remark are entered",
-                details + "  [" + codeStyle + "]" + (used > 1 ? "  [details changed " + (used - 1) + "x after 'already exists']" : ""),
-                detOk ? "PASS" : "FAIL");
+        String detShown = details + "  [" + codeStyle + "]" + (used > 1 ? "  [details changed " + (used - 1) + "x after 'already exists']" : "");
+        if (filledPng != null && filledPng.length > 0)
+            step(filledPng, "Enter Code and Remark", "Enter Code* (unique), Sample Type Name* and Remark*", "Code, Sample Type Name and Remark are entered", detShown, detOk ? "PASS" : "FAIL");
+        else
+            step(page, "Enter Code and Remark", "Enter Code* (unique), Sample Type Name* and Remark*", "Code, Sample Type Name and Remark are entered", detShown, detOk ? "PASS" : "FAIL");
 
         String actual = toast == null || toast.isEmpty() ? "No toast appeared\n" + ls.describeForm()
                 : (ok ? toast
