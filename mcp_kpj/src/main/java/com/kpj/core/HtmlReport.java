@@ -28,6 +28,7 @@ public final class HtmlReport {
       ".pass{background:#e3f7e8;color:#1b8a3d;border:1px solid #b6e6c4}.manual{background:#fff3d6;color:#9a6b00;border:1px solid #f3dca0}" +
       ".fail{background:#fde2e2;color:#b3261e;border:1px solid #f3b0b0}" +
       ".skip{background:#e8eaf2;color:#4a5578;border:1px solid #c8cee0}" +
+      ".blocked{background:#fff0e0;color:#a5520b;border:1px solid #f2c79b}" +
       ".step-num{text-align:center;font-weight:700;color:#764ba2;width:42px}" +
       "td a{color:#667eea;text-decoration:none;font-weight:600}td a:hover{text-decoration:underline;color:#764ba2}" +
       ".note{background:#fff8e6;border:1px solid #f0d99b;border-radius:6px;padding:12px 16px;margin:18px 0;font-size:13.5px;color:#7a5b10}" +
@@ -44,17 +45,19 @@ public final class HtmlReport {
         long manual = steps.stream().filter(s -> s[5].equalsIgnoreCase("MANUAL")).count();
         long skip = steps.stream().filter(s -> s[5].equalsIgnoreCase("SKIPPED")).count();
         long fail = steps.stream().filter(s -> s[5].equalsIgnoreCase("FAIL")).count();
+        long blocked = steps.stream().filter(s -> s[5].equalsIgnoreCase("BLOCKED")).count();   // missing test data - shown only when present
 
         StringBuilder sum = new StringBuilder();
         for (String[] kv : summaryRows) sum.append("<tr><td>").append(esc(kv[0])).append("</td><td>").append(esc(kv[1])).append("</td></tr>");
         sum.append("<tr><td>Total / Passed / Manual / Skipped / Failed</td><td>").append(steps.size()).append(" / ").append(pass)
            .append(" / ").append(manual).append(" / ").append(skip).append(" / ").append(fail).append("</td></tr>");
+        if (blocked > 0) sum.append("<tr><td>Blocked (required test data / environment missing)</td><td>").append(blocked).append("</td></tr>");
         sum.append("<tr><td>Overall Result</td><td><span class='status ").append(fail==0?"pass'>PASS":"fail'>FAIL").append("</span></td></tr>");
 
         StringBuilder rows = new StringBuilder(), gal = new StringBuilder();
         for (String[] s : steps) {
             String cls = s[5].equalsIgnoreCase("PASS") ? "pass" : s[5].equalsIgnoreCase("MANUAL") ? "manual"
-                    : s[5].equalsIgnoreCase("SKIPPED") ? "skip" : "fail";
+                    : s[5].equalsIgnoreCase("SKIPPED") ? "skip" : s[5].equalsIgnoreCase("BLOCKED") ? "blocked" : "fail";
             boolean hasShot = s[6] != null && !s[6].isEmpty();
             rows.append("<tr><td class='step-num'>").append(s[0]).append("</td><td>").append(esc(s[1])).append("</td><td>")
                 .append(esc(s[2])).append("</td><td>").append(esc(s[3])).append("</td><td>").append(esc(s[4]))
