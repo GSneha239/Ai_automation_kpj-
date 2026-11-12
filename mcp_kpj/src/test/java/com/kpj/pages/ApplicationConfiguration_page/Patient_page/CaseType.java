@@ -98,7 +98,8 @@ public class CaseType extends BasePage {
     public String fillDetails(int attempt) {
         String code = "CT" + String.format("%05d", Math.abs((System.nanoTime() + attempt * 7919L) % 100000));
         lastCode = code;
-        lastRemark = REMARKS[attempt % REMARKS.length] + (attempt >= REMARKS.length ? " " + (attempt / REMARKS.length + 1) : "");
+        // Always unique: the shared env has used up every fixed wording, so stamp it with the code digits.
+        lastRemark = REMARKS[attempt % REMARKS.length] + " " + code.substring(2);
         // Locate Code and Remark by their LABELS — the ng-model names are not guessable from the sibling screens
         // and a wrong guess silently writes nothing.
         Object r = page.evaluate("(a) => { const A=window.angular; const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
@@ -106,7 +107,7 @@ public class CaseType extends BasePage {
                 + " const fill=(e,v)=>{ const c=A.element(e).controller('ngModel'); e.value=v; if(c){c.$setViewValue(v);c.$render();} e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true})); };"
                 + " const inputs=[...document.querySelectorAll('input[type=text],textarea')].filter(e=>e.offsetParent!==null);"
                 + " const byLabel=re=>inputs.find(e=>re.test(labelOf(e)));"
-                + " const codeEl=byLabel(/^code/i); const remEl=byLabel(/remark/i);"
+                + " const codeEl=byLabel(/^code/i); const remEl=byLabel(/remark|description/i) || inputs.find(e=>/\\.(description|remark)$/i.test(e.getAttribute('ng-model')||''));"
                 + " let cd='(no)', rm='(no)';"
                 + " if(codeEl){ fill(codeEl, a.code); cd=a.code+' [ng='+(codeEl.getAttribute('ng-model')||'?')+']'; }"
                 + " if(remEl){ fill(remEl, a.remark); rm=a.remark+' [ng='+(remEl.getAttribute('ng-model')||'?')+']'; }"

@@ -128,7 +128,8 @@ public class MachineMaster extends BasePage {
     public String fillDetails(int attempt) {
         String code = "MC" + String.format("%05d", Math.abs((System.nanoTime() + attempt * 7919L) % 100000));
         lastCode = code;
-        String name = MACHINE_NAMES[attempt % MACHINE_NAMES.length] + (attempt >= MACHINE_NAMES.length ? " " + (attempt / MACHINE_NAMES.length + 1) : "");
+        // Always unique: the shared env has used up every fixed name, so stamp it with the code digits.
+        String name = MACHINE_NAMES[attempt % MACHINE_NAMES.length] + " " + code.substring(2);
         String trays = "10";
         Object r = page.evaluate("(a) => { const A=window.angular; const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
                 + " const labelOf=e=>{ if(e.id){ const l=document.querySelector('label[for=\"'+e.id+'\"]'); if(l) return norm(l.textContent); }"

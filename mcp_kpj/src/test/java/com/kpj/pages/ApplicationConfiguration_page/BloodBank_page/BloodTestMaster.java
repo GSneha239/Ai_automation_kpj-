@@ -90,7 +90,8 @@ public class BloodTestMaster extends BasePage {
     public String fillDetails(int attempt) {
         String code = "TM" + String.format("%06d", Math.abs((System.nanoTime() + attempt * 7919L) % 1000000));
         lastCode = code;
-        String desc = TEST_NAMES[attempt % TEST_NAMES.length] + (attempt >= TEST_NAMES.length ? " " + (attempt / TEST_NAMES.length + 1) : "");
+        // Always unique: the shared env has used up every fixed name, so stamp it with the code digits.
+        String desc = TEST_NAMES[attempt % TEST_NAMES.length] + " " + code.substring(2);
         setNg("bloodtest.Code", code);
         setNg("bloodtest.Description", desc);
         waitForAngular(300);

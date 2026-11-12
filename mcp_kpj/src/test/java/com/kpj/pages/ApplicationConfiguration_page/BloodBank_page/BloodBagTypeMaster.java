@@ -90,7 +90,8 @@ public class BloodBagTypeMaster extends BasePage {
     public String fillDetails(int attempt) {
         String code = "BT" + String.format("%06d", Math.abs((System.nanoTime() + attempt * 7919L) % 1000000));
         lastCode = code;
-        String desc = BAGTYPE_NAMES[attempt % BAGTYPE_NAMES.length] + (attempt >= BAGTYPE_NAMES.length ? " " + (attempt / BAGTYPE_NAMES.length + 1) : "");
+        // Always unique: the shared env has used up every fixed name, so stamp it with the code digits.
+        String desc = BAGTYPE_NAMES[attempt % BAGTYPE_NAMES.length] + " " + code.substring(2);
         setNg("BloodBagTypeMaster.Code", code);
         setNg("BloodBagTypeMaster.Description", desc);
         waitForAngular(300);

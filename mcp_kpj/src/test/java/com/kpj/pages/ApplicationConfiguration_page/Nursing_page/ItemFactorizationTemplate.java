@@ -43,6 +43,8 @@ public class ItemFactorizationTemplate extends BasePage {
     public String lastCode = "", lastTemplateName = "", lastItemName = "", lastBatch = "",
             lastExpiryDate = "", lastQty = "", lastSellingPrice = "", lastPurchasePrice = "", lastRemark = "";
     public String itemNameError = "";
+    /** Id of the Store picked on the list (the New form drops it, so it is put back into the form model). */
+    public int lastStoreId = 0;
     /** Screenshot taken while the success toast was still visible (toastr auto-dismisses) — see
      *  {@code IntakeOutputMaster#toastPng} for why this matters more than a post-hoc {@code step(page,...)} shot. */
     public byte[] toastPng;
@@ -166,6 +168,9 @@ public class ItemFactorizationTemplate extends BasePage {
                 + " return norm(reals[k].o.text); }", k);
         waitForAngular(600);
         lastStore = r == null ? "" : r.toString();
+        try { Object sv = page.evaluate("() => { const e=document.querySelector(\"select[ng-model='ItemFactorization.StoreID']\"); return e ? String(e.value) : \"\"; }");
+              java.util.regex.Matcher vm = java.util.regex.Pattern.compile("(\\d+)").matcher(String.valueOf(sv));
+              if (vm.find()) lastStoreId = Integer.parseInt(vm.group(1)); } catch (Exception ignore) { }
         return lastStore;
     }
 
@@ -281,14 +286,15 @@ public class ItemFactorizationTemplate extends BasePage {
      * corrected request fails (a genuinely different problem from the known one).
      */
     public String pickItemName(String query) {
-        Object r = page.evaluate("(q) => { const n=document.querySelector(\"[ng-model='ItemFactorization.ItemName']\"); if(!n) return {err:'field not found'};"
+        Object r = page.evaluate("(a) => { const n=document.querySelector(\"[ng-model='ItemFactorization.ItemName']\"); if(!n) return {err:'field not found'};"
                 + " const A=window.angular; const s=A.element(n).scope(); const o=s.AutoCompleteOptionsForItemName; if(!o) return {err:'no autocomplete object'};"
+                + " if(a.sid && s.ItemFactorization) s.ItemFactorization.StoreID=a.sid;"
                 + " const OrigXHR=window.XMLHttpRequest; let capturedUrl=null, capturedBody=null;"
                 + " function Wrapped(){ const x=new OrigXHR(); const oo=x.open, os=x.send;"
                 + "   x.open=function(m,u){ capturedUrl=u; return oo.apply(x,arguments); };"
                 + "   x.send=function(b){ capturedBody=b; return os.apply(x,arguments); }; return x; }"
                 + " window.XMLHttpRequest=Wrapped;"
-                + " return o.data(q).catch(()=>null).then(async () => {"
+                + " return o.data(a.q).catch(()=>null).then(async () => {"
                 + "   window.XMLHttpRequest=OrigXHR;"
                 + "   if(!capturedUrl) return {err:'could not capture the app\\'s own request'};"
                 + "   const fixedUrl=capturedUrl.replace(/PsychotropicDrug=undefined/i,'PsychotropicDrug=false').replace(/requesttype=undefined/i,'requesttype=0');"
@@ -298,7 +304,7 @@ public class ItemFactorizationTemplate extends BasePage {
                 + "   const items=await resp.json(); const item=(items||[])[0]; if(!item) return {err:'', empty:true, url:fixedUrl};"
                 + "   o.itemSelected({item}); try{s.$apply&&s.$apply();}catch(e){}"
                 + "   return {name:item.ItemName||'', code:item.ItemCode||''};"
-                + " }); }", query);
+                + " }); }", java.util.Map.of("q", query, "sid", lastStoreId));
         @SuppressWarnings("unchecked") java.util.Map<String, Object> m = (java.util.Map<String, Object>) r;
         if (m == null) return "";
         Object err = m.get("err");

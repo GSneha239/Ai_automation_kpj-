@@ -72,7 +72,8 @@ public class DialysisParameter extends BasePage {
     public String fillDetails(int attempt) {
         String code = "DP" + String.format("%06d", Math.abs((System.nanoTime() + attempt * 7919L) % 1000000));
         lastCode = code;
-        lastRemark = REMARKS[attempt % REMARKS.length] + (attempt >= REMARKS.length ? " " + (attempt / REMARKS.length + 1) : "");
+        // Always unique: the shared env has used up every fixed wording, so stamp it with the code digits.
+        lastRemark = REMARKS[attempt % REMARKS.length] + " " + code.substring(2);
         setNg("commonmaster.Code", code);
         setNg("commonmaster.Description", lastRemark);
         // Store dropdown — select a real option if present (may be required).
