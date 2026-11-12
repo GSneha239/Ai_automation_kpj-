@@ -4,8 +4,8 @@ REM  OP - Appointment module  ->  DSH QA - https://dsh-nhisqa.kpjhealth.com.my (
 REM
 REM  Runs the 5 Appointment flows under com.kpj.tests.Op_Page.Appointment:
 REM      TC06_AppointmentList              (Appointment List)
-REM      TC04_BookAppointment              (Book Appointment)
-REM      TC05_DoctorwiseAppointmentSchedule (Doctorwise Appointment Schedule)
+REM      op_appointment_BookAppointment    (Book Appointment)
+REM      op_appointment_DoctorwiseAppointmentSchedule (Doctorwise Appointment Schedule)
 REM      TC01_MAB                          (Multiple Appointment Booking)
 REM      OP_ExistingPatientAppointment     (Existing)
 REM
