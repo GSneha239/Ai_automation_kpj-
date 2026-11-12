@@ -104,6 +104,7 @@ Double-click  run-<module>-<environment>.bat  - every module x 4 environments
    Inventory        run-inventory-devhis|klg|dsh|nhistest.bat      Inventory_page
    Investigation    run-investigation-devhis|klg|dsh|nhistest.bat  Investigation_page
    OT               run-ot-devhis|klg|dsh|nhistest.bat             OT_page
+   Report           run-report-devhis|klg|dsh|nhistest.bat         Report_page
 
 Each writes to its own folder:  test-output-<module>-<environment>\
 e.g.  run-ip-klg.bat  ->  test-output-ip-klg\reports\  +  FAILED_STEPS.html

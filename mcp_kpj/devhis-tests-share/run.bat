@@ -108,6 +108,7 @@ if "%~1"=="" (
     com.kpj.tests.Inventory_page
     com.kpj.tests.Investigation_page
     com.kpj.tests.OT_page
+    com.kpj.tests.Report_page
   ) do (
     echo.
     echo ---- module: %%M ----
@@ -141,7 +142,7 @@ if defined NOTESTS (
   echo  Packages: Op_Page, Ip, Emergency_page, SystemConfiguration_page,
   echo            Billing_page, NursingStation_page, Telemedicine_page,
   echo            ApplicationConfiguration_page, AncillaryServices_page,
-  echo            Inventory_page, Investigation_page, OT_page
+  echo            Inventory_page, Investigation_page, OT_page, Report_page
   echo ============================================================
   pause
   endlocal ^& exit /b 1
@@ -166,7 +167,7 @@ if "%FAILEXIT%"=="0" (
 )
 echo ============================================================
 REM  Automatic post-run analysis of THIS run's fresh results (analysis + proposal only; never applies). Always returns; the exit
-REM  code below still comes from FAILEXIT. A full run is 12 JVMs but ONE marker, so it is analysed once. Switch off: set DEVHIS_POSTRUN=off.
+REM  code below still comes from FAILEXIT. A full run is 13 JVMs but ONE marker, so it is analysed once. Switch off: set DEVHIS_POSTRUN=off.
 call "%~dp0postrun-hook.bat" "%OUTDIR%" "batch-run" "%JAR%"
 pause
 endlocal ^& exit /b %FAILEXIT%

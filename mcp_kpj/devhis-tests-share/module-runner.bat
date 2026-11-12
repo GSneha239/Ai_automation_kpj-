@@ -82,10 +82,11 @@ if /i "%MODKEY%"=="ancillary"    ( set "PKG=com.kpj.tests.AncillaryServices_page
 if /i "%MODKEY%"=="inventory"    ( set "PKG=com.kpj.tests.Inventory_page"                & set "MODULE=Inventory" )
 if /i "%MODKEY%"=="investigation" ( set "PKG=com.kpj.tests.Investigation_page"           & set "MODULE=Investigation" )
 if /i "%MODKEY%"=="ot"            ( set "PKG=com.kpj.tests.OT_page"                       & set "MODULE=OT" )
+if /i "%MODKEY%"=="report"        ( set "PKG=com.kpj.tests.Report_page"                   & set "MODULE=Report" )
 if /i "%MODKEY%"=="flow"          ( set "PKG=com.kpj.tests.Flow_page"                     & set "MODULE=Flow (Billing OP end-to-end)" )
 if not defined PKG (
   echo [ERROR] Unknown module "%MODKEY%".
-  echo         Use: op, appointment, ip, emergency, sysconfig, billing, nursing, telemedicine, appconfig, ancillary, inventory, investigation, ot, flow.
+  echo         Use: op, appointment, ip, emergency, sysconfig, billing, nursing, telemedicine, appconfig, ancillary, inventory, investigation, ot, report, flow.
   pause
   exit /b 1
 )

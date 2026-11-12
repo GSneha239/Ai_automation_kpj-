@@ -74,14 +74,14 @@ OUTPUT LOCATIONS (inside the run's own output folder; nothing is added anywhere 
 ========================================================================
 
 SUPPORTED (automatic, on by default)
-  1. Every script that goes through  devhis-tests-share\module-runner.bat   (53 wrappers):
+  1. Every script that goes through  devhis-tests-share\module-runner.bat   (57 wrappers):
        run-<module>-<env>.bat for modules ancillary, appconfig, appointment, billing, emergency, inventory, investigation, ip,
-       nursing, op, ot, sysconfig, telemedicine  x  environments devhis, dsh, klg, nhistest;  and run-flow-nhistest.bat.
+       nursing, op, ot, report, sysconfig, telemedicine  x  environments devhis, dsh, klg, nhistest;  and run-flow-nhistest.bat.
        (This includes run-ip-devhis.bat, run-ip-dsh.bat, run-ip-klg.bat, run-ip-nhistest.bat.)
   2. Every script that goes through  devhis-tests-share\core-flows-runner.bat   (5 wrappers: run-core-flows-<env>.bat).
        Each of its two passes (Malaysian, foreign) has its own output folder and is analysed once, separately.
   3. Every script that goes through  devhis-tests-share\run.bat   (run.bat itself, run-klg.bat, run-dsh.bat, run-nhistest.bat).
-       A full run is 12 JVMs but ONE run marker: it is analysed once.
+       A full run is 13 JVMs but ONE run marker: it is analysed once.
   4. Direct Maven/Surefire:   mvn test [-Dtest=...]   - a JUnit listener (PostRunListener) starts one analysis after the plan
        finishes, scoped to the exact flow classes that ran.  Synthetic suites (mvn -Pheal-synthetic test) never trigger it.
        (Output folder: -Ddevhis.outdir, else DEVHIS_OUTDIR, else test-output.  A folder set only in config.properties is not seen;
