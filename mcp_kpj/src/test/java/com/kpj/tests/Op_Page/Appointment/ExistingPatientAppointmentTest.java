@@ -96,6 +96,13 @@ public class ExistingPatientAppointmentTest extends DevHisBase {
                 mandatoryCheck.isEmpty() ? "All mandatory fields were already filled" : mandatoryCheck,
                 stillEmpty ? "FAIL" : "PASS");
 
+        // Save refuses a mobile number of the wrong length ("Enter Valid Mobile No.") - a loaded patient can hold an older 9-digit one.
+        String mobileFix = appt.fixMobileNumberIfInvalid();
+        if (!mobileFix.isEmpty()) {
+            step(page, "Enter a valid Mobile No", "Save refuses a mobile number whose length differs from the configured digit count; enter one of the right length",
+                    "The Mobile No holds the configured number of digits", mobileFix, mobileFix.startsWith("(") ? "FAIL" : "PASS");
+        }
+
         int listSize = appt.clickAdd();
         step("Click Add", "Click 'Add' (fnAddToMultipleApptList) before Save",
                 "Appointment added to the booking list",
@@ -105,10 +112,12 @@ public class ExistingPatientAppointmentTest extends DevHisBase {
         Page reportTab = appt.saveAndCaptureReport();
         List<String> alerts = appt.capturedAlerts();
         String alertMsg = alerts.isEmpty() ? "(none captured)" : String.join(" | ", alerts);
+        // The message is the verdict: a refusal such as "Enter Valid Mobile No." used to be recorded as PASS here.
+        boolean saved = reportTab != null || com.kpj.pages.Op_page.Appointment.BookAppointmentPage.saveSucceeded(appt.capturedMessages());
         step("Click Save, click OK in alert",
                 "Click Save; confirm 'Do You Want To Save'; accept the slot/booking alert",
                 "Appointment saved; success/booking alert",
-                alertMsg, "PASS");
+                (saved ? "" : "NOT saved - ") + alertMsg, saved ? "PASS" : "FAIL");
 
         if (reportTab != null) {
             step(reportTab, "Report generates in new tab", "Save opens the appointment report in a new tab",

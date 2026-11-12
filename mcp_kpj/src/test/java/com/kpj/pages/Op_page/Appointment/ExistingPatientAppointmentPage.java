@@ -169,6 +169,28 @@ public class ExistingPatientAppointmentPage extends BookAppointmentPage {
         return nric;
     }
 
+    /**
+     * Since the 28-10-26 build Save refuses ("Enter Valid Mobile No.") any mobile number whose digit count differs from the configured one
+     * (CfgMobileNoDigit, 10 until GetConfigData answers) - and a loaded patient can hold an older 9-digit number. When the box holds a number
+     * of the wrong length, a number of the configured length is entered (same rule as {@link BookAppointmentPage#fillMandatoryDetails()}).
+     * Returns "" when the number was already fine, else "was X -> Y (N digits)"; "(...)" when the box is not there.
+     */
+    public String fixMobileNumberIfInvalid() {
+        Object cfg = page.evaluate("() => { let s=angular.element(document.querySelector('#txtMobileNo')||document.body).scope();"
+                + " for(let i=0;i<12&&s;i++){ if(s.CfgMobileNoDigit){ return s.CfgMobileNoDigit; } s=s.$parent; } return 10; }");
+        int digits;
+        try { digits = (int) Double.parseDouble(String.valueOf(cfg)); } catch (Exception e) { digits = 10; }
+        Object cur = page.evaluate("() => { const e=[...document.querySelectorAll('input')].find(x=>x.getAttribute('ng-model')==='PatientData.MobileNo' && x.offsetParent!==null);"
+                + " return e ? String(e.value||'') : null; }");
+        if (cur == null) return "(the Mobile No box was not found)";
+        String was = cur.toString().trim();
+        if (was.replaceAll("\\D", "").length() == digits) return "";
+        String mobile = "19" + (uniqueId() + "00000000000000").substring(0, digits - 2);
+        page.evaluate("(v) => window.__setInp('PatientData.MobileNo', v)", mobile);
+        waitForAngular(400);
+        return "was " + (was.isEmpty() ? "blank" : was) + " -> " + mobile + " (" + digits + " digits)";
+    }
+
     /** Set Appointment Date to TOMORROW. (Live-confirmed: this only affects display — "Next Schedule" already
      *  represents tomorrow regardless, which is what {@link #selectFreeSlot()} picks from.) */
     public String setAppointmentDateTomorrow() {

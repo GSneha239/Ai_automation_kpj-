@@ -34,24 +34,70 @@ public class OutPatientQueueManagementPage extends BasePage {
     // ---- navigation -------------------------------------------------------
 
     public void navigateTo(String baseUrl) {
-        // Wait for DOMCONTENTLOADED, not full "load" — the DevHIS SPA can keep a request open so the
-        // "load" event never fires within the default 30s on a slow/unstable site (nav then aborts the
-        // whole test). DOMCONTENTLOADED fires as soon as the document is parsed; Angular boots after.
-        try {
-            page.navigate(baseUrl + "/#/queueManagement",
-                    new com.microsoft.playwright.Page.NavigateOptions()
-                            .setWaitUntil(com.microsoft.playwright.options.WaitUntilState.DOMCONTENTLOADED)
-                            .setTimeout(60000));
-        } catch (Exception e) {
-            System.out.println("navigateTo: navigation slow (" + e.getMessage().split("\n")[0] + ") — continuing");
+        // 2026-11-06 (app v2026.11.06.426.1): a FULL page load of the deep link (page.navigate(".../#/queueManagement")) is bounced back to the
+        // Patient Dashboard - for this route and for #/DoctorWiseQueue alike - so every step then ran on the dashboard and reported "No patient in
+        // the queue". The screen opens fine through the sidebar (OP > Outpatient Queue Management) and by changing the hash inside the running app.
+        // Already on the screen (a later section): leave via the dashboard first, so the screen starts fresh like the old full navigation did.
+        if (onQueueScreen(0)) {
+            try { page.evaluate("() => { location.hash = '#/PatientDashboard'; }"); } catch (Exception ignore) { }
+            waitForAngular(2500);
         }
-        // Wait until the queue page is actually interactive (Angular + the Search button present).
-        try {
-            page.waitForFunction(
-                    "() => window.angular && [...document.querySelectorAll('button')].some(b=>/^search$/i.test((b.textContent||'').trim()))",
-                    null, new Page.WaitForFunctionOptions().setTimeout(30000));
-        } catch (Exception ignore) { System.out.println("navigateTo: queue page not fully ready in time"); }
+        boolean opened = openViaMenu();
+        if (!opened) {
+            System.out.println("navigateTo: the sidebar did not open the screen - changing the hash inside the app");
+            try { page.evaluate("() => { location.hash = '#/queueManagement'; }"); } catch (Exception ignore) { }
+            opened = onQueueScreen(40);
+        }
+        if (!opened) System.out.println("navigateTo: queue page not fully ready in time");
         waitForAngular(2000);
+    }
+
+    /** OP (expanded only when its link is not showing - clicking it again would collapse it) > Outpatient Queue Management; true once the screen is on. */
+    private boolean openViaMenu() {
+        for (int attempt = 0; attempt < 3; attempt++) {
+            Object state;
+            try {
+                state = page.evaluate("() => { const top=[...document.querySelectorAll('a')].find(x=>/^\\s*op\\s*$/i.test(x.textContent||'')); const li=top&&top.closest('li');"
+                        + " const l=li&&[...li.querySelectorAll('a[href]')].find(x=>x.getAttribute('href')==='#/queueManagement');"
+                        + " if(l && l.offsetParent!==null){ l.id='__qmLink'; return 'link'; }"
+                        + " if(top){ top.click(); return 'expanded'; } return 'none'; }");
+            } catch (Exception e) { waitForAngular(1500); continue; }
+            String s = String.valueOf(state);
+            if ("expanded".equals(s)) { waitForAngular(2500); continue; }
+            if ("link".equals(s)) {
+                try { page.locator("#__qmLink").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(8000)); }
+                catch (Exception e) { try { page.evaluate("() => { const l=document.getElementById('__qmLink'); if(l) l.click(); }"); } catch (Exception ignore) { } }
+                try { page.evaluate("() => { const l=document.getElementById('__qmLink'); if(l) l.removeAttribute('id'); }"); } catch (Exception ignore) { }
+                return onQueueScreen(40);
+            }
+            break;   // no OP entry in the sidebar
+        }
+        return false;
+    }
+
+    /**
+     * True when the real Queue Management screen is on (its From Date box exists), waiting up to {@code seconds}. navigateTo only waits for ANY
+     * "Search" button and carries on, so when the app bounces the route back to the Patient Dashboard (no right for the user, or the
+     * page is refused) every later step ran on the dashboard and reported "No patient in the queue".
+     */
+    public boolean onQueueScreen(int seconds) {
+        long end = System.currentTimeMillis() + seconds * 1000L;
+        do {
+            try {
+                Object ok = page.evaluate("() => !!document.querySelector(\"input[ng-model='queue.fromdate']\")");
+                if (Boolean.TRUE.equals(ok)) return true;
+            } catch (Exception ignore) { }
+            waitForAngular(1000);
+        } while (System.currentTimeMillis() < end);
+        return false;
+    }
+
+    /** What the app shows instead: route + screen name from the top bar. */
+    public String whereAmI() {
+        try {
+            Object r = page.evaluate("() => { const h=(document.querySelector('header,.navbar')||{}).textContent||''; return location.hash + ' - ' + h.replace(/\\s+/g,' ').trim().slice(0,60); }");
+            return String.valueOf(r);
+        } catch (Exception e) { return "(unknown)"; }
     }
 
     // ---- search & select --------------------------------------------------

@@ -57,6 +57,20 @@ public class OutPatientQueueManagementTest extends DevHisBase {
         loginPage.login(BASE, USER, PASS);
         step("Login", USER + " / " + PASS, "Authenticated; Patient Dashboard", "Logged in", "PASS");
 
+        // The screen must really open. When the app bounces #/queueManagement back to the Patient Dashboard (the user has no right to it, or the
+        // page is refused) every section below would run on the dashboard, wait ~1 minute each for a grid that never comes and report
+        // "No patient in the queue" - so say it once and stop.
+        com.kpj.pages.Op_page.OutPatientQueueManagementPage first = new com.kpj.pages.Op_page.OutPatientQueueManagementPage(page);
+        first.navigateTo(BASE);
+        if (!first.onQueueScreen(20)) {
+            step(page, "Open Outpatient Queue Management", "OP > Outpatient Queue Management (#/queueManagement)",
+                    "The Outpatient Queue Management screen (From Date, To Date, Search, queue grid) is shown",
+                    "Did NOT reach the screen - the app stayed on: " + first.whereAmI() + ". The route exists, so " + USER + " probably has no right to this screen (no 'Outpatient Queue Management' menu entry) or the page is refused.",
+                    "FAIL");
+            addSummary("Result", "FAILED - the Outpatient Queue Management screen did not open (the app showed " + first.whereAmI() + ")");
+            return;
+        }
+
         // Every section runs through runSection so its popup is ALWAYS closed afterwards — pass, fail, early
         // return or exception. A modal (or just its backdrop) left on screen intercepts the next section's clicks:
         // that is how a failing Change Doctor previously took Generate Queue and New Case down with it.

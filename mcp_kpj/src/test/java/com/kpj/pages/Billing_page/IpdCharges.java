@@ -22,12 +22,25 @@ public class IpdCharges extends BasePage {
 
     public boolean navigateTo(String baseUrl) {
         try { page.waitForFunction("() => window.angular", null, new Page.WaitForFunctionOptions().setTimeout(15000)); } catch (Exception ignore) { }
-        page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const b=[...document.querySelectorAll('a,li>a')].find(x=>/^\\s*billing\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null); if(b) b.click(); }");
-        waitForAngular(1000);
-        Object href = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const a=[...document.querySelectorAll('a[href]')].find(x=>/ipd\\s*charge/i.test(norm(x.textContent)) || /#\\/IPDCharges/i.test(x.getAttribute('href')||'')); if(!a) return ''; a.id='__ipcMenu'; return a.getAttribute('href')||'link'; }");
+        // Billing is opened only when it is closed (a second click on an open entry CLOSES it) and the IPD Charges link is looked up INSIDE
+        // Billing's own li. The old blind click toggled Billing shut when it was already open and then clicked whatever matched first.
+        expandMenuEntry(null, "^\\s*billing\\s*$");
+        waitForAngular(800);
+        Object href = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                + " const top=[...document.querySelectorAll('a')].find(x=>/^\\s*billing\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null);"
+                + " const scope=(top&&top.closest('li'))||document;"
+                + " const a=[...scope.querySelectorAll('a[href]')].find(x=>/#\\/IPDCharges/i.test(x.getAttribute('href')||'')) || [...scope.querySelectorAll('a[href]')].find(x=>/^\\s*ipd\\s*charges?\\s*$/i.test(norm(x.textContent)));"
+                + " if(!a) return ''; a.id='__ipcMenu'; return a.getAttribute('href')||'link'; }");
         if (href != null && !href.toString().isEmpty()) {
             route = href.toString();
-            try { page.locator("#__ipcMenu").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000)); } catch (Exception e) { System.out.println("IpdCharges.nav: click failed - " + e.getMessage()); }
+            // The reload dialog the app raises on the dashboard can cover the menu, so the real click may be refused - then click in the page
+            // (the route is then reached through the app, which a hash change from outside is not: the app reverts that to the dashboard).
+            try { page.locator("#__ipcMenu").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000)); }
+            catch (Exception e) {
+                System.out.println("IpdCharges.nav: real click refused - clicking in the page");
+                try { page.evaluate("() => { const l=document.getElementById('__ipcMenu'); if(l) l.click(); }"); } catch (Exception ignore) { }
+            }
+            try { page.evaluate("() => { const l=document.getElementById('__ipcMenu'); if(l) l.removeAttribute('id'); }"); } catch (Exception ignore) { }
             waitForAngular(2000);
         }
         if (!page.url().toLowerCase().contains("ipdcharges")) {

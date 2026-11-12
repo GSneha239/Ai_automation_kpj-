@@ -109,7 +109,22 @@ public class MultipleAppointmentBookingPage extends BasePage {
         closeDatePicker();
         page.locator(emailInput()).first().fill(randomEmail());
         waitForAngular(200);
-        page.locator(mobileNoInput()).first().fill(randomMobile());
+        page.locator(mobileNoInput()).first().fill(mobileOfConfiguredLength());
+    }
+
+    /**
+     * Since the 28-10-26 build Save refuses ("Enter Valid Mobile No.") a mobile number whose length differs from the configured digit count
+     * (CfgMobileNoDigit, 10 until GetConfigData answers); {@code randomMobile()} builds 9 digits. Same rule as BookAppointmentPage.fillMandatoryDetails.
+     */
+    private String mobileOfConfiguredLength() {
+        int digits = 10;
+        try {
+            Object cfg = page.evaluate("() => { const e=document.querySelector(\"input[ng-model$='MobileNo']\")||document.body; let s=angular.element(e).scope();"
+                    + " for(let i=0;i<12&&s;i++){ if(s.CfgMobileNoDigit){ return s.CfgMobileNoDigit; } s=s.$parent; } return 10; }");
+            digits = (int) Double.parseDouble(String.valueOf(cfg));
+        } catch (Exception ignore) { }
+        if (digits < 3) digits = 10;
+        return "19" + (uniqueId() + "00000000000000").substring(0, digits - 2);
     }
 
     /**

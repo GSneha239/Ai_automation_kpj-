@@ -125,12 +125,11 @@ public class AppointmentListPage extends BasePage {
             }
         } catch (Exception ignore) {}
         try { page.bringToFront(); } catch (Exception ignore) {}
-        page.navigate(baseUrl + "/#/AppointmentList");
-        try {
-            page.waitForSelector("button[ng-click='fnSearchAppointments();']",
-                    new Page.WaitForSelectorOptions().setTimeout(20000));
-        } catch (Exception ignore) {}
-        waitForAngular(1000);
+        // A report opens in its OWN tab, so the list is normally still showing. Leave it alone: in app v2026.11.06.426.1 a full-page load of
+        // the deep link is bounced to the Patient Dashboard, and a list that is re-entered afterwards renders no table at all (0 rows, although
+        // the server answers with the data) - that is what made every section after the first one report "No appointment to select".
+        if (alreadyOnList()) { waitForAngular(800); return; }
+        navigateTo(baseUrl);   // in-app hash route (no page reload)
     }
 
     /** Click Search with the default (today) date filters to load the appointment list. */

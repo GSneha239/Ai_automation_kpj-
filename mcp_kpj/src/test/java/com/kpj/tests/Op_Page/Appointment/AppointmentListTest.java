@@ -157,8 +157,11 @@ public class AppointmentListTest extends DevHisBase {
         }
         int finalRows = listPage.listRowCount();
         bestRowCount = Math.max(bestRowCount, finalRows);
+        // An empty list is not "opened and searched": the steps after it then fail with "No appointment to select" and this one must say why.
         step(tag + " · Open list & search", "OP > Appointment > Appointment List; widen date range and Search",
-                "Appointments are listed", how + " (" + finalRows + " rows)", "PASS");
+                "Appointments are listed", how + " (" + finalRows + " rows)"
+                        + (finalRows == 0 ? " - the list shows NO rows although the date range is wide (the server answers; the table is not drawn after the list is re-entered)" : ""),
+                finalRows == 0 ? "FAIL" : "PASS");
     }
 
     // ===== Section 1: Request MRD File =====================================

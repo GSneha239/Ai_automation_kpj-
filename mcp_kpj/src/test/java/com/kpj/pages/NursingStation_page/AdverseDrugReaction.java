@@ -95,11 +95,14 @@ public class AdverseDrugReaction extends BasePage {
                     null, new Page.WaitForFunctionOptions().setTimeout(30000));
         } catch (Exception ignore) { }
 
+        // Nursing Station is opened only when it is closed (a second click on an open entry CLOSES it), and the link is looked up INSIDE that
+        // entry's li - the blind toggle closed an already-open menu and the run then stayed on the dashboard ("screen not reached").
+        expandMenuEntry(null, "^\\s*nursing\\s*station\\s*$");
+        waitForAngular(800);
         page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                + " const a=[...document.querySelectorAll('a')].find(x=>/^\\s*nursing\\s*station\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null); if(a) a.click(); }");
-        waitForAngular(1200);
-        page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                + " const a=[...document.querySelectorAll('a[href]')].filter(x=>x.offsetParent!==null)"
+                + " const top=[...document.querySelectorAll('a')].find(x=>/^\\s*nursing\\s*station\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null);"
+                + " const scope=(top&&top.closest('li'))||document;"
+                + " const a=[...scope.querySelectorAll('a[href]')].filter(x=>x.offsetParent!==null)"
                 + "   .find(x=>/^adverse\\s*drug\\s*reaction$/i.test(norm(x.textContent))"
                 + "        || /#\\/AdverseDrugReaction/i.test(x.getAttribute('href')||''));"
                 + " if(a) a.click(); }");

@@ -82,17 +82,28 @@ public class DoctorDashboard extends DevHisBase {
         String mrn = have ? nz(ref.get("MRN")) : "", name = have ? nz(ref.get("Patient Name")) : "";
         String deptTo = have ? nz(ref.get("Department To")) : "", doctorTo = have ? nz(ref.get("Referred To")) : "";
         String deptFrom = have ? nz(ref.get("Department From")) : "";
-        String actual22;
+        String actual22 = "";
         if (have) actual22 = "Pop up opened: " + refs.size() + " referral(s) listed; " + name + " (MRN " + mrn + "), " + nz(ref.get("Category"))
                 + ", referred by " + nz(ref.get("Referred By")) + " to " + doctorTo + " (" + deptTo + "), remark \"" + nz(ref.get("Remark")) + "\""
                 + (deptFrom.isEmpty() ? "; the Department From column is blank" : "; Department From " + deptFrom);
         else if (rp) actual22 = "The pop up opened but lists no referral" + (pin.isEmpty() ? "" : " for MRN " + pin) + " (button: " + dd.referredButtonText() + ")";
-        else actual22 = "The Referred Patients pop up did not open (" + dd.describeScreen() + ")";
+        // The button carries the count: "Referred Patients (0)" means nobody is referred, so there is no list to open (every referral is used up
+        // by a Book Appointment / Registration / Admission, so the list empties as this flow runs). That is a data state, not a broken button.
+        String referredBtn = dd.referredButtonText();
+        boolean noneReferred = !rp && referredBtn != null && referredBtn.matches(".*\\(\\s*0\\s*\\).*");
+        if (!rp && noneReferred) actual22 = "The button reads \"" + referredBtn.trim() + "\" - no patient is referred right now, so there is no list to open (each Book Appointment / Registration / Admission uses a referral up)";
+        else if (!rp) actual22 = "The Referred Patients pop up did not open (button: " + referredBtn + "; " + dd.describeScreen() + ")";
         step(page, "Click Referred Patients", "Click Referred Patients under the table",
-                "The Referred Patients pop up opens and lists the referred patients", actual22, have ? "PASS" : "FAIL");
+                "The Referred Patients pop up opens and lists the referred patients", actual22, have ? "PASS" : (noneReferred ? "MANUAL" : "FAIL"));
         if (!have) {
-            skipped("Select the patient, click Book Appointment, Registration, Admission", "Tick the referred patient and click each button",
-                    "Each button opens its page for the patient", "there is no referred patient to work with");
+            // One row per flow, in the order they run (each finishes before the next starts), so the report shows exactly which one was not run.
+            String why = noneReferred ? "no patient is referred - the button reads \"Referred Patients (0)\"" : "there is no referred patient to work with";
+            skipped("Book Appointment flow", "Tick the referred patient, click Book Appointment, fill the Appointment page and Save",
+                    "The Appointment page opens for the patient and the appointment is saved", why);
+            skipped("Registration flow", "Back on the dashboard: tick the referred patient, click Registration, fill the visit and Save",
+                    "The Registration page opens for the patient and the visit is saved", why);
+            skipped("Admission flow", "Back on the dashboard: tick the referred patient, click Admission, fill the admission and Save",
+                    "The Admission page opens for the patient and the admission is saved", why);
             return "no referred patient on the list";
         }
 
