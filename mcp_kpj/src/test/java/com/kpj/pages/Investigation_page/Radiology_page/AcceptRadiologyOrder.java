@@ -239,6 +239,13 @@ public class AcceptRadiologyOrder extends BasePage {
 
     /** Click <b>Search</b> ({@code fnSearchorderbooking}). */
     public String clickSearch() {
+        // Sample Status defaults to "All", which leaves Accept and Reject DISABLED (disableAcceptReject==true); "Not Accepted" enables them.
+        if (forceNotAccepted) {
+            page.evaluate("() => {" + JS
+                    + " const r=[...document.querySelectorAll(\"input[ng-model='" + M + "SampleStatus']\")].filter(vis).find(x=>String(x.value)==='1');"
+                    + " if(r && !r.checked) r.click(); }");
+            waitForAngular(700);
+        }
         page.evaluate("() => {" + JS
                 + " const b=[...document.querySelectorAll('button')].filter(vis)"
                 + "   .find(x=>/fnSearchorderbooking/i.test(x.getAttribute('ng-click')||''));"
@@ -267,7 +274,14 @@ public class AcceptRadiologyOrder extends BasePage {
     }
 
     /** Row counts under each Sample Status radio — used to explain an empty grid. */
+    private boolean forceNotAccepted = true;
+
     public String describeStatusCounts() {
+        forceNotAccepted = false;
+        try { return describeStatusCountsImpl(); } finally { forceNotAccepted = true; }
+    }
+
+    private String describeStatusCountsImpl() {
         StringBuilder sb = new StringBuilder();
         String[] names = { "Not Accepted", "Accepted", "Rejected", "All" };
         for (int i = 0; i < names.length; i++) {

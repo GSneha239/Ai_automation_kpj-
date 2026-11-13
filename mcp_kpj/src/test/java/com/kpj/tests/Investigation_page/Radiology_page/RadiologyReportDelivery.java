@@ -96,11 +96,12 @@ public class RadiologyReportDelivery extends DevHisBase {
                 reportStatusOk ? "PASS" : "FAIL");
 
         // 2) MRN + the search symbol beside it
-        String mrnSearch = rd.enterMrnAndClickSearchSymbol(mrn);
+        // -Dmrn.typed=true keeps the old route (type the MRN, click the search symbol); the default picks the patient through the Patient Search popup.
+        String mrnSearch = Boolean.getBoolean("mrn.typed") ? rd.enterMrnAndClickSearchSymbol(mrn) : rd.selectMrnViaPopup(mrn);
         boolean mrnOk = rd.mrnEntered(mrn);
         step(page, "Enter MRN and click the search symbol",
-                "Enter the MRN " + mrn + " and click the search symbol beside it",
-                "The MRN is entered and the search symbol is clicked",
+                "Enter the MRN " + mrn + " through the Patient Search popup (Search -> Select the row)",
+                "The MRN is selected into the MRN box",
                 (mrnOk
                     ? "PASSES because the box read the value back: " + mrnSearch
                     : "FAILS: " + mrnSearch),

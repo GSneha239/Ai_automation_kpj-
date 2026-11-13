@@ -231,6 +231,16 @@ public class SampleAcceptReject extends BasePage {
      * rather than reporting the screen as broken when the environment simply has no sample for that
      * patient.</p>
      */
+    /** The screen's own Clear (drops a patient context left by an earlier MRN search) and the date range back in. */
+    public void clearFilters(String from, String to) {
+        page.evaluate("() => {" + JS
+                + " const b=[...document.querySelectorAll('button')].filter(vis)"
+                + "   .find(x=>/ClearsearchFilter/i.test(x.getAttribute('ng-click')||''));"
+                + " if(b) b.click(); }");
+        waitForAngular(2500);
+        enterDateRange(from, to);
+    }
+
     public String findMrnWithSamples(String from, String to) {
         // Emptying the MRN box is NOT enough: the search symbol beside it sets a PATIENT CONTEXT that
         // survives the box being cleared, so every later search stays scoped to that patient and comes
@@ -244,9 +254,9 @@ public class SampleAcceptReject extends BasePage {
         clickSearch();
 
         Object mrn = page.evaluate("() => {" + JS
-                + " const r=[...document.querySelectorAll('.ui-grid-row')].filter(vis)[0];"
+                + " const r=[...document.querySelectorAll('.ui-grid-row')].filter(vis).find(x=>norm(x.textContent));"   // the pinned selection rows are empty
                 + " if(!r) return '';"
-                + " const m=norm(r.textContent).match(/\\b1\\d{8}\\b/);"
+                + " const m=norm(r.textContent).match(/(?<!\\d)1\\d{8,9}(?!\\d)/);"   // 9- or 10-digit MRN; the cells are run together ("…1100339576Prof Rahul"), so \\b would not match after it - digit look-arounds keep the longer order numbers out
                 + " return m? m[0] : ''; }");
         String found = mrn == null ? "" : mrn.toString();
         System.out.println("SampleAcceptReject: MRN discovered from an unfiltered search -> "
@@ -397,7 +407,11 @@ public class SampleAcceptReject extends BasePage {
                 + " return e? setEl(e,v)+' [" + M + "samplesutabilityremark]'"
                 + "   : '(no Sample Suitability Remark box)'; }", suitabilityRemark);
 
-        String r4 = typeDate(M + "sampleaccepteddatetime", dateTime);
+        // The Accepted Date box is ng-disabled="true" and arrives pre-filled with today's date (read-only picker): it cannot be typed into, so its own value is read back.
+        Object lockedVal = page.evaluate("() => { const e=document.querySelector(\"[ng-model='" + M + "sampleaccepteddatetime']\");"
+                + " return e && (e.disabled || e.readOnly) ? ('LOCKED:' + (e.value||'')) : ''; }");
+        String r4 = lockedVal != null && lockedVal.toString().startsWith("LOCKED:")
+                ? lockedVal.toString().substring(7) : typeDate(M + "sampleaccepteddatetime", dateTime);
 
         lastDialog = "AcceptanceRemark=" + r1 + " | Suitability=" + r2
                 + " | SuitabilityRemark=" + r3 + " | AcceptedDateTime=" + r4;
@@ -609,6 +623,61 @@ public class SampleAcceptReject extends BasePage {
                                          : "the page added: " + seen);
         System.out.println("SampleAcceptReject: reject save -> " + lastRejectSave + " toast=\"" + toast + "\"");
         return toast;
+    }
+
+    /** Tab count taken right before Show Report was clicked in {@link #openRejectionReportViaConsole}. */
+    public int consoleTabsBefore = 0;
+    public String lastConsoleSteps = "";
+
+    /**
+     * The Reject save no longer opens the Sample Rejection Report by itself (BW1170, 26/10/2026: "report is available via Report Console -> Investigation Reports").
+     * Follow that route: Report > Report Console > <b>Investigation Reports</b> > <b>Sample Rejection Report</b> > From Date-To Date filter (today by default) > Show Report.
+     * Returns "" when Show Report was clicked, else what stopped it. Capture the new tab with {@link #captureRejectionReport} using {@link #consoleTabsBefore}.
+     */
+    public String openRejectionReportViaConsole() {
+        StringBuilder log = new StringBuilder();
+        // 1) menu: Report (opened only when closed) -> Report Console
+        page.evaluate("() => {" + JS
+                + " const top=[...document.querySelectorAll('a')].find(a=>/^\\s*report\\s*$/i.test(norm(a.textContent)) && vis(a) && !(a.getAttribute('href')||'').includes('reportconsole'));"
+                + " const li=top&&top.closest('li');"
+                + " if(top && !(li && li.classList.contains('menu-open'))) top.click(); }");
+        waitForAngular(1500);
+        page.evaluate("() => {" + JS + " const a=[...document.querySelectorAll('a')].find(x=>(x.getAttribute('href')||'').toLowerCase()==='#/reportconsole' && vis(x)); if(a) a.click(); }");
+        try {
+            page.waitForFunction("() => !!document.querySelector(\"[ng-model='RptColsole.Report']\")", null,
+                    new com.microsoft.playwright.Page.WaitForFunctionOptions().setTimeout(20000));
+        } catch (Exception e) { return lastConsoleSteps = "Report Console did not open (" + page.url() + ")"; }
+        waitForAngular(2500);
+        log.append("Report Console opened");
+        // 2) category -> report
+        page.evaluate("() => {" + JS + " const b=[...document.querySelectorAll('button,a,div')].filter(vis).filter(e=>/^Investigation Reports$/.test(norm(e.textContent))).pop(); if(b) b.click(); }");
+        try {
+            page.waitForFunction("() => { const s=document.querySelector(\"[ng-model='RptColsole.Report']\"); return s && [...s.options].some(o=>/Sample Rejection Report/.test(o.textContent)); }",
+                    null, new com.microsoft.playwright.Page.WaitForFunctionOptions().setTimeout(15000));
+        } catch (Exception e) { return lastConsoleSteps = log + "; 'Sample Rejection Report' is not in the Investigation Reports list"; }
+        page.evaluate("() => { const s=document.querySelector(\"[ng-model='RptColsole.Report']\"); const o=[...s.options].find(x=>/Sample Rejection Report/.test(x.textContent));"
+                + " s.value=o.value; s.dispatchEvent(new Event('change',{bubbles:true})); }");
+        waitForAngular(2500);
+        log.append("; report 'Sample Rejection Report' selected");
+        // 3) From Date-To Date filter (both default to today)
+        page.evaluate("() => { const p=document.querySelector(\"[ng-model='RptColsole.Parameter']\"); const o=[...p.options].find(x=>/From Date/.test(x.textContent));"
+                + " if(o){ p.value=o.value; p.dispatchEvent(new Event('change',{bubbles:true})); } }");
+        waitForAngular(1200);
+        page.evaluate("() => { const b=[...document.querySelectorAll('[ng-click]')].find(e=>/AddFilter/.test(e.getAttribute('ng-click'))); if(b) b.click(); }");
+        waitForAngular(1500);
+        page.evaluate("() => { const b=document.querySelector(\"[ng-model='RptColsole.AddValue[$index]']\"); if(b) b.click(); }");
+        waitForAngular(1800);
+        page.evaluate("() => { const b=[...document.querySelectorAll(\".modal.in button\")].find(x=>/fnAdd\\('FromToDate'\\)/.test(x.getAttribute('ng-click')||'')); if(b) b.click(); }");
+        waitForAngular(1500);
+        log.append("; From Date-To Date filter added");
+        // 4) Show Report
+        consoleTabsBefore = page.context().pages().size();
+        Object clicked = page.evaluate("() => { const b=[...document.querySelectorAll('[ng-click]')].find(e=>/ShowReport/.test(e.getAttribute('ng-click'))); if(!b) return false; b.click(); return true; }");
+        if (!Boolean.TRUE.equals(clicked)) return lastConsoleSteps = log + "; the Show Report button was not found";
+        log.append("; Show Report clicked");
+        lastConsoleSteps = log.toString();
+        System.out.println("SampleAcceptReject: report console -> " + lastConsoleSteps);
+        return "";
     }
 
     /**

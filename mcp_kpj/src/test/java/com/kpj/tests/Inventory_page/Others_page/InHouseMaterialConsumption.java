@@ -72,6 +72,17 @@ public class InHouseMaterialConsumption extends DevHisBase {
         if (!mrnOk) { addSummary("Result", "FAILED — MRN: " + mc.problems); return; }
 
         String patient = mc.clickSearchPatient();
+        String usedMrn = MRN;
+        if (patient.isEmpty() && System.getProperty("materialconsumption.mrn") == null) {
+            // the default MRN has no visit today -> walk the patients the popup lists (those with a visit today)
+            String why = mc.problems.toString();
+            for (String cand : mc.candidateMrns(6, 2)) {
+                if (cand.equals(MRN)) continue;
+                if (!mc.enterMrn(cand)) continue;
+                patient = mc.clickSearchPatient();
+                if (!patient.isEmpty()) { usedMrn = cand; System.out.println("InHouseMaterialConsumption: " + MRN + " not accepted (" + why + ") -> using " + cand); break; }
+            }
+        }
         boolean found = !patient.isEmpty() && mc.ok();
         step("Click Search", "Click the MRN Search button", "The patient's details load", found ? "Loaded: " + patient : "No patient loaded — " + mc.problems, found ? "PASS" : "FAIL");
         if (!found) { addSummary("Result", "FAILED — Search: " + mc.problems); return; }

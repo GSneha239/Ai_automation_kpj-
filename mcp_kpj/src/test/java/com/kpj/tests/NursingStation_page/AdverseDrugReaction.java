@@ -119,6 +119,18 @@ public class AdverseDrugReaction extends DevHisBase {
         boolean attached = adr.patientAttached();
 
         if (!attached) {
+            // typed MRNs are refused here: pick the patient through the Patient Search popup (patientid/visitid are set by its Select)
+            StringBuilder viaPopup = new StringBuilder();
+            for (int n = 0; n < 4 && !attached; n++) {
+                String m = adr.selectPatientViaPopup(n);
+                if (m.isEmpty()) break;
+                attached = adr.patientAttached();
+                viaPopup.append(viaPopup.length() == 0 ? "" : "; ").append(m).append(attached ? " -> ATTACHED" : " -> not attached");
+                if (attached) { adr.workingMrn = m; searchResult = adr.lastFormSearch; }
+            }
+            if (viaPopup.length() > 0) addSummary("Patient Search popup", viaPopup.toString());
+        }
+        if (!attached) {
             java.util.List<String> discovered = adr.discoverMrns(10);
             addSummary("MRNs offered by the patient lookup",
                     discovered.isEmpty() ? "(none found)" : discovered.toString());

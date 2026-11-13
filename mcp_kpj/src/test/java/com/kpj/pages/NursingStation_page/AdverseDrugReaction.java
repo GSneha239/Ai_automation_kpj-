@@ -368,6 +368,42 @@ public class AdverseDrugReaction extends BasePage {
         return found;
     }
 
+    /**
+     * Pick the patient through the Patient Search popup ({@code OpenPopupScreen()}): untick the popup's Visit Date (ticked = today only), Search, then Select the
+     * {@code nth} distinct MRN listed ({@code SetSearchPatient}) — which sets patientid / visitid in the form model. Typing 10-digit MRNs into the box
+     * is refused here. Fills {@link #lastFormSearch} in the wording {@link #patientAttached()} reads, and returns the MRN ("" if none).
+     */
+    public String selectPatientViaPopup(int nth) {
+        clearToasts();
+        page.evaluate("() => { const vis=e=>!!e && !!(e.offsetWidth||e.offsetHeight||e.getClientRects().length);"
+                + " const b=[...document.querySelectorAll('button,a,i,span')].filter(vis).find(x=>/OpenPopupScreen/i.test(x.getAttribute('ng-click')||'')); if(b) b.click(); }");
+        try {
+            page.waitForFunction("() => [...document.querySelectorAll('.modal.in')].some(m=>m.offsetWidth||m.offsetHeight||m.getClientRects().length)",
+                    null, new Page.WaitForFunctionOptions().setTimeout(10000));
+        } catch (Exception e) { lastFormSearch = "(the Patient Search popup did not open)"; return ""; }
+        waitForAngular(900);
+        page.evaluate("() => { const v=document.querySelector(\".modal.in input[ng-model='PatientData.ChkVisitDate']\"); if(v && v.checked) v.click(); }");
+        waitForAngular(500);
+        page.evaluate("() => { const b=[...document.querySelectorAll('.modal.in button')].find(x=>/SearchPatient\\(0\\)/.test(x.getAttribute('ng-click')||'')); if(b) b.click(); }");
+        try {
+            page.waitForFunction("() => [...document.querySelectorAll('.modal.in table tbody tr')].some(r=>r.offsetParent!==null && (r.textContent||'').trim())",
+                    null, new Page.WaitForFunctionOptions().setTimeout(20000));
+        } catch (Exception e) { lastFormSearch = "(the popup listed no patient)"; return ""; }
+        waitForAngular(700);
+        Object mrn = page.evaluate("(n) => { const rows=[...document.querySelectorAll('.modal.in table tbody tr')].filter(r=>r.offsetParent!==null && (r.textContent||'').trim());"
+                + " const seen=[]; for(const r of rows){ const m=(r.textContent||'').trim().split(/\\s+/)[0]; if(!seen.some(s=>s.m===m)) seen.push({m,r}); }"
+                + " const p=seen[n]; if(!p) return ''; const b=p.r.querySelector(\"[ng-click*='SetSearchPatient']\"); if(!b) return ''; b.click(); return p.m; }", nth);
+        String m = mrn == null ? "" : mrn.toString();
+        if (m.isEmpty()) { lastFormSearch = "(the popup showed no selectable patient #" + nth + ")"; return ""; }
+        waitForAngular(2500);
+        Object r = page.evaluate("() => { const e=document.querySelector(\"[ng-model='AdverseDrugReaction.MRNO']\"); if(!e) return '(no MRN box)';"
+                + " const o=window.angular.element(e).scope().AdverseDrugReaction||{}; const d=document.querySelector(\"[ng-model='AdverseDrugReaction.drugid']\");"
+                + " return 'patient: MRNo='+o.MRNO+(o.patientid? ', patientid='+o.patientid : '')+(o.visitid? ', visitid='+o.visitid : '')+' | drugOptions='+(d?d.options.length:-1); }");
+        lastFormSearch = r == null ? "" : r.toString();
+        System.out.println("AdverseDrugReaction: popup patient " + m + " -> " + lastFormSearch);
+        return m;
+    }
+
     // ---- fields ------------------------------------------------------------
 
     /** Select the <b>drug administered</b> — its list is populated from the patient, so it is polled. */

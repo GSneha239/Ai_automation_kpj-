@@ -220,6 +220,44 @@ public class RadiologyReportDelivery extends BasePage {
         return lastMrnSearch;
     }
 
+    /**
+     * Enter the MRN through the <b>Patient Search</b> popup ({@code OpenPopupScreen()} beside the MRN box): filter by MRN, untick the popup's Visit Date
+     * (ticked for today by default, which hides patients last seen earlier), Search, and Select that MRN's row ({@code SetSearchPatient}).
+     * Sets {@link #lastMrnSearch} to the same wording the typed route uses so {@link #mrnEntered} works for both.
+     */
+    public String selectMrnViaPopup(String mrn) {
+        Object opened = page.evaluate("() => {" + JS
+                + " const b=[...document.querySelectorAll('button,a,span,i')].filter(vis).find(x=>/OpenPopupScreen/i.test(x.getAttribute('ng-click')||''));"
+                + " if(!b) return false; b.click(); return true; }");
+        if (!Boolean.TRUE.equals(opened)) return lastMrnSearch = "(the Patient Search popup button was not found)";
+        try {
+            page.waitForFunction("() => [...document.querySelectorAll('.modal.in')].some(m=>m.offsetWidth||m.offsetHeight||m.getClientRects().length)",
+                    null, new Page.WaitForFunctionOptions().setTimeout(10000));
+        } catch (Exception e) { return lastMrnSearch = "(the Patient Search popup did not open)"; }
+        waitForAngular(900);
+        page.evaluate("(m) => {"
+                + " const modal=document.querySelector('.modal.in');"
+                + " const e=modal.querySelector(\"input[ng-model='PatientData.MRNo']\"); if(e){ const c=window.angular.element(e).controller('ngModel'); e.value=m;"
+                + "   if(c){ c.$setViewValue(m); c.$render(); } e.dispatchEvent(new Event('input',{bubbles:true})); }"
+                + " const v=modal.querySelector(\"input[ng-model='PatientData.ChkVisitDate']\"); if(v && v.checked) v.click(); }", mrn);
+        waitForAngular(500);
+        page.evaluate("() => { const b=[...document.querySelectorAll('.modal.in button')].find(x=>/SearchPatient\\(0\\)/.test(x.getAttribute('ng-click')||'')); if(b) b.click(); }");
+        try {
+            page.waitForFunction("(m) => [...document.querySelectorAll('.modal.in table tbody tr')].some(r=>r.offsetParent!==null && (r.textContent||'').split(/\\s+/).indexOf(m)>=0)",
+                    mrn, new Page.WaitForFunctionOptions().setTimeout(20000));
+        } catch (Exception e) {
+            page.evaluate("() => { const b=[...document.querySelectorAll('.modal.in button')].find(x=>/CloseModel/.test(x.getAttribute('ng-click')||'')); if(b) b.click(); }");
+            return lastMrnSearch = "(the Patient Search popup listed no patient for MRN " + mrn + ")";
+        }
+        page.evaluate("(m) => { const r=[...document.querySelectorAll('.modal.in table tbody tr')].find(x=>x.offsetParent!==null && (x.textContent||'').split(/\\s+/).indexOf(m)>=0);"
+                + " const b=r&&r.querySelector(\"[ng-click*='SetSearchPatient']\"); if(b) b.click(); }", mrn);
+        waitForAngular(2000);
+        Object held = page.evaluate("() => { const e=document.querySelector(\"input[ng-model='ReportDelivery.MRNO']\"); return e?e.value:'(no MRN box)'; }");
+        lastMrnSearch = "Patient Search popup -> MRN \"" + held + "\" selected into the MRN box [SetSearchPatient]";
+        System.out.println("RadiologyReportDelivery: mrn -> " + lastMrnSearch);
+        return lastMrnSearch;
+    }
+
     public boolean mrnEntered(String mrn) {
         return lastMrnSearch != null && lastMrnSearch.contains("\"" + mrn + "\"");
     }

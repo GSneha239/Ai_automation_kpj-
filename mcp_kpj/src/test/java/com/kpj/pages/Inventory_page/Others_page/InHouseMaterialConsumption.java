@@ -276,6 +276,19 @@ public class InHouseMaterialConsumption extends BasePage {
         return ok() ? d : "";
     }
 
+    /**
+     * MRNs from the Find Patient popup ({@code OpenPatientSearchPopupScreen()}); its default filters list patients who visited TODAY — the only ones this screen accepts
+     * ("Please Mark Today's Visit of this Patient!" for anyone else).
+     */
+    public List<String> candidateMrns(int target, int maxPages) {
+        List<String> mrns = new ArrayList<>();
+        for (int attempt = 0; attempt < 2 && mrns.isEmpty(); attempt++) {
+            if (attempt > 0) waitForAngular(2500);
+            mrns = new com.kpj.pages.PatientSearchPopup(page).collectMrns("OpenPatientSearchPopupScreen", target, maxPages);
+        }
+        return mrns;
+    }
+
     /** Choose the Store (empty by default; Get Items and the item search need it). Matches ignoring case and spaces. */
     public String selectStore(String want) {
         problems.clear();

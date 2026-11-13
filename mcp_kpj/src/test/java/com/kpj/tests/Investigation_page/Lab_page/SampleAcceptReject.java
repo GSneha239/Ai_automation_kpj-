@@ -248,6 +248,8 @@ public class SampleAcceptReject extends DevHisBase {
         // A fresh, independent search: the record Accept just saved (if any) no longer qualifies, so
         // Reject cannot reuse it and must find its own.
 
+        // The Accept half may have searched under one patient (the MRN box / patient context survives a plain re-search): reset it so Reject searches across all patients.
+        if (rejectMrn.isEmpty()) sar.clearFilters(from, to);
         addSummary("[Reject] Sample Status filter", sar.selectStatus(status));
 
         String rejectMrnSearch = rejectMrn.isEmpty()
@@ -326,6 +328,13 @@ public class SampleAcceptReject extends DevHisBase {
                             filled ? "PASS" : "FAIL");
 
                     int tabsBefore = page.context().pages().size();
+                    // Log every tab/popup the moment it appears (and its URL once it has one) so a short-lived or late report window is not missed.
+                    page.context().onPage(np -> {
+                        System.out.println("SampleAcceptReject: NEW TAB at " + java.time.LocalTime.now() + " url=" + np.url());
+                        try { np.onLoad(p2 -> System.out.println("SampleAcceptReject: NEW TAB loaded url=" + p2.url())); } catch (Exception ignore) { }
+                    });
+                    page.onPopup(np -> System.out.println("SampleAcceptReject: POPUP at " + java.time.LocalTime.now() + " url=" + np.url()));
+                    page.onDialog(d -> System.out.println("SampleAcceptReject: DIALOG " + d.type() + " \"" + d.message() + "\""));
                     String rejectToast = sar.saveRejectAndGetToast();
                     boolean rejectOk = com.kpj.pages.Investigation_page.Lab_page.SampleAcceptReject.isSuccess(rejectToast);
                     addSummary("[Reject] What the screen put on screen after Save", sar.lastRejectSave);
@@ -338,7 +347,11 @@ public class SampleAcceptReject extends DevHisBase {
                                     : "the screen answered: \"" + rejectToast + "\"")),
                             rejectOk ? "PASS" : "FAIL");
 
-                    String report = sar.captureRejectionReport(tabsBefore, 9000);
+                    // Reject no longer opens the report itself (commented out in the app, BW1170): open it from Report Console > Investigation Reports.
+                    String consoleErr = rejectOk ? sar.openRejectionReportViaConsole() : "the Reject was not saved";
+                    String report = consoleErr.isEmpty()
+                            ? sar.captureRejectionReport(sar.consoleTabsBefore, 25000)
+                            : sar.captureRejectionReport(tabsBefore, 3000) + " | Report Console route: " + consoleErr;
                     boolean reportOk = !sar.reportBlank && sar.lastReportUrl != null && !sar.lastReportUrl.isEmpty();
                     addSummary("[Reject] Rejection report", report);
                     if (sar.lastReportFile != null && !sar.lastReportFile.isEmpty()) {
@@ -351,8 +364,9 @@ public class SampleAcceptReject extends DevHisBase {
                         catch (Exception ignore) { }
                     }
                     step(reportShot, "[Reject] Verify the sample rejection report is generated",
-                            "Save should generate the sample rejection report",
-                            "A report opens and carries content",
+                            "Open the Sample Rejection Report: Report > Report Console > Investigation Reports > Sample Rejection Report, From/To date (today) > Show Report"
+                                    + " (the Reject save itself no longer opens it)",
+                            "A report opens in a new tab and carries content",
                             (reportOk
                                 ? "PASSES because a report was produced and it has content on it: " + report
                                 : "FAILS — " + (sar.lastReportUrl == null || sar.lastReportUrl.isEmpty()

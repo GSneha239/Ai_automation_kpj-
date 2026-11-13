@@ -54,7 +54,10 @@ public class UnderMaintenance extends BasePage {
 
     /** Number of bed rows in the generated bed list (SELECT | WARD | ROOM TYPE | BED table with checkboxes). */
     public int bedCount() {
-        Object r = page.evaluate("() => { const t=[...document.querySelectorAll('table')].find(x=>{ const h=((x.querySelector('thead')||{}).innerText||'').toLowerCase(); return /select/.test(h) && /\\bbed\\b/.test(h) && /ward/.test(h); }); if(!t) return 0; return [...t.querySelectorAll('tbody tr')].filter(r=>r.querySelector('input[type=checkbox],input[type=radio]') && !/no records|no data/i.test(r.textContent||'')).length; }");
+        // Counts the rows of EVERY bed table (the Census list AND the Non-Census list) — looking at only the first table
+        // reported "no beds" whenever the beds were in the Non-Census one.
+        Object r = page.evaluate("() => { const ts=[...document.querySelectorAll('table')].filter(x=>{ const h=((x.querySelector('thead')||{}).innerText||'').toLowerCase(); return /select/.test(h) && /\\bbed\\b/.test(h) && /ward/.test(h); });"
+                + " let n=0; ts.forEach(t=>{ n+=[...t.querySelectorAll('tbody tr')].filter(r=>r.querySelector('input[type=checkbox],input[type=radio]') && !/no records|no data/i.test(r.textContent||'')).length; }); return n; }");
         return r instanceof Number ? ((Number) r).intValue() : 0;
     }
 
@@ -67,10 +70,13 @@ public class UnderMaintenance extends BasePage {
     public String selectWardRoomTypeUntilBeds() {
         Object r = page.evaluate("async () => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const A=window.angular; const sleep=ms=>new Promise(r=>setTimeout(r,ms));"
                 + " const setSel=(ng,idx)=>{ const e=document.querySelector(\"select[ng-model='\"+ng+\"']\"); if(!e) return null; e.selectedIndex=idx; e.dispatchEvent(new Event('change',{bubbles:true})); try{A.element(e).triggerHandler('change');}catch(x){} if(window.jQuery){try{jQuery(e).trigger('change');}catch(x){}} return norm(e.options[idx].textContent); };"
-                + " const bedCount=()=>{ const t=[...document.querySelectorAll('table')].find(x=>{ const h=((x.querySelector('thead')||{}).innerText||'').toLowerCase(); return /select/.test(h) && /\\bbed\\b/.test(h) && /ward/.test(h); }); if(!t) return 0; return [...t.querySelectorAll('tbody tr')].filter(r=>r.querySelector('input[type=checkbox],input[type=radio]') && !/no records|no data/i.test(r.textContent||'')).length; };"
+                // Beds are listed in a Census table AND a Non-Census table: count both.
+                + " const bedCount=()=>{ const ts=[...document.querySelectorAll('table')].filter(x=>{ const h=((x.querySelector('thead')||{}).innerText||'').toLowerCase(); return /select/.test(h) && /\\bbed\\b/.test(h) && /ward/.test(h); }); let n=0; ts.forEach(t=>{ n+=[...t.querySelectorAll('tbody tr')].filter(r=>r.querySelector('input[type=checkbox],input[type=radio]') && !/no records|no data/i.test(r.textContent||'')).length; }); return n; };"
                 + " const wardSel=document.querySelector(\"select[ng-model='undermaintenance.WardID']\"); const rtSel=document.querySelector(\"select[ng-model='undermaintenance.BedClassID']\"); if(!wardSel||!rtSel) return '(no selects)';"
                 + " const realOpts=sel=>[...sel.options].map((o,i)=>({i,t:norm(o.textContent),v:o.value})).filter(o=>o.v && !/^-*\\s*select/i.test(o.t));"
-                + " const wardOpts=realOpts(wardSel); const rtOpts=realOpts(rtSel); let tries=0;"
+                // Preferred pair first (per request): Ward '5TH FLOOR MEDICAL MESRA WARD', Room Type exactly '2 BEDDED'; everything else after, in list order.
+                + " const prefFirst=(arr,re)=>[...arr.filter(o=>re.test(o.t)),...arr.filter(o=>!re.test(o.t))];"
+                + " const wardOpts=prefFirst(realOpts(wardSel), /5TH FLOOR MEDICAL MESRA/i); const rtOpts=prefFirst(realOpts(rtSel), /^2 BEDDED$/i); let tries=0;"
                 + " for(const ward of wardOpts){ setSel('undermaintenance.WardID', ward.i); await sleep(600);"
                 + "   for(const rt of rtOpts){ setSel('undermaintenance.BedClassID', rt.i);"
                 + "     for(let poll=0; poll<8; poll++){ await sleep(1500); const n=bedCount(); if(n>0) return 'Ward='+ward.t+' | RoomType='+rt.t+' | beds='+n; }"
@@ -113,8 +119,9 @@ public class UnderMaintenance extends BasePage {
         StringBuilder rejected = new StringBuilder();
         for (int attempt = 0; attempt < Math.max(1, rowCount); attempt++) {
             Object r = page.evaluate("(skip) => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const A=window.angular;"
-                    + " const t=[...document.querySelectorAll('table')].find(x=>{ const h=((x.querySelector('thead')||{}).innerText||'').toLowerCase(); return /select/.test(h) && /\\bbed\\b/.test(h) && /ward/.test(h); }); if(!t) return null;"
-                    + " const rows=[...t.querySelectorAll('tbody tr')].filter(r=>r.querySelector('input[type=checkbox],input[type=radio]') && !/no records/i.test(r.textContent||''));"
+                    // Rows from BOTH bed tables (Census first, then Non-Census), so a Non-Census bed can be selected too.
+                    + " const ts=[...document.querySelectorAll('table')].filter(x=>{ const h=((x.querySelector('thead')||{}).innerText||'').toLowerCase(); return /select/.test(h) && /\\bbed\\b/.test(h) && /ward/.test(h); }); if(!ts.length) return null;"
+                    + " const rows=[]; ts.forEach(t=>[...t.querySelectorAll('tbody tr')].filter(r=>r.querySelector('input[type=checkbox],input[type=radio]') && !/no records|no data/i.test(r.textContent||'')).forEach(r=>rows.push(r)));"
                     + " const row=rows[skip]; if(!row) return null;"
                     + " const cb=row.querySelector('input[type=checkbox],input[type=radio]');"
                     + " if(cb.disabled) return { skipped:true, text: norm(row.textContent).slice(0,50) };"
@@ -136,6 +143,42 @@ public class UnderMaintenance extends BasePage {
                 : "every candidate bed row was rejected: " + rejected;
         System.out.println("selectFirstBed: " + lastNoBedReason);
         return null;
+    }
+
+    /** Why the last {@link #selectExtraBed(String)} call selected nothing ("" when it did, or when the bed is not listed). */
+    public String lastExtraBedNote = "";
+
+    /**
+     * Also tick the bed named {@code bedName} (default BED-777, per request) when it is in the generated bed list —
+     * Census or Non-Census — and not already ticked. Does nothing when the bed is not listed. A bed the app rejects
+     * (alert dismissed) is reported in {@link #lastExtraBedNote}, not treated as a failure.
+     *
+     * @return the ticked row's text, or "" when it was not listed / already ticked / rejected
+     */
+    public String selectExtraBed(String bedName) {
+        lastExtraBedNote = "";
+        if (bedName == null || bedName.isBlank()) return "";
+        Object r = page.evaluate("(target) => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const A=window.angular;"
+                + " const ts=[...document.querySelectorAll('table')].filter(x=>{ const h=((x.querySelector('thead')||{}).innerText||'').toLowerCase(); return /select/.test(h) && /\\bbed\\b/.test(h) && /ward/.test(h); });"
+                + " for(const t of ts){ for(const row of [...t.querySelectorAll('tbody tr')]){"
+                + "   const cb=row.querySelector('input[type=checkbox],input[type=radio]'); if(!cb) continue;"
+                + "   if(!norm(row.textContent).toUpperCase().includes(target.toUpperCase())) continue;"
+                + "   if(cb.checked) return { state:'already', text:norm(row.textContent).slice(0,60) };"
+                + "   if(cb.disabled) return { state:'disabled', text:norm(row.textContent).slice(0,60) };"
+                + "   const c=A.element(cb).controller('ngModel'); cb.checked=true; if(c){ c.$setViewValue(true); c.$render(); } cb.dispatchEvent(new Event('change',{bubbles:true})); try{A.element(cb).triggerHandler('change');}catch(e){} if(window.jQuery){try{jQuery(cb).trigger('change');}catch(e){}}"
+                + "   return { state:'ticked', text:norm(row.textContent).slice(0,60) }; } }"
+                + " return { state:'absent' }; }", bedName);
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> m = r instanceof java.util.Map ? (java.util.Map<String, Object>) r : null;
+        String state = m == null ? "absent" : String.valueOf(m.get("state"));
+        String text = m == null ? "" : String.valueOf(m.get("text"));
+        if ("absent".equals(state)) { lastExtraBedNote = bedName + " is not in the bed list"; return ""; }
+        if ("already".equals(state)) { lastExtraBedNote = bedName + " was already selected"; return ""; }
+        if ("disabled".equals(state)) { lastExtraBedNote = bedName + " is listed but its checkbox is disabled: " + text; return ""; }
+        waitForAngular(500);
+        String alert = dismissAnyAlert();
+        if (!alert.isEmpty()) { lastExtraBedNote = bedName + " was rejected: " + (alert.length() > 100 ? alert.substring(0, 100) : alert); return ""; }
+        return text;
     }
 
     /**
@@ -281,6 +324,11 @@ public class UnderMaintenance extends BasePage {
                     + (lastNoBedReason.isEmpty() ? "" : " — " + lastNoBedReason);
             return res;
         }
+
+        // Also tick BED-777 when it is in the list (override with -Dum.extraBed=<name>; blank to skip).
+        String extra = selectExtraBed(System.getProperty("um.extraBed", "BED-777"));
+        System.out.println("markBedUnderMaintenance: extra bed -> " + (extra.isEmpty() ? lastExtraBedNote : extra));
+        if (!extra.isEmpty()) res.bed = res.bed + " + " + extra;
 
         enterRemark(remark);
         res.toast = saveAndGetToast();

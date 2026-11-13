@@ -56,29 +56,45 @@ public class UnderMaintenance extends DevHisBase {
         java.time.format.DateTimeFormatter f = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy");
         java.time.LocalDate today = java.time.LocalDate.now();
 
-        // Select Ward + Room Type (generate bed list) -> select a bed -> Remark -> Save — the SAME logic the
-        // Graphical View "vacant bed -> Under Maintenance" action reuses, so both entry points behave
-        // identically rather than drifting apart as two copies.
-        com.kpj.pages.Ip.BedManagement_page.UnderMaintenance.MaintenanceResult res =
-                um.markBedUnderMaintenance(today.format(f), today.plusDays(7).format(f), "Bed under maintenance - automated test");
+        // Each step is logged right AFTER its data is entered and BEFORE the next action, so its screenshot shows the
+        // filled form (Ward + Room Type with the generated bed list; then the ticked bed; then the remark) — not the
+        // screen after Save. (The combined markBedUnderMaintenance() the Graphical View reuses runs everything first.)
+        final String remark = "Bed under maintenance - automated test";
+        um.ensureDates(today.format(f), today.plusDays(7).format(f));
 
+        String combo = um.selectWardRoomTypeUntilBeds();
+        boolean bedsOk = um.bedCount() > 0;
         step(page, "Select Ward + Room Type (generate bed list)",
                 "Select Ward + Room Type; if the bed list isn't generated, change the dropdown values until beds appear",
-                "The bed list is generated with at least one bed", res.combo, res.bedsOk ? "PASS" : "FAIL");
-        if (!res.bedsOk) { addSummary("Result", res.failReason); return; }
+                "The bed list is generated with at least one bed", combo, bedsOk ? "PASS" : "FAIL");
+        if (!bedsOk) { addSummary("Result", "No bed list generated for any Ward/Room Type combo tried: " + combo); return; }
 
-        step(page, "Select the bed", "Tick the SELECT checkbox of the first bed in the generated list",
-                "A bed is selected", res.bed == null ? "No bed selected" : "Selected: " + res.bed, res.bed == null ? "FAIL" : "PASS");
-        if (res.bed == null) { addSummary("Result", res.failReason); return; }
+        String bed = um.selectFirstBed();
+        String extra = um.selectExtraBed(System.getProperty("um.extraBed", "BED-777"));
+        System.out.println("UnderMaintenance: extra bed -> " + (extra.isEmpty() ? um.lastExtraBedNote : extra));
+        if (bed != null && !extra.isEmpty()) bed = bed + " + " + extra;
+        step(page, "Select the bed", "Tick the SELECT checkbox of the first bed in the generated list (and BED-777 when listed)",
+                "A bed is selected", bed == null ? "No bed selected" : "Selected: " + bed, bed == null ? "FAIL" : "PASS");
+        if (bed == null) {
+            addSummary("Result", "A bed list generated (" + combo + ") but no bed row could be selected from it"
+                    + (um.lastNoBedReason.isEmpty() ? "" : " - " + um.lastNoBedReason));
+            return;
+        }
 
+        um.enterRemark(remark);
         step(page, "Enter remark", "Enter the Remark (undermaintenance.remark)",
-                "The remark is entered", "Remark = 'Bed under maintenance - automated test'", "PASS");
+                "The remark is entered", "Remark = '" + remark + "'", "PASS");
 
+        String toast = um.saveAndGetToast();
+        String tl = toast == null ? "" : toast.toLowerCase();
+        boolean ok = tl.contains("mainten") || tl.contains("success") || tl.contains("saved") || tl.contains("added");
         step(page, "Click Save & success toast", "Click Save (IUDBedUnderMaitenance()); wait for the success toast",
                 "'Bed Under Maintenance saved successfully.' toast",
-                res.ok ? res.toast : "FAIL: " + res.failReason, res.ok ? "PASS" : "FAIL");
+                ok ? toast : "FAIL: " + (toast == null || toast.isEmpty()
+                        ? "Save (IUDBedUnderMaitenance()) produced no toast at all for bed " + bed
+                        : "Save rejected bed " + bed + ": \"" + toast + "\""), ok ? "PASS" : "FAIL");
 
-        addSummary("Under Maintenance · Bed", res.bed == null ? "-" : res.bed);
-        addSummary("Result", res.ok ? res.toast : res.failReason);
+        addSummary("Under Maintenance · Bed", bed);
+        addSummary("Result", ok ? toast : "Save not confirmed: \"" + toast + "\"");
     }
 }
