@@ -44,6 +44,13 @@ public abstract class InventoryScreen extends BasePage {
 
     protected InventoryScreen(Page page) { super(page); }
 
+    /**
+     * {@code text} as a literal inside a pattern that Playwright hands to JAVASCRIPT. {@link Pattern#quote} must not be used for that:
+     * it yields {@code \Q...\E}, which a JS regex does not understand, so the locator then matched nothing (every
+     * {@code button("Search")} click timed out).
+     */
+    protected static String jsLiteral(String text) { return text.replaceAll("[.*+?^${}()|\\[\\]\\\\/-]", "\\\\$0"); }
+
     private static Page.WaitForFunctionOptions poll(int timeoutMs) { return new Page.WaitForFunctionOptions().setTimeout(timeoutMs).setPollingInterval(250); }
 
     // ================================================================ navigation
@@ -64,7 +71,8 @@ public abstract class InventoryScreen extends BasePage {
         if (!(chain instanceof List)) return "no sidebar link " + href + " exists under Inventory for this user";
         String parent = "^Inventory$";
         for (Object o : (List<?>) chain) {
-            String re = "^" + Pattern.quote(String.valueOf(o)) + "$";
+            // JavaScript regex: Pattern.quote() would give \Q...\E, which JS does not understand (the group then never matched)
+            String re = "^" + String.valueOf(o).replaceAll("[.*+?^${}()|\\[\\]\\\\/-]", "\\\\$0") + "$";
             if (!expandMenuEntry(parent, re)) return "the menu group \"" + o + "\" did not expand";
             parent = re;
         }
@@ -124,7 +132,7 @@ public abstract class InventoryScreen extends BasePage {
     /** Locator of the visible button whose trimmed text is exactly {@code text}. */
     public Locator button(String text) {
         return page.locator("button:visible, input[type=button]:visible")
-                .filter(new Locator.FilterOptions().setHasText(Pattern.compile("^\\s*" + Pattern.quote(text) + "\\s*$"))).first();
+                .filter(new Locator.FilterOptions().setHasText(Pattern.compile("^\\s*" + jsLiteral(text) + "\\s*$"))).first();
     }
 
     /** Clicks a NON-writing button (Search, New, Back, Print...). Refuses Save / Receive / Approve / Delete / Submit. */
@@ -364,7 +372,7 @@ public abstract class InventoryScreen extends BasePage {
                 + " if(e && G.api.core.scrollTo) G.api.core.scrollTo(e, c); }", Arrays.asList(grid, keyColumn, rowText));
         // the cell whose whole text is the record number: clicking it selects that row (row text has no separators between cells)
         Locator cell = page.locator(grid + " .ui-grid-render-container-body .ui-grid-row .ui-grid-cell-contents")
-                .filter(new Locator.FilterOptions().setHasText(Pattern.compile("^\\s*" + Pattern.quote(rowText) + "\\s*$"))).first();
+                .filter(new Locator.FilterOptions().setHasText(Pattern.compile("^\\s*" + jsLiteral(rowText) + "\\s*$"))).first();
         try {
             cell.waitFor(new Locator.WaitForOptions().setTimeout(8000));
             cell.click(new Locator.ClickOptions().setTimeout(8000));

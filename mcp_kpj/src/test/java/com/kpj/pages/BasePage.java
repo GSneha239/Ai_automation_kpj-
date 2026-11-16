@@ -122,6 +122,16 @@ public abstract class BasePage {
                             java.util.Arrays.asList(parentRegex, entryRegex), new Page.WaitForFunctionOptions().setTimeout(12000));
                     continue;
                 } catch (Exception notThere) {
+                    try {
+                        Object d = page.evaluate("([pr, er]) => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                                + " const all=[...document.querySelectorAll('a')].filter(x=>new RegExp(er,'i').test(norm(x.textContent)));"
+                                + " const inv=[...document.querySelectorAll('a')].filter(x=>/^Inventory$/i.test(norm(x.textContent)));"
+                                + " return 'viewport '+innerWidth+'x'+innerHeight+' | body='+document.body.className.slice(0,80)"
+                                + " +' | inventory='+inv.map(x=>'vis='+(x.offsetParent!==null)+' li='+((x.closest('li')||{}).className||'').slice(0,40)).join(';')"
+                                + " +' | matches='+all.map(x=>(x.getAttribute('href')||'')+' vis='+(x.offsetParent!==null)+' li='+((x.closest('li')||{}).className||'').slice(0,40)).join(' ;; '); }",
+                                java.util.Arrays.asList(parentRegex, entryRegex));
+                        System.out.println("expandMenuEntry: '" + entryRegex + "' not found under '" + parentRegex + "' - " + d);
+                    } catch (Exception ignore) { }
                     return false;
                 }
             }
@@ -136,6 +146,15 @@ public abstract class BasePage {
                         + (attempt < 3 ? " - clicking again" : ""));
             }
         }
+        // diagnostic: what the sidebar looked like when the entry would not open
+        try {
+            Object d = page.evaluate("(er) => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                    + " const all=[...document.querySelectorAll('a')].filter(x=>new RegExp(er,'i').test(norm(x.textContent)));"
+                    + " return 'viewport '+innerWidth+'x'+innerHeight+' | body='+document.body.className.slice(0,80)+' | matches='"
+                    + " +all.map(x=>(x.getAttribute('href')||'')+' vis='+(x.offsetParent!==null)+' li='+((x.closest('li')||{}).className||'').slice(0,40)).join(' ;; '); }",
+                    entryRegex);
+            System.out.println("expandMenuEntry: gave up on '" + entryRegex + "' - " + d);
+        } catch (Exception ignore) { }
         return false;
     }
 
