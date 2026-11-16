@@ -98,12 +98,17 @@ public abstract class ReadOnlyScreen extends BasePage {
     }
 
     /** Wrap JAlert / window.open in the running app (idempotent; re-run after each in-app navigation). */
+    /** When true, window.open is only RECORDED and still opens the new tab (write tests that need the report tab). Read-only tests keep it false: the call is swallowed. */
+    public boolean allowWindowOpen = false;
+
     public void hookAlerts() {
-        page.evaluate("() => { window.__roAlerts = window.__roAlerts || []; window.__roOpened = window.__roOpened || [];"
+        page.evaluate("(allow) => { window.__roAlerts = window.__roAlerts || []; window.__roOpened = window.__roOpened || [];"
                 + " if (window.JAlert && !window.JAlert.__ro) { const o = window.JAlert;"
                 + "   const w = function (m) { window.__roAlerts.push(String(m)); try { return o.apply(this, arguments); } catch (e) { } };"
                 + "   w.__ro = true; window.JAlert = w; }"
-                + " if (!window.open.__ro) { const w2 = function (u) { window.__roOpened.push(String(u)); return null; }; w2.__ro = true; window.open = w2; } }");
+                + " if (!window.open.__ro) { const o2 = window.open;"
+                + "   const w2 = function (u) { window.__roOpened.push(String(u)); return allow ? o2.apply(window, arguments) : null; };"
+                + "   w2.__ro = true; window.open = w2; } }", allowWindowOpen);
     }
 
     public void clearCaptured() {

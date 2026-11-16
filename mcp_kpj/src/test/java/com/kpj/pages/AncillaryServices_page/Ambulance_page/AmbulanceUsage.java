@@ -243,7 +243,12 @@ public class AmbulanceUsage extends BasePage {
         Object pn = page.evaluate("(m) => {" + JS
                 + " const e=byNg('" + M + "patientname'); const v=e?norm(e.value):'';"
                 + " if(v) return v;"
-                + " const mm=(document.body.innerText||'').match(new RegExp('Name\\\\s*:\\\\s*(.+?)\\\\s+MRN\\\\s*:\\\\s*'+m));"
+                // the Patient Name box is hidden after the search but still holds the name
+                + " const hid=[...document.querySelectorAll(\"[ng-model='" + M + "patientname']\")].map(x=>norm(x.value)).find(x=>x);"
+                + " if(hid) return hid;"
+                // banner: 'Name : John Peter' then DOB ... and 'MRN : 1100339336' on the following lines
+                + " const bt=document.body.innerText||''; if(!new RegExp('MRN\\\\s*:\\\\s*'+m).test(bt)) return '';"
+                + " const mm=bt.match(/Name\\s*:\\s*([^\\n]+?)\\s*(?:\\n|MRN\\s*:|DOB)/);"
                 + " return mm?norm(mm[1]):''; }", mrn);
         lastPatientName = pn == null ? "" : pn.toString();
 

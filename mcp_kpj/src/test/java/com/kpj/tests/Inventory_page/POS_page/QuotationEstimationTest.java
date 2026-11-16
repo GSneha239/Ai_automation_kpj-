@@ -126,7 +126,12 @@ public class QuotationEstimationTest extends DevHisBase {
                     qe.openAddForm();
                     qe.clickExternalPatientLabel();
                     String v = qe.regType();
-                    return r("2".equals(v), "Reg. Type model = " + v + ("1".equals(v) ? " (IPD selected - IPD and External Patient radios share id 'radios-1')" : ""));
+                    boolean viaLabel = "2".equals(v);
+                    // clicking the radio itself works (live check 16/11/2026) - only the label is broken
+                    qe.clickRegTypeRadio("2");
+                    String direct = qe.regType();
+                    return r(viaLabel, "Clicking the label -> Reg. Type model = " + v + ("1".equals(v) ? " (IPD selected - IPD and External Patient radios share id 'radios-1')" : "")
+                            + " | clicking the radio itself -> " + direct);
                 });
 
         tc("QE-06", "External Patient item row", "Click the External Patient radio itself",
@@ -227,10 +232,20 @@ public class QuotationEstimationTest extends DevHisBase {
                 () -> {
                     String why = prepareExternalWithTemplate(qe);
                     if (!why.isEmpty()) return new String[]{"BLOCKED", why};
+                    // Seen live (16/11/2026): removing ONE of two lines recalculates the total; removing the LAST line leaves the old total.
+                    qe.clickAddBillTemplate();                       // 2 lines now (the screen accepts the duplicate - see QE-13)
                     String start = qe.total();
+                    int lines0 = qe.serviceRows().size();
+                    String afterOne = start;
+                    if (lines0 > 1) { qe.removeServiceRow(0); afterOne = qe.total(); }
+                    double expectOne = lines0 > 1 ? QuotationEstimation.money(start) * (lines0 - 1) / lines0 : 0;
+                    boolean oneOk = lines0 <= 1 || Math.abs(QuotationEstimation.money(afterOne) - expectOne) < 0.005;
                     while (!qe.serviceRows().isEmpty()) qe.removeServiceRow(0);
                     String end = qe.total();
-                    return r(QuotationEstimation.money(end) == 0, "Total " + start + " -> " + (end.isEmpty() ? "(empty)" : end) + " with 0 lines");
+                    boolean lastOk = QuotationEstimation.money(end) == 0;
+                    return r(oneOk && lastOk, "Total " + start + " (" + lines0 + " lines) -> " + afterOne + " after removing one line ("
+                            + (oneOk ? "recalculated" : "NOT recalculated") + ") -> " + (end.isEmpty() ? "(empty)" : end) + " with 0 lines ("
+                            + (lastOk ? "cleared" : "the total is NOT cleared when the last line is removed") + ")");
                 });
 
         tc("QE-15", "Mandatory field validation on Submit", "External Patient with a service, Name* and Last Name* empty, click Submit",

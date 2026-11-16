@@ -159,7 +159,9 @@ public abstract class DevHisBase {
     public static final String DASHBOARD = BASE + "/#/PatientDashboard";
     public static final String USER = cfg("devhis.user", "Sarannya");
     public static final String PASS = cfg("devhis.pass", "User@123");
-    public static final String COUNTER = null;
+    // Cash/OPD counter picked in the two-step login fallback. Empty (default) = never pick one, as before; set -Ddevhis.counter=OPD-B-01 for accounts that need it
+    // (the Pharmacy Dashboard test logs in through login() here and stopped at the login page without it).
+    public static final String COUNTER = cfg("devhis.counter", "");
     // Some environments (e.g. KS QA) serve a "Local Login" form with a mandatory Organization/Department
     // select that must be chosen BEFORE the Login button will authenticate — confirmed live: without it,
     // login() reports success (never stuck on the login form) but the app session is broken, so every
