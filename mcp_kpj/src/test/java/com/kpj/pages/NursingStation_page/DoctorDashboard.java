@@ -79,7 +79,8 @@ public class DoctorDashboard extends BasePage {
           + "const A=window.angular;"
           + "const byNg=ng=>[...document.querySelectorAll('[ng-model]')].filter(e=>e.getAttribute('ng-model')===ng);"
           + "const byClick=(txt,scope)=>[...(scope||document).querySelectorAll('[ng-click]')].filter(e=>(e.getAttribute('ng-click')||'').indexOf(txt)>=0);"
-          + "const modal=()=>[...document.querySelectorAll('.modal.in')].find(vis)||null;"
+          // the TOPMOST visible popup (the last in the page): a popup left open underneath must not be mistaken for the current one
+          + "const modal=()=>{ const v=[...document.querySelectorAll('.modal.in')].filter(vis); return v.length?v[v.length-1]:null; };"
           + "const grid=()=>{ const g=[...document.querySelectorAll('[ui-grid]')].find(vis); return g?{g:g,s:A.element(g).scope()}:null; };";
 
     // ---- small helpers -----------------------------------------------------
@@ -538,13 +539,19 @@ public class DoctorDashboard extends BasePage {
 
     /** Close whatever popup is open with its Close button (used to recover). */
     public boolean closeOpenPopup() {
-        clickTagged(" const m=modal(); const el=m?[...m.querySelectorAll('button')].filter(vis).find(x=>norm(x.textContent).toLowerCase()==='close'):null;", "__ddClose");
-        for (int i = 0; i < 10; i++) {
-            waitForAngular(300);
+        // Close every popup that is open, topmost first (a popup can sit underneath another one, e.g. Forms Details under View Consent/Forms).
+        for (int round = 0; round < 4; round++) {
             Object open = page.evaluate("() => !!([...document.querySelectorAll('.modal.in')].find(m=>m.offsetWidth||m.offsetHeight))");
             if (!Boolean.TRUE.equals(open)) return true;
+            clickTagged(" const m=modal(); const el=m?[...m.querySelectorAll('button')].filter(vis).find(x=>norm(x.textContent).toLowerCase()==='close'):null;", "__ddClose");
+            for (int i = 0; i < 6; i++) {
+                waitForAngular(300);
+                Object still = page.evaluate("() => { const v=[...document.querySelectorAll('.modal.in')].filter(m=>m.offsetWidth||m.offsetHeight); return v.length; }");
+                if (still instanceof Number && ((Number) still).intValue() == 0) return true;
+            }
         }
-        return false;
+        Object left = page.evaluate("() => [...document.querySelectorAll('.modal.in')].filter(m=>m.offsetWidth||m.offsetHeight).length");
+        return left instanceof Number && ((Number) left).intValue() == 0;
     }
 
     // ---- Forms -------------------------------------------------------------
@@ -554,9 +561,17 @@ public class DoctorDashboard extends BasePage {
         clearToasts();
         if (!clickTagged(" const el=byClick('fnDashForms').find(vis);", "__ddForms")) return false;
         try {
-            page.waitForFunction("() => {" + JS + " const m=modal(); return !!m && [...m.querySelectorAll('input')].some(e=>e.getAttribute('ng-model')==='consent.consentname' && vis(e)); }",
+            // The Forms box is a select2 drop down (s2id_ddlQueueConsentForm over consent.consentid); older builds had a typeahead input.
+            page.waitForFunction("() => {" + JS + " const m=modal(); return !!m && ([...m.querySelectorAll('input')].some(e=>e.getAttribute('ng-model')==='consent.consentname' && vis(e))"
+                    + " || [...m.querySelectorAll('.select2-container')].some(e=>e.id==='s2id_ddlQueueConsentForm' && vis(e))); }",
                     null, waitOpts(20000));
-        } catch (Exception e) { return false; }
+        } catch (Exception e) {
+            Object d = page.evaluate("() => {" + JS + " const m=modal(); if(!m) return '(no popup)';"
+                    + " return [...m.querySelectorAll('input,select,textarea,button,a[ng-click]')].filter(vis).map(e=>e.tagName+'['+(e.getAttribute('ng-model')||e.getAttribute('ng-click')||e.id||e.className)+']'+(e.tagName==='SELECT'?' opts='+e.options.length:'')).join(' ; ')"
+                    + " + ' || select2: '+[...m.querySelectorAll('.select2-container')].map(e=>e.id+':'+norm(e.textContent).slice(0,30)).join(' , '); }");
+            System.out.println("DoctorDashboard.clickForms FORMS POPUP => " + d);
+            return false;
+        }
         waitForAngular(1200);
         return true;
     }
@@ -567,6 +582,19 @@ public class DoctorDashboard extends BasePage {
      * Returns the chosen form with its id, or a value starting with "(" on failure.
      */
     public String pickForm(String name) {
+        // Current build: the Forms box is a select2 drop down - open it and click the entry.
+        boolean select2 = Boolean.TRUE.equals(page.evaluate("() => {" + JS + " const m=modal(); return !!m && [...m.querySelectorAll('.select2-container')].some(e=>e.id==='s2id_ddlQueueConsentForm' && vis(e)); }"));
+        if (select2) {
+            String why = com.kpj.pages.Select2Pick.pick(page, "consent.consentid", name);
+            if (!why.isEmpty()) return "(" + why + ")";
+            waitForAngular(2500);
+            Object r = page.evaluate("() => {" + JS + " const m=modal(); const s=m?[...m.querySelectorAll('select')].find(e=>e.getAttribute('ng-model')==='consent.consentid'):null; if(!s) return '';"
+                    + " const sc=A.element(s).scope(); const c=sc.consent||{}; return (c.consentid||'')+'|'+(c.consentname||'')+'|'+(sc.externalformmappingid==null?'':sc.externalformmappingid); }");
+            String[] f = (r == null ? "" : r.toString()).split(Pattern.quote("|"), -1);
+            lastFormExternal = f.length >= 3 && !f[2].isEmpty() && !f[2].equals("0");
+            System.out.println("DoctorDashboard.pickForm: " + r + " | POPUP AFTER PICK => " + describeFormsPopup());
+            return name + (f.length >= 1 && !f[0].isEmpty() ? " (form id " + f[0] + (lastFormExternal ? ", external form " + f[2] : ", filled in the pop up") + ")" : "");
+        }
         if (!clickTagged(" const m=modal(); const el=m?[...m.querySelectorAll('input')].find(e=>e.getAttribute('ng-model')==='consent.consentname' && vis(e)):null;", "__ddForm"))
             return "(the Forms box was not found in the popup)";
         waitForAngular(1200);                       // the box's focus handler writes a blank into it first
@@ -598,6 +626,57 @@ public class DoctorDashboard extends BasePage {
         String[] f = s.split(Pattern.quote("|"), -1);
         if (f.length < 3 || f[0].isEmpty()) return "(clicking the entry did not select the form - the box holds \"" + s + "\")";
         return f[1] + " (form id " + f[0] + (f[2].isEmpty() ? "" : ", external form " + f[2]) + ")";
+    }
+
+    /** True when the chosen form is mapped to an external form (it then opens in a new tab); false = it is filled in the pop up itself. */
+    public boolean lastFormExternal = false;
+    public byte[] consentFilledPng, consentToastPng;
+
+    /** Controls of the Forms Details popup, for the report / console. */
+    public String describeFormsPopup() {
+        Object d = page.evaluate("() => {" + JS + " const m=modal(); if(!m) return '(no popup)';"
+                + " return [...m.querySelectorAll('input,select,textarea,button')].filter(vis).filter(e=>!/setDatepickerDay|prevMonth|nextMonth|showYears/.test(e.getAttribute('ng-click')||''))"
+                + ".map(e=>e.tagName+'['+(e.getAttribute('ng-model')||e.getAttribute('ng-click')||e.id||e.className)+']'+(e.value&&e.tagName==='INPUT'?'='+e.value:'')).join(' ; ')"
+                + " + ' || ckeditors='+(window.CKEDITOR?Object.keys(CKEDITOR.instances).join(','):'none'); }");
+        return d == null ? "" : d.toString();
+    }
+
+    /**
+     * Fill the consent form in the Forms Details popup: the signatory names (patient / witness / user / other) and the Remark in the
+     * rich text editor. Returns what was entered, or a value starting with "(" on failure.
+     */
+    public String fillConsentInPopup(String patientName) {
+        String stamp = String.valueOf(System.currentTimeMillis() % 100000);
+        String remark = "Consent explained and accepted - automation " + stamp;
+        Object r = page.evaluate("(a) => {" + JS + " const m=modal(); if(!m) return '(no popup)';"
+                + " const out=[]; const set=(ng,v)=>{ const e=[...m.querySelectorAll('input')].find(x=>x.getAttribute('ng-model')===ng && vis(x)); if(!e){ out.push(ng+'=(missing)'); return; }"
+                + "   const c=A.element(e).controller('ngModel'); e.value=v; if(c){c.$setViewValue(v);c.$render();} e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true})); out.push(ng.replace('consent.','')+'='+e.value); };"
+                + " set('consent.patientname',a.p); set('consent.witnessname','Witness '+a.s); set('consent.Usersname','Staff '+a.s); set('consent.Othersname','Guardian '+a.s);"
+                + " let ck='no editor'; if(window.CKEDITOR){ const k=Object.keys(CKEDITOR.instances); if(k.length){ const ed=CKEDITOR.instances[k[0]]; ed.setData('<p>'+a.r+'</p>'); ck='Remark set ('+k[0]+')'; } }"
+                + " return out.join(' | ')+' | '+ck; }", java.util.Map.of("p", patientName == null || patientName.isEmpty() ? "Patient" : patientName, "s", stamp, "r", remark));
+        waitForAngular(600);
+        try { consentFilledPng = page.screenshot(new Page.ScreenshotOptions().setTimeout(8000)); } catch (Exception ignore) { consentFilledPng = null; }
+        String s = r == null ? "" : r.toString();
+        return s.contains("(missing)") || s.startsWith("(") || s.endsWith("no editor") ? "(" + s + ")" : s + " | Remark=" + remark;
+    }
+
+    /** Click <b>Save</b> (IUDconsentdetail) in the Forms Details popup; returns the toast text ("" when none). */
+    public String saveConsentAndGetToast() {
+        page.evaluate("() => { window.__ddToasts=[]; if(window.__ddObs) window.__ddObs.disconnect();"
+                + " try{ if(window.toastr && toastr.options){ toastr.options.timeOut=0; toastr.options.extendedTimeOut=0; toastr.options.fadeOut=0; toastr.options.hideDuration=0; } }catch(e){}"
+                + " try{ if(window.toastr) toastr.clear(); }catch(e){} document.querySelectorAll('#toast-container .toast').forEach(t=>t.remove());"
+                + " const grab=()=>{ document.querySelectorAll('#toast-container .toast').forEach(el=>{ const kind=((el.className.match(/toast-(success|error|warning|info)/)||[])[1])||''; const me=el.querySelector('.toast-message');"
+                + "   const t=(me?me.textContent:el.textContent).split(' ').filter(x=>x).join(' '); const s=kind+'|'+t; if(t && window.__ddToasts.indexOf(s)<0) window.__ddToasts.push(s); }); };"
+                + " window.__ddObs=new MutationObserver(grab); window.__ddObs.observe(document.body,{childList:true,subtree:true}); grab(); }");
+        if (!clickTagged(" const m=modal(); const el=m?byClick('IUDconsentdetail',m).find(vis):null;", "__ddConsentSave")) return "";
+        try { page.waitForFunction("() => (window.__ddToasts||[]).length>0", null, waitOpts(25000)); } catch (Exception ignore) { page.waitForTimeout(2500); }
+        waitForAngular(900);
+        try { consentToastPng = page.screenshot(new Page.ScreenshotOptions().setTimeout(6000)); } catch (Exception ignore) { consentToastPng = null; }
+        Object t = page.evaluate("() => { const a=window.__ddToasts||[]; return a.find(x=>/success/.test(x.split('|')[0])) || a.find(x=>x) || ''; }");
+        String raw = t == null ? "" : t.toString();
+        int bar = raw.indexOf('|');
+        clearToasts();
+        return bar < 0 ? raw : raw.substring(bar + 1);
     }
 
     /** Click <b>Add</b> in the Forms Details popup; the form opens in a NEW TAB. Returns that tab (null when none opened). */

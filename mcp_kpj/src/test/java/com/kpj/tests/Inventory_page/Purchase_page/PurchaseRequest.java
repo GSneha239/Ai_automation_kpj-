@@ -191,6 +191,12 @@ public class PurchaseRequest extends DevHisBase {
                 deliveryPlaceOk ? "PASSES: " + deliveryPlace : "FAILS: " + deliveryPlace,
                 deliveryPlaceOk ? "PASS" : "FAIL");
 
+        // 8b) Remark/Reason is mandatory (marked *) and was never filled
+        String remarkResult = pr.enterRemarkAndRequester();
+        boolean remarkOk = !remarkResult.startsWith("(");
+        step(page, "Enter Remark/Reason", "Enter the mandatory Remark/Reason (and Requester By)",
+                "The Remark/Reason is entered", remarkOk ? "PASSES: " + remarkResult : "FAILS: " + remarkResult, remarkOk ? "PASS" : "FAIL");
+
         // 9) Save -> toast
         String toast = pr.saveAndGetToast();
         boolean success = com.kpj.pages.Inventory_page.Purchase_page.PurchaseRequest.isSuccess(toast);

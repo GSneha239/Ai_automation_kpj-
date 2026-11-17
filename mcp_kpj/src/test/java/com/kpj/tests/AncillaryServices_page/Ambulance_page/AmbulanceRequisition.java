@@ -98,7 +98,7 @@ public class AmbulanceRequisition extends DevHisBase {
         boolean found = false;
         java.util.List<String> tried = new java.util.ArrayList<>();
         if (Boolean.getBoolean("popup")) {
-            searchResult = req.searchByPopup("11", "10", "12", "13", "20");
+            searchResult = req.searchByPopup("33", "11", "10", "12", "13", "20");
             found = req.patientLoaded();
             tried.add("popup");
             if (found) mrn = req.lastMrn;

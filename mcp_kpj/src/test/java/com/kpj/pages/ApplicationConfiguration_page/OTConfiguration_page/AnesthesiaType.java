@@ -55,8 +55,10 @@ public class AnesthesiaType extends BasePage {
         try { page.waitForFunction("() => window.angular", null,
                 new Page.WaitForFunctionOptions().setTimeout(20000)); } catch (Exception ignore) { }
 
-        clickMenu("^\\s*application\\s*configuration\\s*$");
-        clickMenu("^\\s*ot\\s*configuration\\s*$");
+        // The sidebar is built lazily, level by level: wait for each entry and re-click until its children show
+        // (a single blind click once missed, leaving the OT Configuration submenu closed).
+        if (!expandMenuEntry(null, "^application\\s*configuration$")) clickMenu("^\\s*application\\s*configuration\\s*$");
+        if (!expandMenuEntry("^application\\s*configuration$", "^ot\\s*configuration$")) clickMenu("^\\s*ot\\s*configuration\\s*$");
         lastMenu = describeMenu();
 
         // Anchored to the whole label. A loose match on "generic" would take the first menu entry that

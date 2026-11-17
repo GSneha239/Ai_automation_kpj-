@@ -211,9 +211,45 @@ public class PurchaseRequest extends BasePage {
     }
 
     /** Click <b>Search</b> inside the item-picker dialog, with the blank-search-returns-nothing fallback. */
+    public String lastRemark = "";
+
+    /** Enter the mandatory <b>Remark/Reason *</b> ({@code PurchaseRequest.remarks}, a textarea) and pick the Requester By, if offered. */
+    public String enterRemarkAndRequester() {
+        lastRemark = "Stock replenishment - automation " + (System.currentTimeMillis() % 100000);
+        Object r = page.evaluate("(t) => { const e=[...document.querySelectorAll(\"[ng-model='PurchaseRequest.remarks']\")].find(x=>x.offsetWidth||x.offsetHeight); if(!e) return '(no Remark/Reason box)';"
+                + " e.focus(); e.value=t; try{ const c=angular.element(e).controller('ngModel'); if(c){ c.$setViewValue(t); c.$render(); } }catch(err){}"
+                + " e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true}));"
+                + " const rb=document.querySelector(\"select[ng-model='PurchaseRequest.RequesterBy']\"); let who='';"
+                + " if(rb && rb.selectedIndex<=0 && rb.options.length>1){ rb.selectedIndex=1; rb.dispatchEvent(new Event('change',{bubbles:true})); }"
+                + " if(rb) who=(rb.options[rb.selectedIndex]||{}).text||'';"
+                + " return 'Remark/Reason=' + e.value + (rb ? ' | Requester By=' + who : ''); }", lastRemark);
+        waitForAngular(500);
+        return String.valueOf(r);
+    }
+
+    public String lastItemCode = "";
+
+    /** Put {@code value} in the dialog's Item Code box the way a user types it (model + input/change events). */
+    private void setItemCode(String value) {
+        page.evaluate("(t) => { const e=document.querySelector(\"[ng-model='ItemSearch.ItemCode']\");"
+                + " if(e){ e.focus(); e.value=t;"
+                + "   try{ const c=angular.element(e).controller('ngModel'); if(c){ c.$setViewValue(t); c.$render(); } }catch(err){}"
+                + "   e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true})); } }", value);
+    }
+
     public String clickSearchAndVerifyRows() {
-        clickSearchInPicker();
-        int rows = pickerRowCount();
+        // Enter a 2-digit Item Code and Search: item codes are numeric, so a short digit pair lists the items that carry it.
+        // Several pairs are tried until one lists data in the table.
+        int rows = 0;
+        lastItemCode = "";
+        for (String code : new String[]{"22", "10", "11", "12", "20", "21", "30", "50", "01", "15", "25"}) {
+            setItemCode(code);
+            clickSearchInPicker();
+            rows = pickerRowCount();
+            if (rows > 0) { lastItemCode = code; break; }
+        }
+        if (rows == 0) { setItemCode(""); clickSearchInPicker(); rows = pickerRowCount(); }
+        if (!lastItemCode.isEmpty()) { lastPickerRows = rows + " row(s) after search (Item Code \"" + lastItemCode + "\")"; return lastPickerRows; }
         // Mirrors Item Enquiry's/Quotation's identical picker: a blank search returns nothing on this
         // shared dialog, so broader terms are tried in turn. This screen was observed to return "No
         // items available" for "a" specifically (unlike the sibling screens, where it always found
@@ -268,7 +304,7 @@ public class PurchaseRequest extends BasePage {
      * 20s for the app to fill the list. The item picker's Search ("Please Select Store Name !!!!") depends on it.
      */
     public String selectStore() {
-        lastStore = selectStoreIn("select[ng-model='PurchaseRequest.StoreID']", "Pharmacy (Central)", "Store", 20000);
+        lastStore = selectStoreIn("select[ng-model='PurchaseRequest.StoreID']", "Administration", "Store", 20000);
         System.out.println("PurchaseRequest: Store = " + lastStore);
         return lastStore;
     }
@@ -599,6 +635,8 @@ public class PurchaseRequest extends BasePage {
                     body = body == null ? "" : body.replaceAll("\\s+", " ");
                     saveHttp.add(r.status() + " " + m + " " + r.url().replaceFirst("^https?://[^/]+", "")
                             + " -> " + body.substring(0, Math.min(260, body.length())));
+                    String req = r.request().postData();
+                    if (req != null) System.out.println("PurchaseRequest: SAVE REQUEST BODY => " + req.replaceAll("\\s+", " "));
                 }
             } catch (Exception ignore) { }
         };

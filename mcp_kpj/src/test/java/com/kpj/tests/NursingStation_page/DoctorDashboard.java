@@ -479,11 +479,33 @@ public class DoctorDashboard extends DevHisBase {
                     "The form is chosen in the Forms box", "the Forms Details pop up did not open");
         }
 
+        // 11a) A consent form that is not mapped to an external form is filled in the Forms Details pop up itself.
+        boolean inPopup = pickOk && !dd.lastFormExternal;
+        boolean consentSaved = false;
+        if (inPopup) {
+            String filled = dd.fillConsentInPopup(patient);
+            boolean fillOk = !filled.startsWith("(");
+            step(dd.consentFilledPng != null ? dd.consentFilledPng : page.screenshot(), "Fill the consent form",
+                    "Enter the signatory names (Patient, Witness, User, Other) and the Remark in the Forms Details pop up",
+                    "The consent form is filled", fillOk ? "Filled: " + filled : "Could not fill the consent form - " + filled, fillOk ? "PASS" : "FAIL");
+            if (fillOk) {
+                String ctoast = dd.saveConsentAndGetToast();
+                String lt = ctoast.toLowerCase();
+                consentSaved = lt.contains("success") || lt.contains("saved") || lt.contains("added");
+                step(dd.consentToastPng != null ? dd.consentToastPng : page.screenshot(), "Click Save and verify the success toast",
+                        "Click Save in the Forms Details pop up", "A success toast is shown",
+                        ctoast.isEmpty() ? "No toast appeared" : (consentSaved ? "Toast: \"" + ctoast + "\"" : "Save not confirmed - the screen said: \"" + ctoast + "\""),
+                        consentSaved ? "PASS" : "FAIL");
+            } else {
+                skipped("Click Save and verify the success toast", "Click Save in the Forms Details pop up", "A success toast is shown", "the consent form was not filled");
+            }
+        }
+
         // 11) Add -> the form opens in the next tab
         Page ft = null;
         boolean tabOk = false;
         String formUrl = "";
-        if (pickOk) {
+        if (pickOk && !inPopup) {
             ft = dd.clickAddOpenFormTab();
             if (ft != null) {
                 String[] facts = dd.formTabFacts(ft, formName);
@@ -504,7 +526,7 @@ public class DoctorDashboard extends DevHisBase {
                         "The form opens in a new tab for MRN " + dd.selectedMrn + " with a Submit button",
                         "No new tab opened after Add (" + dd.describeScreen() + ")", "FAIL");
             }
-        } else {
+        } else if (!pickOk) {
             skipped("Click Add - the form opens in the next tab", "Click Add in the Forms Details pop up",
                     "The form opens in a new tab with a Submit button", "no form was selected");
         }
@@ -562,7 +584,7 @@ public class DoctorDashboard extends DevHisBase {
             } else {
                 skipped("Click Submit again", "Click Submit on the form again", "Submit is clicked", "the form was not submitted");
             }
-        } else {
+        } else if (!inPopup) {
             for (String[] s : new String[][]{
                     {"Click Submit", "Click Submit on the form", "A confirmation pop up asks \"Are you sure ...?\" with No / Yes"},
                     {"Click Yes in the pop up", "Click Yes in the confirmation pop up", "The form is submitted and a success pop up opens"},
@@ -574,7 +596,21 @@ public class DoctorDashboard extends DevHisBase {
         }
 
         // 17) back to the Doctor Dashboard
-        if (ft != null) { try { ft.close(); } catch (Exception ignore) { } }
+        if (ft != null) {
+            // Close the form tab for real (the submitted form stays open in it) and check it is gone; any other tab left open is closed too.
+            try { ft.close(); } catch (Exception ignore) { }
+            for (int i = 0; i < 10 && !ft.isClosed(); i++) page.waitForTimeout(300);
+            int stray = 0;
+            for (Page pg : new java.util.ArrayList<>(page.context().pages())) {
+                if (pg != page && !pg.isClosed()) { stray++; try { pg.close(); } catch (Exception ignore) { } }
+            }
+            boolean tabClosed = ft.isClosed() && page.context().pages().size() == 1;
+            step(page, "Close the form tab", "Close the tab the form was opened in",
+                    "The form tab closes and only the Doctor Dashboard tab is left",
+                    tabClosed ? "The form tab closed" + (stray > 0 ? " (" + stray + " other tab(s) had to be closed as well)" : "") + "; open tabs: " + page.context().pages().size()
+                              : "The form tab did NOT close; open tabs: " + page.context().pages().size(),
+                    tabClosed ? "PASS" : "FAIL");
+        }
         page.bringToFront();
         boolean popupGone = !forms || dd.closeFormsPopup();
         boolean back = popupGone && dd.onScreen();
@@ -598,7 +634,7 @@ public class DoctorDashboard extends DevHisBase {
         step(page, "Click View Forms and verify the View Consent/Forms pop up",
                 "Click View Forms", "The View Consent/Forms pop up opens (Search & Filter, Consent/Forms List)",
                 vfOk ? "The View Consent/Forms pop up opened: " + (vff[1].isEmpty() ? "no record count shown" : vff[1])
-                        + (tabOk && okOk ? (listed ? "; it lists " + formName + " for MRN " + dd.selectedMrn : "; it does NOT list " + formName + " for MRN " + dd.selectedMrn) : "")
+                        + ((tabOk && okOk) || consentSaved ? (listed ? "; it lists " + formName + " for MRN " + dd.selectedMrn : "; it does NOT list " + formName + " for MRN " + dd.selectedMrn) : "")
                      : "The View Consent/Forms pop up did not open (" + dd.describeScreen() + ")",
                 vfOk ? "PASS" : "FAIL");
 

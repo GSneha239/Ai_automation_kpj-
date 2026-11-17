@@ -95,7 +95,24 @@ public class ExpiredItemReturn extends ReadOnlyScreen {
         return r instanceof Number ? ((Number) r).intValue() : -1;
     }
 
-    public void clickPrint() { clearCaptured(); clickNg("printReport()"); waitForAngular(1500); }
+    public String lastPrintClick = "";
+
+    /** Click Print. The button is found by ng-click even when the layout hides it (offsetParent null), then the result is waited for. */
+    public void clickPrint() {
+        clearCaptured();
+        boolean viaVisible = clickNg("printReport()");
+        lastPrintClick = viaVisible ? "clicked (visible)" : "";
+        if (!viaVisible) {
+            Object r = page.evaluate("() => { const b = [...document.querySelectorAll('[ng-click]')].find(x => /^\\s*printReport\\(\\)\\s*;?\\s*$/.test(x.getAttribute('ng-click')));"
+                    + " if (!b) return 'Print button not found'; b.click(); return 'clicked (hidden, forced)'; }");
+            lastPrintClick = String.valueOf(r);
+        }
+        waitForAngular(1500);
+        try {
+            page.waitForFunction("() => (window.__roOpened || []).length > 0 || [...document.querySelectorAll('.jconfirm-box')].some(e => e.getBoundingClientRect().height > 0)",
+                    null, new Page.WaitForFunctionOptions().setTimeout(5000));
+        } catch (Exception ignore) { }
+    }
 
     // ---- New form -----------------------------------------------------------
 

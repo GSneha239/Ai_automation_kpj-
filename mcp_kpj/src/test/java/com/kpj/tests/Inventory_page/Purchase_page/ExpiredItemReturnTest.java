@@ -215,7 +215,7 @@ public class ExpiredItemReturnTest extends DevHisBase {
                     String dlg = eir.confirmDialogText();
                     List<String> opened = eir.openedUrls();
                     eir.closeConfirmDialog();
-                    return r(dlg.toLowerCase().contains("please select") && opened.isEmpty(), "Dialog: '" + dlg + "' | report URLs: " + opened);
+                    return r(dlg.toLowerCase().contains("please select") && opened.isEmpty(), "Print " + eir.lastPrintClick + "; Dialog: '" + dlg + "' | report URLs: " + opened);
                 });
 
         tc("EIR-13", "Print functionality", "Select a return, click Print, fetch the report",
@@ -228,7 +228,7 @@ public class ExpiredItemReturnTest extends DevHisBase {
                     eir.selectFirstRow();
                     eir.clickPrint();
                     List<String> opened = eir.openedUrls();
-                    if (opened.isEmpty()) return r(false, "Print opened nothing. Dialog: '" + eir.confirmDialogText() + "'");
+                    if (opened.isEmpty()) return r(false, "Print opened nothing (" + eir.lastPrintClick + "). Dialog: '" + eir.confirmDialogText() + "'");
                     String probe = eir.probeReport(opened.get(0));
                     return r(opened.get(0).contains("frmExpiredItemReturn") && probe.startsWith("200") && probe.contains("PDF"),
                             "Report " + opened.get(0) + " -> " + probe);

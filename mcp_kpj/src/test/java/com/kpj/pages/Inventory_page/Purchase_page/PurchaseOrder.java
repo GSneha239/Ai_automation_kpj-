@@ -341,7 +341,7 @@ public class PurchaseOrder extends BasePage {
      * depend on it.
      */
     public String selectStore() {
-        lastStore = selectStoreIn("select[ng-model='PurchaseOrder.StoreID']", "Pharmacy (Central)", "Store", 20000);
+        lastStore = selectStoreIn("select[ng-model='PurchaseOrder.StoreID']", System.getProperty("po.store", "Administration"), "Store", 20000);
         System.out.println("PurchaseOrder: Store = " + lastStore);
         return lastStore;
     }

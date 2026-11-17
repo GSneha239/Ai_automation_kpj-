@@ -329,9 +329,21 @@ public class AmbulanceBooking extends BasePage {
         // OPD must be selected for the popup button (and its own MRN field) to be enabled at all.
         page.evaluate("() => {" + JS
                 + " const r=[...document.querySelectorAll(\"input[type=radio][ng-model='" + M + "OPDIPD']\")].filter(vis)"
-                + "   .find(x=>{ const g=x.closest('label,div,td'); return g && /^\\s*opd\\s*$/i.test(norm(g.textContent)); });"
+                + "   .find(x=>{ const g=x.closest('label,div,td'); return g && /^\\s*opd\\s*$/i.test(norm(g.textContent)); })"
+                + "   || [...document.querySelectorAll(\"input[type=radio][ng-model='" + M + "OPDIPD']\")].filter(vis).find(x=>x.value==='0');"   // value 0 = OPD
                 + " if(r && !r.checked) r.click(); }");
         waitForAngular(500);
+        for (int i = 0; i < 6; i++) {   // the radios render late and the first click can miss: click for real until OPD is checked
+            // The form carries two copies of the radios (one hidden): look at the VISIBLE one only.
+            Object on = page.evaluate("() => { const r=[...document.querySelectorAll(\"input[type=radio][ng-model$='OPDIPD']\")].find(x=>x.value==='0' && x.offsetParent!==null); if(!r) return 'none'; if(r.checked) return true; r.id='__ambOpdRadio'; return false; }");
+            if (Boolean.TRUE.equals(on)) break;
+            if ("none".equals(String.valueOf(on))) { page.waitForTimeout(700); continue; }
+            try { page.locator("#__ambOpdRadio").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(3000)); }
+            catch (Exception e) { page.waitForTimeout(700); }
+            page.evaluate("() => { const e=document.getElementById('__ambOpdRadio'); if(e) e.removeAttribute('id'); }");
+            waitForAngular(400);
+        }
+        System.out.println("AmbulanceBooking.searchByPopup: form radios -> " + page.evaluate("() => [...document.querySelectorAll(\"input[type=radio][ng-model$='OPDIPD']\")].map(r=>r.value+(r.checked?'*':'')+(r.offsetParent?'v':'h')).join(',')"));
 
         for (String filter : filters) {
             Object opened = page.evaluate("() => {" + JS
@@ -377,8 +389,27 @@ public class AmbulanceBooking extends BasePage {
                 page.screenshot(new Page.ScreenshotOptions().setPath(shot).setTimeout(8000));
             } catch (Exception ignore) { }
             try {
-                page.locator("#__ambPopupMrn").fill(filter, new com.microsoft.playwright.Locator.FillOptions().setTimeout(6000));
-                page.locator("#__ambPopupSearch").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000));
+                // Type like a user (a plain fill() left the search returning nothing here), then wait for the model to hold it.
+                page.locator("#__ambPopupMrn").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000));
+                page.locator("#__ambPopupMrn").fill("");
+                page.locator("#__ambPopupMrn").pressSequentially(filter, new com.microsoft.playwright.Locator.PressSequentiallyOptions().setDelay(80));
+                waitForAngular(500);
+                Object sent = page.evaluate("() => { const e=document.getElementById('__ambPopupMrn'); try { return angular.element(e).scope().PatientData.MRNo; } catch(x) { return 'n/a'; } }");
+                System.out.println("AmbulanceBooking.searchByPopup[" + filter + "]: popup MRN box=" + page.locator("#__ambPopupMrn").inputValue() + ", model=" + sent);
+                java.util.function.Consumer<com.microsoft.playwright.Response> rl = rsp -> {
+                    if (rsp.url().contains("FetchPatientData")) {
+                        String sz = "?"; try { sz = String.valueOf(rsp.body().length); } catch (Exception ignore) { }
+                        System.out.println("AmbulanceBooking.searchByPopup[" + filter + "]: FetchPatientData -> " + rsp.status() + " " + sz + " bytes; request " + String.valueOf(rsp.request().postData()).replaceAll("\\s+", " ").substring(0, Math.min(140, String.valueOf(rsp.request().postData()).length())));
+                    }
+                };
+                page.onResponse(rl);
+                Object clk = page.evaluate("() => { const b=document.getElementById('__ambPopupSearch'); if (!b) return 'no search button'; const d=b.disabled; b.click(); return 'clicked, disabled=' + d + ', ng-click=' + b.getAttribute('ng-click'); }");
+                System.out.println("AmbulanceBooking.searchByPopup[" + filter + "]: Search " + clk);
+                waitForAngular(1500);
+                System.out.println("AmbulanceBooking.searchByPopup[" + filter + "]: after Search, messages="
+                        + page.evaluate("() => [...document.querySelectorAll('.toast-message,.toast,.jconfirm-box,.alert')].map(x=>(x.innerText||'').replace(/\\s+/g,' ').trim()).filter(x=>x).join(' | ')")
+                        + "; popup radios=" + page.evaluate("() => [...document.querySelectorAll('.modal input[type=radio]')].map(r=>(r.closest('label,div,span')||{}).textContent.trim().slice(0,8)+(r.checked?'*':'')+(r.disabled?'(dis)':'')).join(',')")
+                        + "; visitDate=" + page.evaluate("() => [...document.querySelectorAll('.modal input[type=checkbox]')].filter(c=>c.checked).map(c=>(c.closest('label,div,span')||{}).textContent.trim().slice(0,12)).join(',')"));
             } catch (Exception e) {
                 System.out.println("AmbulanceBooking.searchByPopup: search failed for filter " + filter + " - " + e.getMessage());
             }
