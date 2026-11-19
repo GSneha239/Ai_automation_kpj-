@@ -42,7 +42,7 @@ public class ApplicationPage extends BasePage {
     public static final String VIEW_URL_PART = "/Billing/Load/ApplicationConfiguration";
     public static final String SAVE_API_PATH = "/api/ApplicationConfiguration/IUD";
     /** Every call under this prefix is aborted unless it is one of the screen's read calls (Fetch... / GetPhoto). */
-    private static final java.util.regex.Pattern CONFIG_API = java.util.regex.Pattern.compile("(?i)/api/ApplicationConfiguration/");
+    private static final java.util.regex.Pattern CONFIG_API = java.util.regex.Pattern.compile("/api/ApplicationConfiguration/", java.util.regex.Pattern.CASE_INSENSITIVE);
     private static final java.util.regex.Pattern CONFIG_READ = java.util.regex.Pattern.compile("(?i)/api/ApplicationConfiguration/(Fetch[A-Za-z0-9]*|GetPhoto)(\\?|$)");
 
     public static final String LOCATION = "[ng-model='conffapp1.locationid1']";

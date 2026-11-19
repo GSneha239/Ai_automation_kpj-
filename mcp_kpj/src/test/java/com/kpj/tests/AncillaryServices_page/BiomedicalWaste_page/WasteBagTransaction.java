@@ -91,7 +91,7 @@ public class WasteBagTransaction extends DevHisBase {
         // Use ONLY the supplied account: an empty, non-blank fallback list makes LoginPage try nothing else.
         if (System.getProperty("devhis.cred.fallbacks") == null) System.setProperty("devhis.cred.fallbacks", ",");
 
-        new LoginPage(page).login(BASE, USER, PASS);
+        new LoginPage(page).login(BASE, USER, PASS, System.getProperty("counter", "OPD-B-01"));   // the nav menu is only built for an OPD counter
         // Default run = ONLY the add-and-verify steps (login / navigation are done but not listed). -Dwbt.full=true runs every case (T1-T13).
         final boolean focused = !Boolean.getBoolean("wbt.full");
         if (!focused) step("Login", "Log in as the DEVHIS_USER account", "Authenticated; dashboard shown", "Logged in as " + USER, "PASS");

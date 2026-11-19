@@ -116,6 +116,19 @@ public class Icd11ExtensionCodeMaster extends BasePage {
      * Form Name value, rather than "Icd11ExtensionCodeMaster" — so field presence plus the URL are the real signals).
      */
     public boolean onScreen() {
+        if (onScreenNow()) return true;
+        // In a long run the route changes long before the template arrives (the old Patient Dashboard stays on screen): when the
+        // URL is already this screen's, give the page up to ~25 s to render its boxes before calling it the wrong page.
+        for (int i = 0; i < 25; i++) {
+            Object onRoute = page.evaluate("() => /icd11extensioncodemaster/i.test(location.hash||'')");
+            if (!Boolean.TRUE.equals(onRoute)) return false;
+            page.waitForTimeout(1000);
+            if (onScreenNow()) return true;
+        }
+        return false;
+    }
+
+    private boolean onScreenNow() {
         Object r = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
                 + " const urlOk=/icd11extensioncodemaster/i.test(location.hash||'');" + FIND_FIELDS
                 + " if(codeEl && remEl) return true;"

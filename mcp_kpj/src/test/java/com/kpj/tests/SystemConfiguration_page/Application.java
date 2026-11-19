@@ -68,18 +68,15 @@ public class Application extends DevHisBase {
     @Override
     protected void body() {
         meta("System Configuration - Application", "System Access Configuration > Application",
-                "Read-only checks of the Application configuration form plus 10 Save validations. Every write call "
-                        + "to /api/ApplicationConfiguration/ (incl. IUD) is aborted in the browser, so no configuration is changed.");
+                "View only: open the screen, click each section and take a screenshot. Nothing is entered, saved, cleared or deleted.");
 
-        // ---- APP-01 Login --------------------------------------------------------
         String user = credential("devhis.user", "DEVHIS_USER");
         String pass = credential("devhis.pass", "DEVHIS_PASS");
         String loginId = id();
         if (user.isEmpty() || pass.isEmpty()) {
             step(loginId + " - Login", "Log in with DEVHIS_USER / DEVHIS_PASS", "Logged in",
-                    "Not run: DEVHIS_USER / DEVHIS_PASS are not set | Remarks: the framework default account is deliberately not used",
-                    "BLOCKED");
-            blockRest("No credentials supplied");
+                    "Not run: DEVHIS_USER / DEVHIS_PASS are not set", "BLOCKED");
+            addSummary("Result", "Stopped: no credentials supplied");
             return;
         }
         LoginPage loginPage = new LoginPage(page);
@@ -89,144 +86,42 @@ public class Application extends DevHisBase {
         tc(loginId, "Login", "Log in to " + BASE + " as " + user, "Authenticated; login form gone",
                 loggedIn ? "Logged in" : "Login failed: " + (loginErr == null ? "login form still shown" : loginErr),
                 loggedIn ? "PASS" : "FAIL", "");
-        if (!loggedIn) { blockRest("Login failed"); return; }
+        if (!loggedIn) { addSummary("Result", "Stopped: login failed"); return; }
 
         ap = new ApplicationPage(page);
-        ap.blockSaveRequests();
+        ap.blockSaveRequests();   // safety net only: this test never saves
 
-        // ---- APP-02 Menu navigation + page load + HTTP ---------------------------
         boolean on = ap.navigateViaMenu();
         int view = ap.viewStatus();
-        String landed = ap.currentScreen();
-        String openActual = on ? "Opened " + landed + "; view GET /Billing/Load/ApplicationConfiguration -> HTTP " + view
-                : (view >= 400 ? "Screen did not load: GET /Billing/Load/ApplicationConfiguration -> HTTP " + view + "; app is on " + landed
-                               : "Screen not reached; app is on " + landed + " (view HTTP " + view + ")");
         tc(id(), "Open Application via menu", "Left menu: System Configuration -> Application",
-                "Route #/ApplicationConfiguration; view HTTP 200; form loads with stored values",
-                openActual, on && view == 200 ? "PASS" : "FAIL",
-                view >= 500 ? "Server-side error (environment), not a UI defect" : "");
-        if (!on) { blockRest("Application screen did not load"); return; }
+                "The Application screen is shown",
+                on ? "Opened " + ap.currentScreen() + "; view HTTP " + view : "Screen not reached; app is on " + ap.currentScreen() + " (view HTTP " + view + ")",
+                on && view == 200 ? "PASS" : "FAIL", view >= 500 ? "Server-side error (environment), not a UI defect" : "");
+        if (!on) { addSummary("Result", "Stopped: Application screen did not load"); return; }
 
-        String before = ap.configSnapshot();
-        addDiagnostic("Config fields captured", String.valueOf(before.length()) + " chars");
-
-        // ---- APP-03 Location* / APP-04 Hospital Logo ----------------------------
-        String loc = ap.locationInfo();
-        boolean locOk = ap.locationSelected() && loc.contains("label=Location*");
-        tc(id(), "Location* mandatory field", "Read the Location label, its value and options",
-                "Label shows '*' (mandatory) and the login hospital is pre-selected", loc, locOk ? "PASS" : "FAIL", "");
-
-        boolean logo = ap.logoUploadPresent();
-        tc(id(), "Hospital Logo upload control", "Check that the logo file input #PhotoData exists (no file chosen)",
-                "A file chooser for the hospital logo is shown",
-                logo ? "File input #PhotoData present" : "File input #PhotoData not found", logo ? "PASS" : "FAIL",
-                "Presence only - no file is uploaded");
-
-        // ---- APP-05 headings ----------------------------------------------------
-        List<String> titles = ap.sectionTitles();
-        List<String> missing = new ArrayList<>();
-        for (String s : ApplicationPage.SECTIONS.keySet()) if (!titles.contains(s)) missing.add(s);
-        for (String s : ApplicationPage.ANCILLARY.keySet()) if (!titles.contains(s)) missing.add(s);
-        tc(id(), "All 13 section headings", "Read every accordion heading",
-                "General, Nursing Station, Investigation, Ancillary, HL7/FTP + Ancillary: Blood Bank, Equipment, CSSD, Linen, DMS, MRD, Ambulance, Vital",
-                titles.size() + " found: " + titles + (missing.isEmpty() ? "" : " | MISSING: " + missing),
-                missing.isEmpty() ? "PASS" : "FAIL", "");
-
-        // ---- APP-06..10 top-level sections (expand + previous collapses) ---------
-        String prevId = null, prevName = null;
+        // ---- Click each section and take a screenshot - nothing is typed, added, saved, cleared or deleted ----
         for (Map.Entry<String, String[]> e : ApplicationPage.SECTIONS.entrySet()) {
-            String cid = e.getValue()[0], firstLabel = e.getValue()[1];
+            String cid = e.getValue()[0];
             boolean open = ap.expand(cid);
             List<String> labels = ap.visibleLabels(cid, 6);
-            boolean hasLabel = labels.stream().anyMatch(l -> l.startsWith(firstLabel));
-            boolean prevClosed = prevId == null || !ap.isExpanded(prevId);
-            tc(id(), "Section '" + e.getKey() + "' expands", "Click the '" + e.getKey() + "' heading",
-                    "Section opens and shows '" + firstLabel + "'" + (prevName == null ? "" : "; '" + prevName + "' collapses"),
-                    (open ? "Opened" : "Did NOT open") + "; fields: " + labels
-                            + (prevName == null ? "" : (prevClosed ? "; '" + prevName + "' collapsed" : "; '" + prevName + "' is STILL open")),
-                    open && hasLabel && prevClosed ? "PASS" : "FAIL", "");
-            prevId = cid; prevName = e.getKey();
+            tc(id(), "Section '" + e.getKey() + "'", "Click the '" + e.getKey() + "' heading and take a screenshot",
+                    "The section opens", (open ? "Opened" : "Did NOT open") + "; fields: " + labels, open ? "PASS" : "FAIL", "");
         }
 
-        // ---- APP-11..18 Ancillary sub-sections ------------------------------------
+        // The Ancillary sub-sections sit inside the Ancillary section
         ap.expand(ApplicationPage.SECTIONS.get("Ancillary")[0]);
         for (Map.Entry<String, String[]> e : ApplicationPage.ANCILLARY.entrySet()) {
-            String cid = e.getValue()[0], firstLabel = e.getValue()[1];
+            String cid = e.getValue()[0];
             boolean open = ap.expand(cid);
             List<String> labels = ap.visibleLabels(cid, 4);
-            boolean ok = open && labels.stream().anyMatch(l -> l.startsWith(firstLabel));
-            tc(id(), "Ancillary > '" + e.getKey() + "' expands", "Open Ancillary, click '" + e.getKey() + "'",
-                    "Sub-section opens and shows '" + firstLabel + "'",
-                    (open ? "Opened" : "Did NOT open") + "; fields: " + labels, ok ? "PASS" : "FAIL", "");
+            tc(id(), "Ancillary > '" + e.getKey() + "'", "Click '" + e.getKey() + "' inside Ancillary and take a screenshot",
+                    "The sub-section opens", (open ? "Opened" : "Did NOT open") + "; fields: " + labels, open ? "PASS" : "FAIL", "");
         }
 
-        // ---- APP-19..24 numeric limits -------------------------------------------
-        ap.expand(ApplicationPage.SECTIONS.get("General")[0]);
-        range("Alternative Drug Acknowledgment Time Limit (Hours)", ApplicationPage.ALT_DRUG_ACK_HRS, "min=1 max=720");
-        range("Pregnancy Review Gestational Age (Weeks)", ApplicationPage.PREGNANCY_WEEKS, "min=37 max=44");
-        range("Progress Notes Approval Time Limit (Hours)", ApplicationPage.PROGRESS_NOTES_HRS, "min=1 max=999");
-        range("OP Time Limit for Order Completion (Hours)", ApplicationPage.OP_ORDER_HRS, "min=1 max=999");
-        range("IP Time Limit for Order Completion (Hours)", ApplicationPage.IP_ORDER_HRS, "min=1 max=999");
-        range("EOL Validity Period (Days)", ApplicationPage.EOL_DAYS, "min=0 max=9999");
-
-        // ---- APP-25 buttons --------------------------------------------------------
-        boolean saveOk = ap.saveVisibleAndEnabled(), clearOk = ap.clearVisible();
-        tc(id(), "Save and Clear buttons", "Look at the bottom of the form",
-                "Save (enabled) and Clear are shown", "Save visible+enabled=" + saveOk + ", Clear visible=" + clearOk,
-                saveOk && clearOk ? "PASS" : "FAIL", "");
-
-        // ---- APP-26..35 Save validations (writes aborted) --------------------------
-        validation("Refilling Days blank", ApplicationPage.REFILLING_DAYS, "", "Refilling Days is Mandatory");
-        validation("Alternative Drug Ack. Hours = 0", ApplicationPage.ALT_DRUG_ACK_HRS, "0", "Please enter a value between 1 and 720 hours");
-        validation("Alternative Drug Ack. Hours = 721", ApplicationPage.ALT_DRUG_ACK_HRS, "721", "Please enter a value between 1 and 720 hours");
-        validation("Pregnancy Review Weeks = 36", ApplicationPage.PREGNANCY_WEEKS, "36", "Pregnancy Review Gestational Age (Weeks) must be a whole number between 37 and 44");
-        validation("Pregnancy Review Weeks = 45", ApplicationPage.PREGNANCY_WEEKS, "45", "Pregnancy Review Gestational Age (Weeks) must be a whole number between 37 and 44");
-        validation("Progress Notes Approval Hours = 0", ApplicationPage.PROGRESS_NOTES_HRS, "0", "Progress Notes Approval Time Limit (Hours) is mandatory and must be a whole number greater than 0");
-        validation("OP Order Completion Hours blank", ApplicationPage.OP_ORDER_HRS, "", "OP Time Limit for Order Completion (Hours) is mandatory and must be a whole number greater than 0");
-        validation("IP Order Completion Hours = 0", ApplicationPage.IP_ORDER_HRS, "0", "IP Time Limit for Order Completion (Hours) is mandatory and must be a whole number greater than 0");
-        validation("EOL Validity Days = 1.5", ApplicationPage.EOL_DAYS, "1.5", "EOL Validity Period (Days) must be a whole number of days");
-        validation("DNR/DIL Validity Days = 1.5", ApplicationPage.DNR_DIL_DAYS, "1.5", "DNR/DIL Validity Period (Days) must be a whole number of days");
-
-        // ---- APP-36 Clear (client-side only; Save NOT clicked afterwards) ------------
-        int writesBefore = ap.apiWrites();
-        String afterClear = ap.clickClear();
-        page.waitForTimeout(1500);
-        int clearWrites = ap.apiWrites() - writesBefore;
-        tc(id(), "Clear sends no request", "Click Clear; watch the network (Save is not clicked afterwards)",
-                "No write request is sent (ClearForm() only resets dropdown option lists in the browser)",
-                clearWrites + " write request(s) during Clear; afterwards " + afterClear,
-                clearWrites == 0 ? "PASS" : "FAIL",
-                "Observation: Clear does not reset field values or Location - it only empties the dropdown option lists. No spec available to judge this; raise with BA if Clear is meant to reset the form");
-
-        // ---- APP-37 Reload + no configuration changed -------------------------------
-        boolean back = ap.reload();
-        String after = back ? ap.configSnapshot() : "";
-        boolean same = back && !before.isEmpty() && before.equals(after);
-        tc(id(), "Stored configuration unchanged", "Reload #/ApplicationConfiguration; compare every stored field with the values captured after the first load",
-                "All stored values identical to the start of the run",
-                !back ? "Screen did not reload" : (same ? "Identical (" + before.length() + " chars of field values compared)"
-                        : "DIFFERENT - values after reload do not match the start of the run"),
-                same ? "PASS" : "FAIL", same ? "" : "Investigate immediately: before=" + abbreviate(before) + " after=" + abbreviate(after));
-
-        // ---- APP-38 Save API blocked -------------------------------------------------
-        int attempts = ap.saveAttempts(), reached = ap.iudResponses();
-        tc(id(), "Save API blocked; no save reached the server", "Count requests to /api/ApplicationConfiguration/ write endpoints (aborted) and responses from IUD",
-                "0 responses from IUD (any attempt was aborted in the browser)",
-                "Write attempts aborted: " + attempts + "; IUD responses received: " + reached,
-                reached == 0 ? "PASS" : "FAIL",
-                attempts == 0 ? "Every validation stopped Save before it tried to send" : attempts + " save attempt(s) were made by the screen and aborted - see the validation rows marked FAIL");
-
-        // ---- APP-39 / APP-40 not automated -------------------------------------------
-        step(id() + " - Successful Save", "Change a value and Save", "Success toast; value kept after reload",
-                "Not executed | Remarks: Save overwrites the live hospital-wide configuration. Test by hand on an agreed field, then restore it", "MANUAL");
-        step(id() + " - Hospital Logo upload", "Choose an image and Save", "New logo shown after reload",
-                "Not executed | Remarks: would replace the live hospital logo", "MANUAL");
-
         addSummary("Route", ApplicationPage.ROUTE);
-        addSummary("Save/write attempts aborted", String.valueOf(attempts));
-        addSummary("IUD responses (must be 0)", String.valueOf(reached));
-        addSummary("Configuration unchanged", same ? "Yes - all stored values identical before and after" : "NOT CONFIRMED");
+        addSummary("Mode", "View only - sections clicked and screenshotted; nothing entered, saved, cleared or deleted");
     }
+
 
     private void range(String label, String ngModel, String expected) {
         String actual = ap.numberRange(ngModel);

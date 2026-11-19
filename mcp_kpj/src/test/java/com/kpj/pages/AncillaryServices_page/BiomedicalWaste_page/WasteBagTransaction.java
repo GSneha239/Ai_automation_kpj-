@@ -174,6 +174,10 @@ public class WasteBagTransaction extends BasePage {
             System.out.println("WasteBagTransaction.nav: Ancillary Services > Biomedical Waste could not be expanded");
         }
         if (!waitForListScreen(15000)) {
+            try {
+                System.out.println("WasteBagTransaction.nav DEBUG: url=" + page.url() + " | controllers=" + page.evaluate("() => [...document.querySelectorAll('[ng-controller]')].map(e=>e.getAttribute('ng-controller')).join(',')")
+                        + " | fromdate boxes=" + page.evaluate("() => [...document.querySelectorAll('input')].filter(e=>/fromdate/i.test(e.getAttribute('ng-model')||'')).map(e=>e.getAttribute('ng-model')+' vis='+(e.offsetParent!==null)).join(';')"));
+            } catch (Exception ignore) { }
             System.out.println("WasteBagTransaction.nav: falling back to direct route " + LIST_ROUTE);
             page.evaluate("(h) => { window.location.hash = h.replace(/^#/, ''); }", LIST_ROUTE);
             waitForListScreen(15000);

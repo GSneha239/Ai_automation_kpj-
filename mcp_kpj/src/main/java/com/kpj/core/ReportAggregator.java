@@ -213,14 +213,14 @@ public class ReportAggregator {
         }
         sb.append("<h3>Failed steps by category</h3>")
           .append("<div class='tiles'>")
-          .append("<div class='tile td'><b>").append(defects.size()).append("</b><span>Real defects</span></div>")
+          .append("<div class='tile td'><b>").append(defects.size()).append("</b><span>Defects</span></div>")
           .append("<div class='tile tn'><b>").append(data.size()).append("</b><span>Failed due to data</span></div>")
           .append("<div class='tile to'><b>").append(other.size()).append("</b><span>Other / needs review</span></div>")
           .append("<div class='tile'><b>").append(fails.size()).append("</b><span>Total failed</span></div></div>");
         if (fails.isEmpty()) {
             sb.append("<p class='ok'>No failed steps &#127881;</p>");
         } else {
-            appendCategory(sb, "1. Real defects", "The application behaves wrongly (logic / validation / wrong or missing behaviour) - raise these with the developers.",
+            appendCategory(sb, "1. Defects", "The application behaves wrongly (logic / validation / wrong or missing behaviour) - raise these with the developers.",
                     defects, combined, modTh);
             appendCategory(sb, "2. Failed due to data", "The environment lacks the data the step needs (empty dropdowns, no records in a table, no bed / slot / patient) - fix the test data or configuration, not the code.",
                     data, combined, modTh);

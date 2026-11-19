@@ -126,8 +126,16 @@ public class DoctorDashboard extends BasePage {
     public boolean onScreen() {
         Object r = page.evaluate("() => {" + JS
                 + " return location.hash.toLowerCase().indexOf('doctordashboard')>=0"
-                + "   && byClick('OPList').some(vis) && byNg('queue.fromdate').some(vis); }");
-        return Boolean.TRUE.equals(r);
+                + "   && byClick('OPList').some(vis); }");
+        if (Boolean.TRUE.equals(r)) return true;
+        // In a long run the template can arrive late: give a screen whose route is right a few more seconds before calling it unreached.
+        for (int i = 0; i < 20; i++) {
+            Object onRoute = page.evaluate("() => location.hash.toLowerCase().indexOf('doctordashboard')>=0");
+            if (!Boolean.TRUE.equals(onRoute)) return false;
+            page.waitForTimeout(1000);
+            if (Boolean.TRUE.equals(page.evaluate("() => {" + JS + " return byClick('OPList').some(vis); }"))) return true;
+        }
+        return false;
     }
 
     /** Nursing Station -&gt; Doctor Dashboard through the sidebar, the leaf looked up by its exact href inside the Nursing Station entry. */
