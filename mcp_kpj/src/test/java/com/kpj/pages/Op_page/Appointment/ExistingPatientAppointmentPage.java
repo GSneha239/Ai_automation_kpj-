@@ -96,6 +96,17 @@ public class ExistingPatientAppointmentPage extends BookAppointmentPage {
         return page.url().toLowerCase().contains("existing");
     }
 
+    /** {@link #navigateViaMenu()} (inherited) clicks the sidebar's Existing entry instead of Book Appointment - the menu route, usable in the middle of a session (a typed route there raises the "Reload page" prompt). */
+    @Override
+    protected String menuHref() { return "#/existing"; }
+
+    /** On the Existing screen: the route AND its first-name box. */
+    @Override
+    public boolean onScreen() {
+        if (!page.url().toLowerCase().matches(".*#/existing/?$")) return false;
+        return Boolean.TRUE.equals(page.evaluate("() => !!document.querySelector('#txtFirstName')"));
+    }
+
     // ---- existing-patient search --------------------------------------------
 
     /**
