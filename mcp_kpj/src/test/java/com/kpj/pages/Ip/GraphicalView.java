@@ -41,20 +41,47 @@ public class GraphicalView extends BasePage {
     /** Open Graphical View directly via hash (fast path), falling back to the IP → Inpatients menu if the
      *  bed board hasn't rendered. Returns true once the bed list (or its "no beds" state) is ready. */
     public boolean navigateTo(String baseUrl) {
-        page.evaluate("() => { window.location.hash = '#/GraphicalView'; }");
-        waitForAngular(1500);
-
-        boolean ready = Boolean.TRUE.equals(page.evaluate(
-                "() => !!document.querySelector('#BedStatusCriteria') || !!document.querySelector('ul.Bed-Status')"));
-        if (!ready) {
-            page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                    + " const ipLi=[...document.querySelectorAll('li')].find(li=>{ const a=li.querySelector(':scope > a'); return a && /^\\s*IP\\s*$/i.test(norm(a.textContent)); });"
-                    + " const ipA=ipLi && ipLi.querySelector(':scope > a'); if(ipA) ipA.click(); }");
-            waitForAngular(900);
-            page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                    + " const inpA=[...document.querySelectorAll('a')].find(a=>norm(a.textContent)==='Inpatients'); if(inpA) inpA.click(); }");
-            waitForAngular(900);
-            page.evaluate("() => { const a=[...document.querySelectorAll('a')].find(x=>(x.getAttribute('href')||'')==='#/GraphicalView' && x.offsetParent!==null); if(a) a.click(); }");
+        // MENU FIRST. Straight after login a typed hash (#/GraphicalView) is bounced back to the dashboard and raises the "Reload page" prompt, and the sidebar builds each level lazily (the Inpatients children took
+        // seconds to appear on build .488, so the old 0.9 s waits found no link): so IP and Inpatients are each opened ONCE and awaited, then the link is clicked. The hash is only the last resort.
+        final String NJS = "const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const vis=e=>!!e && !!(e.offsetWidth||e.offsetHeight||e.getClientRects().length);";
+        try { page.waitForFunction("() => window.angular && [...document.querySelectorAll('a')].some(x=>(x.textContent||'').replace(/\\s+/g,' ').trim()==='IP')",
+                null, new Page.WaitForFunctionOptions().setTimeout(45000)); } catch (Exception ignore) { }
+        waitForAngular(1200);
+        // leftovers of an earlier screen (a modal / backdrop, the report tabs an admission opens, a prompt) intercept the menu click - clear them first, and bring this tab to the front
+        page.evaluate("() => { const $=window.jQuery; try{ if($) [...document.querySelectorAll('.modal.in,.modal.show')].forEach(m=>{try{$(m).modal('hide');}catch(e){}}); }catch(e){} [...document.querySelectorAll('.modal-backdrop')].forEach(b=>b.remove()); document.body.classList.remove('modal-open'); }");
+        try { for (Page pg : page.context().pages()) { if (pg != page && !pg.isClosed()) pg.close(); } } catch (Exception ignore) { }
+        try { page.bringToFront(); } catch (Exception ignore) { }
+        for (int attempt = 0; attempt < 3 && !page.url().toLowerCase().contains("graphicalview"); attempt++) {
+            Object tagged = page.evaluate("() => {" + NJS + " const pa=[...document.querySelectorAll('a')].filter(vis).find(x=>norm(x.textContent)==='IP'); if(!pa) return false; const pli=pa.closest('li');"
+                    + " const l=[...pli.querySelectorAll('a[href]')].filter(vis).find(x=>(x.getAttribute('href')||'')==='#/GraphicalView'); if(!l) return false; l.id='__gvMenu'; return true; }");
+            if (!Boolean.TRUE.equals(tagged)) {
+                // open IP (once) ...
+                page.evaluate("() => {" + NJS + " const pa=[...document.querySelectorAll('a')].filter(vis).find(x=>norm(x.textContent)==='IP'); if(pa && !pa.closest('li').classList.contains('menu-open')) pa.click(); }");
+                for (int i = 0; i < 60; i++) {
+                    Object has = page.evaluate("() => {" + NJS + " const pa=[...document.querySelectorAll('a')].filter(vis).find(x=>norm(x.textContent)==='IP'); return !!pa && [...pa.closest('li').querySelectorAll('a')].some(x=>vis(x) && norm(x.textContent)==='Inpatients'); }");
+                    if (Boolean.TRUE.equals(has)) break;
+                    page.waitForTimeout(250);
+                }
+                // ... then Inpatients (once) and wait for the Graphical View link
+                page.evaluate("() => {" + NJS + " const pa=[...document.querySelectorAll('a')].filter(vis).find(x=>norm(x.textContent)==='IP'); if(!pa) return; const c=[...pa.closest('li').querySelectorAll('a')].filter(vis).find(x=>x!==pa && norm(x.textContent)==='Inpatients');"
+                        + " if(c && !c.closest('li').classList.contains('menu-open')) c.click(); }");
+                for (int i = 0; i < 60; i++) {
+                    Object has = page.evaluate("() => {" + NJS + " const pa=[...document.querySelectorAll('a')].filter(vis).find(x=>norm(x.textContent)==='IP'); return !!pa && [...pa.closest('li').querySelectorAll('a[href]')].some(x=>vis(x) && (x.getAttribute('href')||'')==='#/GraphicalView'); }");
+                    if (Boolean.TRUE.equals(has)) break;
+                    page.waitForTimeout(250);
+                }
+                tagged = page.evaluate("() => {" + NJS + " const pa=[...document.querySelectorAll('a')].filter(vis).find(x=>norm(x.textContent)==='IP'); if(!pa) return false; const pli=pa.closest('li');"
+                        + " const l=[...pli.querySelectorAll('a[href]')].filter(vis).find(x=>(x.getAttribute('href')||'')==='#/GraphicalView'); if(!l) return false; l.id='__gvMenu'; return true; }");
+            }
+            if (Boolean.TRUE.equals(tagged)) {
+                try { page.locator("#__gvMenu").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000)); }
+                catch (Exception e) { String m = String.valueOf(e.getMessage()).replaceAll("\\s+", " "); System.out.println("GraphicalView.navigateTo: menu click failed - " + m.substring(0, Math.min(220, m.length()))); }
+                page.evaluate("() => { const e=document.getElementById('__gvMenu'); if(e) e.removeAttribute('id'); }");
+                waitForAngular(2000);
+            } else System.out.println("GraphicalView.navigateTo: Graphical View link not found in the menu (attempt " + (attempt + 1) + ")");
+        }
+        if (!page.url().toLowerCase().contains("graphicalview")) {
+            page.evaluate("() => { window.location.hash = '#/GraphicalView'; }");   // last resort
             waitForAngular(1500);
         }
 
@@ -349,6 +376,14 @@ public class GraphicalView extends BasePage {
                 + " | Doctor " + m.getOrDefault("doctor", "") + " | Patient " + m.getOrDefault("patient", "")
                 + " | MRN " + m.getOrDefault("mrn", "") + " | Mobile " + m.getOrDefault("mobile", "")
                 + " | Referring " + m.getOrDefault("referring", "");
+    }
+
+    /** The tabs the open Bed Details modal offers (visible tab links). On build .488 these are only "Bed Information" and "Admission Details". */
+    public java.util.List<String> modalTabs() {
+        Object r = page.evaluate("() => [...document.querySelectorAll('.BedDetailsPopup ul.nav-tabs a[data-toggle=tab]')].filter(a=>a.offsetParent!==null).map(a=>(a.textContent||'').replace(/\\s+/g,' ').trim())");
+        java.util.List<String> out = new java.util.ArrayList<>();
+        if (r instanceof java.util.List) for (Object o : (java.util.List<?>) r) out.add(String.valueOf(o));
+        return out;
     }
 
     /** Click the <b>Rate Details</b> tab and wait for it to become active. */

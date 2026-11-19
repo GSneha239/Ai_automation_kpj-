@@ -79,6 +79,12 @@ public class DischargePage extends BasePage {
             System.out.println("searchDischargedOneMonthToToday: 1-month range empty — widening to 3 months");
             fromStr = doSearch(today.minusMonths(3).format(f), today.format(f));
         }
+        // On 2026-11-18 the last 3 months held NO discharge at all (the newest was 23/06/2026): keep widening - 6, then 12 months - instead of ending with nothing to select
+        for (int months : new int[]{6, 12}) {
+            if (gridRows() > 0) break;
+            System.out.println("searchDischargedOneMonthToToday: still empty - widening to " + months + " months");
+            fromStr = doSearch(today.minusMonths(months).format(f), today.format(f));
+        }
         return fromStr + " -> " + today.format(f);
     }
 
@@ -109,7 +115,9 @@ public class DischargePage extends BasePage {
                 + " document.querySelectorAll('*').forEach(el=>{ if(gridApi&&data) return; try{ const s=angular.element(el).scope(); if(s&&s.grid&&s.grid.api&&s.grid.options&&s.grid.options.data&&s.grid.options.data.length){gridApi=s.grid.api;data=s.grid.options.data;} }catch(e){} });"
                 + " if(!gridApi||!data||!data.length) return null;"
                 + " const nm=x=>((x.PatientName||x.patientname||x.PatientFullName||'')+'').trim();"
-                + " const cands=data.filter(x=>nm(x)&&!skip.test(nm(x)));"
+                // the grid lists the OLDEST discharges first, so a wide window would otherwise pick a months-old one: take the candidates newest-first (the pick below is among the first 10)
+                + " const dt=x=>{ const m=String(x.dischargedate||'').split(/[\\/ :]+/); if(m.length<5) return 0; let h=+m[3]; const ap=(m[6]||'').toUpperCase(); if(ap==='PM'&&h<12) h+=12; if(ap==='AM'&&h===12) h=0; return new Date(+m[2], +m[1]-1, +m[0], h, +m[4]).getTime(); };"
+                + " const cands=data.filter(x=>nm(x)&&!skip.test(nm(x))).sort((a,b)=>dt(b)-dt(a));"
                 + " const p=cands[Math.floor(Math.random()*Math.min(cands.length,10))] || data[0];"
                 + " try{gridApi.selection.clearSelectedRows();}catch(e){} gridApi.selection.selectRow(p); return nm(p); }");
         waitForAngular(600);

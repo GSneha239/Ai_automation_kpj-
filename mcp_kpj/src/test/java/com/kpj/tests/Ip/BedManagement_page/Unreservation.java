@@ -56,21 +56,47 @@ public class Unreservation extends DevHisBase {
                 rows + " row(s) in List of Reserved Beds", rows > 0 ? "PASS" : "FAIL");
         if (rows == 0) { addSummary("Result", "No reserved beds found to unreserve"); return; }
 
-        String patient = un.selectFirstReservedBed();
-        step(page, "Select a reserved bed", "Tick the SELECT checkbox of the first row in the list",
-                "A reserved bed is selected", patient == null ? "No row selected" : "Selected: " + patient,
-                patient == null ? "FAIL" : "PASS");
-        if (patient == null) return;
+        // The list can hold reservations whose patient is already ADMITTED (the Pre-admission test admits the patients it reserves): the application refuses to unreserve those with "The patient is already
+        // admitted!". They are not what this test is about, so such a row is skipped and the next one tried (any OTHER refusal stops the search and fails the step). The skipped rows are named in the report.
+        final java.util.List<String> skipped = new java.util.ArrayList<>();
+        String patient = null, toast = "", lastPatient = null;
+        boolean ok = false;
+        byte[] selectShot = null;
+        int usedRow = -1;
+        for (int idx = 0; idx < rows && !ok; idx++) {
+            String p = un.selectReservedBed(idx);
+            if (p == null) { skipped.add("row " + (idx + 1) + " could not be ticked"); continue; }
+            lastPatient = p;
+            byte[] shot = null;
+            try { shot = page.screenshot(new com.microsoft.playwright.Page.ScreenshotOptions().setTimeout(40000)); } catch (Exception e) { shot = null; }
+            String bed = un.lastBed, from = un.lastFromDate;
+            String t = un.clickUnreserveAndGetToast();
+            String tl = t == null ? "" : t.toLowerCase();
+            boolean good = tl.contains("unreserv") || tl.contains("success") || tl.contains("saved");
+            toast = t == null ? "" : t;
+            if (good) { ok = true; patient = p; selectShot = shot; usedRow = idx; break; }
+            if (tl.contains("already admitted")) { skipped.add("row " + (idx + 1) + " " + p + " (" + bed + ", from " + from + ") refused: \"" + toast.replaceAll("^.*KPJ Portal", "").trim() + "\""); continue; }
+            patient = p;                      // some other answer (or none): stop here and report it
+            break;
+        }
+        if (patient == null) patient = lastPatient;
+        if (patient == null) { step(page, "Select a reserved bed", "Tick the SELECT checkbox of a row in the list", "A reserved bed is selected", "No row could be ticked" + (skipped.isEmpty() ? "" : " (" + skipped + ")"), "FAIL"); return; }
 
-        String toast = un.clickUnreserveAndGetToast();
-        boolean ok = toast != null && (toast.toLowerCase().contains("unreserv") || toast.toLowerCase().contains("success") || toast.toLowerCase().contains("saved"));
+        String selActual = "Selected: " + patient + " (" + un.lastBed + ", from " + un.lastFromDate + ")"
+                + (skipped.isEmpty() ? "" : ". Rows skipped first because the application refused them: " + skipped);
+        if (selectShot != null) step(selectShot, "Select a reserved bed", "Tick the SELECT checkbox of a row in the list (a row of an already admitted patient is skipped)", "A reserved bed is selected", selActual, "PASS");
+        else step(page, "Select a reserved bed", "Tick the SELECT checkbox of a row in the list (a row of an already admitted patient is skipped)", "A reserved bed is selected", selActual, "PASS");
+
         step(page, "Click Unreserve", "Click Unreserve (SaveUnreserve())",
-                "'... Unreserved Successfully.' toast", toast == null || toast.isEmpty() ? "No success toast appeared" : toast, ok ? "PASS" : "FAIL");
+                "'... Unreserved Successfully.' toast", toast.isEmpty() ? "No success toast appeared" : toast, ok ? "PASS" : "FAIL");
 
         boolean listed = un.verifyInUnreservedList(patient);
-        step(page, "Verify in List of Unreserved Beds", "Check the List of Unreserved Beds table for " + patient,
-                "The unreserved bed is listed for the patient", listed ? patient + " found in List of Unreserved Beds" : patient + " NOT found in the list",
+        step(page, "Verify in List of Unreserved Beds", "Check the List of Unreserved Beds table for " + patient + " / bed " + un.lastBed + " / from " + un.lastFromDate,
+                "The unreserved bed is listed for the patient", listed ? patient + " (" + un.lastBed + ", from " + un.lastFromDate + ") found in List of Unreserved Beds" : patient + " (" + un.lastBed + ", from " + un.lastFromDate + ") NOT found in the list",
                 listed ? "PASS" : "FAIL");
+        addSummary("Reserved beds listed", String.valueOf(rows));
+        if (!skipped.isEmpty()) addSummary("Skipped (already admitted)", String.valueOf(skipped));
+        addSummary("Unreserved", ok ? patient + " (" + un.lastBed + ", from " + un.lastFromDate + ")" : "(none)");
         addSummary("Result", (ok ? toast : "not confirmed") + (listed ? " | listed as unreserved" : " | not listed"));
     }
 }

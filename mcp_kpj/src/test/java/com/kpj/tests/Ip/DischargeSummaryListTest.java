@@ -57,8 +57,13 @@ public class DischargeSummaryListTest extends DevHisBase {
                 opened ? "PASS" : "FAIL");
         if (!opened) return null;
         String range = ds.searchOneMonthToToday();
-        step(page, tag + " · Search (1-month range, To = today)", "Set From = today-1month, To = today; click Search",
-                "Discharge summaries are listed", "Searched " + range, "PASS");
+        boolean widened = !range.startsWith(java.time.LocalDate.now().minusMonths(1).format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy")));
+        boolean listed = ds.hasRows();
+        step(page, tag + " · Search (range ending today; 1 month, widened if empty)", "Set From = today-1month, To = today; click Search (if empty widen to 3/6/12/24 months)",
+                "Discharge summaries are listed",
+                (listed ? "Searched " + range : "No discharge summary in any range up to 24 months (" + range + ")")
+                        + (widened && listed ? " (the 1-month range returned no rows, so the range was widened)" : ""),
+                listed ? "PASS" : "FAIL");
         String patient = ds.selectRandomPatient();
         step(page, tag + " · Select a patient", "Select any patient row (ui-grid API)",
                 "One patient selected", patient == null ? "No patient in the list" : "Selected: " + patient,
@@ -72,11 +77,19 @@ public class DischargeSummaryListTest extends DevHisBase {
         if (ds == null) return;
 
         boolean editor = ds.clickReferralLetterMedicalReport();
-        step(page, "ReferralLetter · Open template editor", "Click 'ReferralLetter/Medical Report'; the discharge-template editor opens",
-                "The template editor (#/edit-DischargeTemplateMaster) is shown",
-                editor ? "Template editor opened" : "Editor did NOT open", editor ? "PASS" : "FAIL");
+        boolean certScreen = "certificate".equals(ds.landedOn);
+        step(page, "ReferralLetter · Open screen", "Click 'ReferralLetter/Medical Report' (fnSetCertificateSession('ReferralLetter'))",
+                "The ReferralLetter screen opens (the discharge-template editor on earlier builds; the Certificate screen on build .488)",
+                !editor ? "Neither the template editor nor the Certificate screen opened"
+                        : certScreen ? "Certificate screen opened (#/add-Certificate) - build .488 no longer opens the old discharge-template editor"
+                                     : "Template editor opened (#/edit-DischargeTemplateMaster)",
+                editor ? "PASS" : "FAIL");
         if (!editor) return;
 
+        if (certScreen) {
+            saveCertificateAndReport(ds, "ReferralLetter", null);
+            return;
+        }
         String toast = ds.checkFieldAndSubmit();
         boolean ok = toast != null && (toast.toLowerCase().contains("template")
                 || toast.toLowerCase().contains("updated") || toast.toLowerCase().contains("success"));
@@ -84,6 +97,34 @@ public class DischargeSummaryListTest extends DevHisBase {
                 "'Template updated successfully.' toast",
                 toast == null || toast.isEmpty() ? "No success toast appeared" : toast, ok ? "PASS" : "FAIL");
         addSummary("ReferralLetter · Result", ok ? toast : "Not confirmed");
+    }
+
+    /** Certificate-style save (ReferralLetter on build .488, and Death): template + department + doctor + Authenticate + text + Save;
+     *  success = the certificate report opens in a new tab (these actions show no success toast). {@code urlHint} (lower case) must be part
+     *  of the report URL, or null to accept any report URL that is not the app itself. */
+    private void saveCertificateAndReport(com.kpj.pages.Ip.DischargeSummaryListPage ds, String tag, String urlHint) {
+        String toast = ds.fillCertificateAndSave();
+        byte[] png = ds.lastReportPng;
+        String url = ds.lastReportUrl;
+        String lu = url == null ? "" : url.toLowerCase();
+        boolean gotReport = !lu.isEmpty() && !lu.contains("#/") && (urlHint == null ? (lu.contains(".aspx") || lu.contains("report") || lu.contains("certificate")) : lu.contains(urlHint));
+        step(page, tag + " · Template/Dept/Doctor/Authenticate + text + Save",
+                "Select Template + Department + Doctor; tick Authenticate; type text; Save",
+                "The certificate report is generated (no success toast for this action)",
+                gotReport ? ("Report generated" + (toast == null || toast.isEmpty() ? "" : " (msg: " + toast + ")"))
+                          : (toast == null || toast.isEmpty() ? "No report generated" : "No report - " + toast),
+                gotReport ? "PASS" : "FAIL");
+        String actual = gotReport ? "Report opened in a new tab (PDF): " + url
+                                  : (url == null || url.isEmpty() ? "No report URL captured" : "Report URL: " + url);
+        if (png != null && png.length > 0) {
+            step(png, tag + " · Report opens in new tab & screenshot", "The report opens in a new tab after Save",
+                    "The report is shown", actual, gotReport ? "PASS" : "MANUAL");
+        } else {
+            step(page, tag + " · Report opens in new tab", "The report (PDF) opens in a new tab after Save",
+                    "The report opens in a new tab", actual, gotReport ? "PASS" : "MANUAL");
+        }
+        addSummary(tag + " · Result", gotReport ? "Report generated" : "Not generated");
+        addSummary(tag + " · Report", gotReport ? url : "Not generated");
     }
 
     // ===== Section: Medical Certificate (MC) =============================
@@ -130,35 +171,13 @@ public class DischargeSummaryListTest extends DevHisBase {
         if (ds == null) return;
 
         boolean opened = ds.clickDeath();
-        step(page, "Death · Open add-Certificate", "Click 'Death' (fnSetCertificateSession())",
-                "The add-Certificate page is shown", opened ? "add-Certificate opened" : "Did NOT open",
+        step(page, "Death · Open Death Certificate screen", "Click 'Death' (fnSetDeathCertificateSession())",
+                "The Death Certificate screen is shown (#/add-BirthCertificate on build .488; #/add-Certificate on earlier builds)",
+                opened ? "Death Certificate screen opened (" + page.url().replaceAll(".*#", "#") + ")" : "Did NOT open",
                 opened ? "PASS" : "FAIL");
         if (!opened) return;
 
-        String toast = ds.fillCertificateAndSave();
-        // No success toast for this action — the certificate REPORT (certificateTemplate.aspx) opening is the success signal.
-        byte[] png = ds.lastReportPng;
-        String url = ds.lastReportUrl;
-        boolean gotReport = url != null && url.toLowerCase().contains("certificatetemplate");
-        step(page, "Death · Template/Dept/Doctor/Authenticate + text + Save",
-                "Select Certificate Template + Department + Doctor; tick Authenticate; type text; Save (IUDDischargeSummaryDetail())",
-                "The certificate report is generated (no success toast for this action)",
-                gotReport ? ("Report generated" + (toast == null || toast.isEmpty() ? "" : " (msg: " + toast + ")"))
-                          : (toast == null || toast.isEmpty() ? "No report generated" : "No report — " + toast),
-                gotReport ? "PASS" : "FAIL");
-
-        String actual = gotReport ? "Certificate report opened in a new tab (PDF): " + url
-                                  : (url == null || url.isEmpty() ? "No report URL captured" : "Report URL: " + url);
-        if (png != null && png.length > 0) {
-            step(png, "Death · Report opens in new tab & screenshot", "The certificate report opens in a new tab after Save",
-                    "The certificate report is shown", actual, gotReport ? "PASS" : "MANUAL");
-        } else {
-            step(page, "Death · Report opens in new tab", "The certificate report (PDF) opens in a new tab after Save",
-                    "The certificate report opens in a new tab", actual, gotReport ? "PASS" : "MANUAL");
-        }
-
-        addSummary("Death · Result", gotReport ? "Report generated" : "Not generated");
-        addSummary("Death · Report", gotReport ? url : "Not generated");
+        saveCertificateAndReport(ds, "Death", null);
     }
 
     // ===== Section: Print ================================================

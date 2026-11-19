@@ -346,7 +346,8 @@ public class Admission extends BasePage {
         String kinRel = new String[]{"Father", "Grandfather", "Biological Child", "Adopted Child"}[rnd.nextInt(4)];
         String kinNric = String.format("%02d%02d%02d", (1960 + rnd.nextInt(30)) % 100, 1 + rnd.nextInt(12), 1 + rnd.nextInt(28))
                 + "07" + String.format("%04d", rnd.nextInt(9000) + 1000);
-        String kinMobile = "1" + String.format("%08d", rnd.nextInt(90000000) + 10000000);
+        // build .488 refuses a NOK mobile of 9 digits ("NOK Mobile number must be 10 digits!"): 1 + 9 digits = 10
+        String kinMobile = "1" + String.format("%09d", rnd.nextInt(900000000) + 100000000);
         String kinEmail = kinFamily.toLowerCase() + (rnd.nextInt(9000) + 1000) + "@example.com";
         // Wait for the kin dropdowns to populate (setSel no-ops on unloaded options).
         try {

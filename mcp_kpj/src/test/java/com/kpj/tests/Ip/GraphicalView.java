@@ -77,10 +77,13 @@ public class GraphicalView extends DevHisBase {
                 admInfo, admOpened ? "PASS" : "FAIL");
 
         // 5) Click Rate Details; select a Pricing Policy; view the details.
+        java.util.List<String> modalTabs = gv.modalTabs();
         boolean rateOpened = gv.openRateDetailsTab();
         step(page, "Click Rate Details", "Click the Rate Details tab",
                 "The Rate Details tab (Pricing Policy + rate table) is shown",
-                rateOpened ? "Rate Details tab opened" : "Tab did NOT open", rateOpened ? "PASS" : "FAIL");
+                rateOpened ? "Rate Details tab opened"
+                        : "FAIL: the Bed Details modal offers only the tabs " + modalTabs + " - there is NO Rate Details tab link on this build (the #RoomTariff pane with its Pricing Policy select is in the page, but no tab opens it), so the tab cannot be reached from the screen",
+                rateOpened ? "PASS" : "FAIL");
 
         String policy = "";
         String rates = "";
@@ -90,7 +93,7 @@ public class GraphicalView extends DevHisBase {
         }
         step(page, "Select Pricing Policy", "Select the first available Pricing Policy",
                 "A policy is selected and its rate table (Service Name/Unit/Purchase Price) loads",
-                policy.isEmpty() ? "No Pricing Policy option available" : "Policy: " + policy + " | " + rates,
+                policy.isEmpty() ? (rateOpened ? "No Pricing Policy option available" : "Not reachable: there is no Rate Details tab on this build (see the previous step)") : "Policy: " + policy + " | " + rates,
                 policy.isEmpty() ? "FAIL" : "PASS");
 
         // 6) Click OK.
@@ -151,6 +154,10 @@ public class GraphicalView extends DevHisBase {
                 "Payor is set to Self (row auto-filled)", payor, payorOk ? "PASS" : "MANUAL");
 
         String admission = ip.fillAdmissionSection();
+        // "Reason of Admission Payment Type/ Financial Class" (Admission.ReasonOfAdmission, a text box that is hidden until its section opens) is mandatory: without it Save answers "Please Enter Reason of
+        // Admission Payment Type/ Financial Class!". The Preadmission flow calls this after fillAdmissionSection(); this flow never did.
+        String reason = ip.fillReasonOfAdmissionIfEmpty();
+        if (!reason.isEmpty()) admission += " | reason of admission: " + reason;
         step(page, "Admission · Admission Information",
                 "Admission Location/Department/Doctor/Type/Source/Billing Class/Purpose (Non-Presence off)",
                 "Admission section populated", admission, "PASS");
@@ -168,6 +175,9 @@ public class GraphicalView extends DevHisBase {
                 "Expand Additional Doctors (FillAdditionDropDown), select Classification + Additional Doctor, click Add",
                 "A doctor row is added to the Additional Doctors grid", addDocs, addDocsOk ? "PASS" : "MANUAL");
 
+        // a later step (Room Type / Ward / Additional Doctors) can re-bind fields and reset the model: re-assert the reason right before Save (it does nothing when the box already holds a value)
+        String reasonAgain = ip.fillReasonOfAdmissionIfEmpty();
+        if (!reasonAgain.isEmpty()) System.out.println("Graphical View admission: reason of admission re-entered before Save -> " + reasonAgain);
         String toast = ip.saveAdmissionAndGetToast();
         boolean admitOk = toast != null && toast.toLowerCase().contains("admitted") && !toast.toLowerCase().contains("already admitted");
         // A save that never confirms means the patient was never actually admitted — no report is ever
