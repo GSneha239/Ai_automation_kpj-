@@ -185,6 +185,23 @@ public class QualityIndicator extends BasePage {
         return lastFormSelection;
     }
 
+    /**
+     * True when the screen fixes the Form Name itself: the select is DISABLED ({@code ng-disabled=true}) and the model already holds a value
+     * (verified live 2026-11-18, v2026.11.17.488: {@code selectedform.value = "QualityIndicator"}, the box still reads "--Select--").
+     * Then there is nothing to pick, so the test goes straight to Code and Remark. Sets {@link #lastFormName} to the model value.
+     */
+    public boolean formNamePreset() {
+        Object r = page.evaluate("() => {" + JS
+                + " const s=[...document.querySelectorAll('select')].find(x=>/drpFormNamesVals/.test(x.getAttribute('ng-options')||''));"
+                + " if(!s || !s.disabled) return '';"
+                + " let m=''; try{ const sc=angular.element(s).scope(); m=(sc&&sc.selectedform&&sc.selectedform.value)||''; }catch(e){}"
+                + " return m; }");
+        String m = r == null ? "" : r.toString();
+        if (m.isEmpty()) return false;
+        lastFormName = m; lastFormValue = m;
+        return true;
+    }
+
     /** What the Form Name select shows now, and what the screen's model holds. Sets {@link #lastFormName} / {@link #lastFormValue}. */
     public String readFormName() {
         Object r = page.evaluate("() => {" + JS

@@ -31,7 +31,7 @@ import java.util.List;
  * masters check, Interim bill, the D5 support screens) records its FAIL and the flow carries on.</p>
  *
  * <p>Reporting reuses {@link DevHisBase#step} / {@code meta} / {@code addSummary} unchanged, so the per-test HTML, the
- * TSV and {@code ReportAggregator}'s FAILED_STEPS.html pick this flow up like any other test.</p>
+ * TSV and {@code ReportAggregator}'s SUMMARY_REPORT.html pick this flow up like any other test.</p>
  *
  * <p>Optional run-time data (all have defaults): {@code -Dbillingip.radiology=MRI0010 -Dbillingip.lab="Full Blood Count"
  * -Dbillingip.service=CAC0003 -Dbillingip.drug=para -Dbillingip.freq=od}. {@code -Dbillingip.mrn=<MRN>} uses an
@@ -52,7 +52,7 @@ public class BillingIP extends DevHisBase {
 
     /**
      * The framework writes the report to {@code <outdir>/reports/Flow_BillingIP.html} (+ the TSV in {@code aggregate-data}), which is
-     * what the summary / FAILED_STEPS aggregation reads. A copy of both goes to {@code <outdir>/BillingIP/} so the tester finds the
+     * what the summary / SUMMARY_REPORT aggregation reads. A copy of both goes to {@code <outdir>/BillingIP/} so the tester finds the
      * whole Billing IP flow in one folder.
      */
     private void publishConsolidatedReport() {

@@ -6,7 +6,7 @@ import java.util.stream.Collectors;
 
 /**
  * Scans the per-run {@code result.tsv} files that {@link DevHisBase} writes and produces a single
- * <b>failed-steps report</b> ({@code test-output/FAILED_STEPS.html}) that lists every FAILED step with
+ * <b>summary report</b> ({@code test-output/SUMMARY_REPORT.html}) that lists every FAILED step with
  * its <b>page name</b>. Also writes the run's exit code (0 = all steps passed, 1 = one or more failed)
  * to {@code test-output/aggregate-exit.txt} so the CI batch file can gate the build on it.
  *
@@ -55,6 +55,7 @@ public class ReportAggregator {
         int totalSteps = 0, totalFail = 0, totalManual = 0;
         Set<String> failedPages = new LinkedHashSet<>();
 
+        Set<String> counted = new java.util.HashSet<>();   // base names of the pages that have step data
         for (Path module : modules) {
             String moduleName = module.getFileName() == null ? module.toString() : module.getFileName().toString();
             Path dataDir = module.resolve("aggregate-data");
@@ -86,7 +87,30 @@ public class ReportAggregator {
                                 pass++;
                             }
                         }
-                        if (!page.isEmpty()) runs.add(new String[]{moduleName, page, testId, String.valueOf(pass), String.valueOf(fail), String.valueOf(manual)});
+                        if (!page.isEmpty()) {
+                            runs.add(new String[]{moduleName, page, testId, String.valueOf(pass), String.valueOf(fail), String.valueOf(manual)});
+                            counted.add(tsv.getFileName().toString().replaceFirst("(?i)\\.tsv$", "").toLowerCase());
+                        }
+                    }
+                }
+                // Reconcile with the HTML reports: a page that wrote its report but has NO step data (no .tsv, an empty one, or one older than the run)
+                // used to be left out of the summary silently, so "479 reports" showed up as "476 pages". Count it, and say why it has no steps.
+                Path htmlDir = module.resolve("reports");
+                if (Files.isDirectory(htmlDir)) {
+                    List<Path> htmls = Files.list(htmlDir)
+                            .filter(p -> p.getFileName().toString().toLowerCase().endsWith(".html"))
+                            .sorted().collect(Collectors.toList());
+                    for (Path h : htmls) {
+                        String base = h.getFileName().toString().replaceFirst("(?i)\\.html$", "");
+                        if (counted.contains(base.toLowerCase())) continue;
+                        try { if (since > 0 && Files.getLastModifiedTime(h).toMillis() < since) continue; } catch (Exception ignore) { }
+                        String why = !Files.exists(reportsDir.resolve(base + ".tsv")) ? "its step data file (" + base + ".tsv) was not written"
+                                : "its step data file (" + base + ".tsv) is empty or older than the run";
+                        totalSteps++; totalFail++; failedPages.add(base);
+                        fails.add(new String[]{moduleName, base, base, "(summary) step data recorded",
+                                "A step result for every step of the page", "The report " + h.getFileName() + " exists but " + why + ", so its steps could not be counted - open that report"});
+                        runs.add(new String[]{moduleName, base, base, "0", "1", "0"});
+                        System.out.println("ReportAggregator: no step data for " + h.getFileName() + " - " + why);
                     }
                 }
             } catch (Exception e) {
@@ -96,9 +120,9 @@ public class ReportAggregator {
 
         try {
             Files.createDirectories(root);
-            Files.writeString(root.resolve("FAILED_STEPS.html"), buildHtml(runs, fails, combined, totalSteps, totalFail, totalManual, startStr, endStr, durStr));
+            Files.writeString(root.resolve("SUMMARY_REPORT.html"), buildHtml(runs, fails, combined, totalSteps, totalFail, totalManual, startStr, endStr, durStr));
         } catch (Exception e) {
-            System.out.println("ReportAggregator: could not write FAILED_STEPS.html - " + e.getMessage());
+            System.out.println("ReportAggregator: could not write SUMMARY_REPORT.html - " + e.getMessage());
         }
         try { Files.writeString(root.resolve("aggregate-exit.txt"), totalFail > 0 ? "1" : "0"); } catch (Exception ignore) { }
 
@@ -106,7 +130,7 @@ public class ReportAggregator {
         System.out.println(" Aggregate : " + totalSteps + " steps | " + totalFail + " FAILED | "
                 + totalManual + " MANUAL | pages with failures: " + failedPages.size());
         for (String[] f : fails) System.out.println("   FAIL [" + (combined ? f[0] + " / " : "") + f[1] + "] " + f[3] + "  ->  " + f[5]);
-        System.out.println(" Report    : " + root.resolve("FAILED_STEPS.html").toAbsolutePath());
+        System.out.println(" Report    : " + root.resolve("SUMMARY_REPORT.html").toAbsolutePath());
         System.out.println(" Exit code : " + (totalFail > 0 ? 1 : 0));
         System.out.println("============================================================");
     }
@@ -118,7 +142,7 @@ public class ReportAggregator {
     private static String buildHtml(List<String[]> runs, List<String[]> fails, boolean combined, int steps, int fail, int manual,
                                     String startStr, String endStr, String durStr) {
         StringBuilder sb = new StringBuilder();
-        sb.append("<!doctype html><html><head><meta charset='utf-8'><title>Failed Steps Report</title><style>")
+        sb.append("<!doctype html><html><head><meta charset='utf-8'><title>Summary Report</title><style>")
           .append("body{font-family:Segoe UI,Arial,sans-serif;margin:0;background:#f5f5f7;color:#222}")
           .append("header{background:#5b2c8f;color:#fff;padding:18px 24px}header h1{margin:0;font-size:20px}header .sub{opacity:.9;font-size:13px;margin-top:4px}")
           .append(".wrap{padding:20px 24px}h3{color:#5b2c8f}")
@@ -138,7 +162,7 @@ public class ReportAggregator {
         int onDashboard = 0;
         for (String[] u : unreached) if (u[4].contains("/PatientDashboard")) onDashboard++;
 
-        sb.append("<header><h1>Failed Steps Report</h1><div class='sub'>")
+        sb.append("<header><h1>Summary Report</h1><div class='sub'>")
           .append("<b>").append(pagesTotal).append("</b> pages &middot; ").append(steps).append(" steps &middot; <b>").append(fail).append("</b> failed &middot; ").append(manual).append(" manual</div>")
           .append("<div class='sub'>Start: <b>").append(esc(startStr)).append("</b> &middot; End: <b>").append(esc(endStr))
           .append("</b> &middot; Duration: <b>").append(esc(durStr)).append("</b></div></header><div class='wrap'>");

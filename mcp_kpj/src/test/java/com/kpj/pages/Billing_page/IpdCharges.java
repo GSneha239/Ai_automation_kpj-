@@ -238,7 +238,10 @@ public class IpdCharges extends BasePage {
 
     /** Read the <b>Package</b> tab (charges billed under a package admission — Cost Centre, Service, Qty/Day's,
      *  amounts, Doctor Share/Hospital Share, Doctor, Remark). */
-    public String readPackageTab() { return readTabbedTable("Package", "#pkg"); }
+    public String readPackageTab() { return readTabbedTable("Package Service", "#pkg"); }
+
+    /** Read the <b>Package Item</b> tab (added with the Package split, v2026.11: Item Code/Name, Store, Batch, quantities, Remark). */
+    public String readPackageItemTab() { return readTabbedTable("Package Item", "#pkgItem"); }
 
     /** Read the <b>Cancelled Charges</b> tab (an audit trail — Authorize/Authorized By/Cancelled By/Cancellation
      *  Reason alongside the original charge line). */

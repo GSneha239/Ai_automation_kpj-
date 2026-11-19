@@ -81,14 +81,18 @@ public class DrugAdminRoute extends DevHisBase {
         addSummary("Screen controls", dar.describeControls());
 
         // 2) Form Name
-        String picked = dar.selectFormName(formWanted);
-        boolean formOk = dar.formNameSelected();
-        step(page, "Select Form Name", "Select the Form Name (option matching " + formWanted + ")",
-                "A Form Name is selected",
-                (formOk ? "PASSES because the select shows it and the screen's model holds it: " : "FAILS because the choice did not take: ")
-                        + picked + " — " + dar.readFormName(),
-                formOk ? "PASS" : "FAIL");
-        if (!formOk) { addSummary("Result", "FAILED — the Form Name could not be selected"); return; }
+        // The screen fixes the Form Name itself (disabled select, model preset): nothing to pick, so there is no step.
+        final boolean formPreset = dar.formNamePreset();
+        if (!formPreset) {
+            String picked = dar.selectFormName(formWanted);
+            boolean formOk = dar.formNameSelected();
+            step(page, "Select Form Name", "Select the Form Name (option matching " + formWanted + ")",
+                    "A Form Name is selected",
+                    (formOk ? "PASSES because the select shows it and the screen's model holds it: " : "FAILS because the choice did not take: ")
+                            + picked + " — " + dar.readFormName(),
+                    formOk ? "PASS" : "FAIL");
+            if (!formOk) { addSummary("Result", "FAILED — the Form Name could not be selected"); return; }
+        }
 
         // 3) Code + Remark, 4) Submit -> toast. A different pair is entered when the server says "already exists".
         String entry = "", toast = "";
@@ -98,7 +102,7 @@ public class DrugAdminRoute extends DevHisBase {
         // filled form BEFORE Submit (afterwards the form is cleared) and the page right after the toast was read (they fade).
         byte[] filledShot = null, toastShot = null;
         for (int attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-            if (attempt > 0 && !dar.formNameSelected()) dar.selectFormName(formWanted);   // a refused save may reset the form
+            if (attempt > 0 && !formPreset && !dar.formNameSelected()) dar.selectFormName(formWanted);   // a refused save may reset the form
             entry = dar.fillDetails(attempt);
             entered = dar.detailsEntered();
             used++;

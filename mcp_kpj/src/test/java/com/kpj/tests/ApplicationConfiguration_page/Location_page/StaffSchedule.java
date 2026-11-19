@@ -87,9 +87,9 @@ public class StaffSchedule extends DevHisBase {
             if (!isPlaceholder(payable)) break;
         }
         boolean deptPayableOk = !dept.isEmpty() && !isPlaceholder(dept) && !payable.isEmpty() && !isPlaceholder(payable);
-        step(page, "Select Department and Payable", "Choose the Department and the Payable",
-                "A Department and a Payable are selected",
-                "Department=" + dept + " | Payable=" + payable, deptPayableOk ? "PASS" : "FAIL");
+        step(page, "Select Department and Staff", "Choose the Department and the Staff (the Payable list of older builds)",
+                "A Department and a Staff are selected",
+                "Department=" + dept + " | Staff=" + payable, deptPayableOk ? "PASS" : "FAIL");
 
         // 4) Start / End time
         // A Payable cannot have two overlapping schedules on the same days, and the old fixed 09:00-17:00 window on the same first

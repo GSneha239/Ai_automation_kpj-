@@ -108,7 +108,9 @@ public class BedReleasedChecklist extends BasePage {
                     + " const rows=[...document.querySelectorAll('.ui-grid-render-container-body .ui-grid-row, table tbody tr')].filter(r=>r.offsetParent!==null && norm(r.textContent) && !/no records|no data/i.test(r.textContent));"
                     + " if(!rows.length) return null;"
                     + " const row=rows[0];"
-                    + " const cb=row.querySelector('input[type=checkbox],input[type=radio]'); if(cb){ cb.id='__brcRowCb'; } else { const cell=row.querySelector('.ui-grid-cell-contents,td'); if(cell) cell.id='__brcRowCell'; }"
+                    // The row's only checkbox is the STATUS (Active) toggle: ticking it deactivates the record and raises a confirm.
+                    // So select the row by clicking a plain text cell and never a checkbox.
+                    + " const cell=[...row.querySelectorAll('.ui-grid-cell-contents,td')].find(c=>!c.querySelector('input,button,a,i') && norm(c.textContent)); if(cell) cell.id='__brcRowCell';"
                     + " return norm(([...row.querySelectorAll('.ui-grid-cell-contents,td')].map(c=>norm(c.textContent)).find(x=>x && !/^\\d+$/.test(x))) || norm(row.textContent)).slice(0,40); }");
             if (r != null) rowText = r.toString();
             else page.waitForTimeout(600);
@@ -127,7 +129,8 @@ public class BedReleasedChecklist extends BasePage {
         boolean tagged = false;
         for (int i = 0; i < 15 && !tagged; i++) {
             tagged = Boolean.TRUE.equals(page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                    + " const b=[...document.querySelectorAll('button,a,input[type=button],span,i')].find(x=>/^\\s*add\\s*$/i.test(norm(x.textContent||x.value)) && x.offsetParent!==null)"
+                    + " const b=[...document.querySelectorAll('[ng-click]')].find(x=>x.getAttribute('ng-click')==='AddBedReleaseCheckList()' && x.offsetParent!==null)"
+                    + " || [...document.querySelectorAll('button,a,input[type=button],span,i')].find(x=>/^\\s*add\\s*$/i.test(norm(x.textContent||x.value)) && x.offsetParent!==null)"
                     + " || [...document.querySelectorAll('[ng-click]')].find(x=>/add/i.test(x.getAttribute('ng-click')||'') && /add/i.test(norm(x.textContent)) && x.offsetParent!==null); if(!b) return false; b.id='__brcAdd'; return true; }"));
             if (!tagged) page.waitForTimeout(500);
         }
@@ -158,8 +161,10 @@ public class BedReleasedChecklist extends BasePage {
                 + "   const lbls=[...document.querySelectorAll('label,.control-label,span,th,td,b')].filter(e=>e.offsetParent!==null && norm(e.textContent).replace(/\\*/g,'').trim().toLowerCase()===want);"
                 + "   for(const l of lbls){ const g=l.closest('.form-group,.row,.col-sm-6,.col-md-6,.col-sm-4,td,tr,div'); const f=g?g.querySelector('input:not([type=hidden]),textarea'):null; if(f&&f.offsetParent!==null) return f; const p=l.parentElement?l.parentElement.querySelector('input:not([type=hidden]),textarea'):null; if(p&&p.offsetParent!==null) return p; } } return null; };"
                 + " const setInp=(e,v)=>{ if(!e) return '(no)'; const c=A.element(e).controller('ngModel'); e.value=v; if(c){c.$setViewValue(v);c.$render();} e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true})); return v; };"
-                + " const codeF=labelField(['Code','Checklist Code','Bed Released Checklist Code']);"
-                + " const remF=labelField(['Remark','Remarks','Description']);"
+                // Pinned (read live 2026-11-18): BedReleaseCheckListMaster.code / .description; the label lookup is only a fallback.
+                + " const vis=e=>!!(e && e.offsetParent!==null);"
+                + " const codeF=[...document.querySelectorAll(\"input[ng-model='BedReleaseCheckListMaster.code']\")].find(vis) || labelField(['Code','Checklist Code','Bed Released Checklist Code']);"
+                + " const remF=[...document.querySelectorAll(\"input[ng-model='BedReleaseCheckListMaster.description'],textarea[ng-model='BedReleaseCheckListMaster.description']\")].find(vis) || labelField(['Remark','Remarks','Description']);"
                 + " const cd=setInp(codeF, a.code); const rm=setInp(remF, a.remark);"
                 + " return 'Code='+cd+' | Remark='+rm+' | codeNg='+(codeF?codeF.getAttribute('ng-model'):'-')+' | remNg='+(remF?remF.getAttribute('ng-model'):'-'); }",
                 java.util.Map.of("code", code, "remark", lastRemark));
@@ -174,7 +179,7 @@ public class BedReleasedChecklist extends BasePage {
                 + " const labelOf=e=>{ let t=''; const g=e.closest('.form-group,.row,.col-sm-6,.col-md-6,td,div,label'); if(g){ const l=g.querySelector('label,.control-label'); if(l) t=l.textContent; } return norm(t||(e.parentElement?e.parentElement.textContent:'')).slice(0,30); };"
                 + " const cbs=[...document.querySelectorAll('input[type=checkbox]')].filter(c=>c.offsetParent!==null && !/logbookfilters|colfilter/i.test(c.getAttribute('ng-model')||''));"
                 + " if(!cbs.length) return 'none';"
-                + " let cb=cbs.find(c=>/mandat|require/i.test(labelOf(c)+' '+(c.getAttribute('ng-model')||''))) || cbs.find(c=>!c.checked) || cbs[0];"
+                + " let cb=cbs.find(c=>/ismandantory|ismandatory/i.test(c.getAttribute('ng-model')||'')) || cbs.find(c=>/mandat|require/i.test(labelOf(c)+' '+(c.getAttribute('ng-model')||''))) || cbs.find(c=>!c.checked) || cbs[0];"
                 + " cb.id='__brcMandCb'; return (labelOf(cb)||(cb.getAttribute('ng-model')||'checkbox')); }");
         String label = String.valueOf(r);
         if ("none".equals(label)) { System.out.println("selectMandatoryCheckbox: no form checkbox found"); return ""; }

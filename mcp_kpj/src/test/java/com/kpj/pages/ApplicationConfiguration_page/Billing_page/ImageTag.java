@@ -179,12 +179,22 @@ public class ImageTag extends BasePage {
 
     public boolean formNameSelected() {
         String model = readFormName();
+        if (!model.isBlank() && Boolean.TRUE.equals(page.evaluate("() => {" + JS + " const s=" + FORM_SELECT + "; return !!(s && s.disabled); }"))) {
+            lastFormName = model; lastFormValue = model; return true;     // preset by the screen
+        }
         return !lastFormName.isBlank() && !lastFormName.startsWith("--") && !lastFormValue.isBlank() && !model.isBlank() && lastFormValue.replaceFirst("^string:", "").equals(model.replaceFirst("^string:", ""));
     }
 
     /** Select the Form Name whose text or value matches the regex (first match among the unique options), else the first unique option. Returns the text selected, "" when it could not be. */
     public String selectFormName(String regex) {
         problems.clear();
+        // The screen may fix the Form Name itself: a DISABLED select whose model already holds a value (box reads "--Select--").
+        Object preset = page.evaluate("() => {" + JS + " const s=" + FORM_SELECT + "; if(!s || !s.disabled) return '';"
+                + " let m=''; try{ const sc=angular.element(s).scope(); m=(sc&&sc.selectedform&&sc.selectedform.value)||''; }catch(e){} return m; }");
+        if (preset != null && !preset.toString().isEmpty()) {
+            lastFormName = preset.toString(); lastFormValue = preset.toString();
+            return lastFormName;
+        }
         List<String[]> opts = formOptions();
         if (opts.isEmpty()) { problems.add("the Form Name dropdown has no options"); return ""; }
         Pattern rx = Pattern.compile(regex, Pattern.CASE_INSENSITIVE);

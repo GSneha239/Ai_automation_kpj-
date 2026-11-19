@@ -32,7 +32,7 @@ import java.util.List;
  * missing because of it.</p>
  *
  * <p>Reporting reuses {@link DevHisBase#step} / {@code meta} / {@code addSummary} unchanged, so the per-test HTML,
- * the TSV and {@code ReportAggregator}'s FAILED_STEPS.html all pick this flow up like any other test.</p>
+ * the TSV and {@code ReportAggregator}'s SUMMARY_REPORT.html all pick this flow up like any other test.</p>
  *
  * <p>Optional run-time data (all have defaults): {@code -Dbillingop.radiology=MRI0010 -Dbillingop.lab="Full Blood Count"
  * -Dbillingop.service=CAC0003 -Dbillingop.drug=para -Dbillingop.freq=od}.</p>

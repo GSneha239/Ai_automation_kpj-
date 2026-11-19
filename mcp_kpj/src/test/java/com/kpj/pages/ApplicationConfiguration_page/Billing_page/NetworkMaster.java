@@ -140,11 +140,15 @@ public class NetworkMaster extends BasePage {
     public String submitAndGetToast() {
         Object tagged = page.evaluate("() => { window.__nwToasts=[]; if(window.__nwObs) window.__nwObs.disconnect();"
                 + " try{ if(window.toastr) toastr.clear(); }catch(e){} document.querySelectorAll('#toast-container .toast, .toast-message').forEach(t=>t.remove());"
-                + " const grab=()=>{ document.querySelectorAll('.toast-message,.toast,[id^=toast]').forEach(el=>{ const t=(el.textContent||'').replace(/\\s+/g,' ').trim(); if(t && !window.__nwToasts.includes(t)) window.__nwToasts.push(t); }); };"
+                + " const grab=()=>{ document.querySelectorAll('.toast-message,.toast,[id^=toast],.sweet-alert,.swal2-popup,.bootbox-body,.modal.in .modal-body,.modal.show .modal-body,.alert').forEach(el=>{ const t=(el.textContent||'').replace(/\\s+/g,' ').trim(); if(t && !window.__nwToasts.includes(t)) window.__nwToasts.push(t); }); };"
                 + " window.__nwObs=new MutationObserver(grab); window.__nwObs.observe(document.body,{childList:true,subtree:true}); grab();"
                 + " const b=[...document.querySelectorAll('button,a,input[type=submit]')].find(x=>/fnIUDNetworkMaster/.test(x.getAttribute('ng-click')||'') && x.offsetParent!==null)"
                 + " || [...document.querySelectorAll('button,input[type=submit]')].find(x=>/^\\s*submit\\s*$/i.test((x.textContent||x.value||'').trim()) && x.offsetParent!==null); if(!b) return false; b.id='__nwSubmit'; return true; }");
         if (!Boolean.TRUE.equals(tagged)) { System.out.println("submitAndGetToast: Submit button not found"); return ""; }
+        final java.util.function.Consumer<com.microsoft.playwright.Dialog> dlg = d -> {
+            try { String m = d.message(); page.evaluate("(m) => { (window.__nwToasts=window.__nwToasts||[]).push(m); }", m); d.accept(); } catch (Exception ignore) { }
+        };
+        page.onDialog(dlg);
         try { page.locator("#__nwSubmit").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000)); }
         catch (Exception e) { System.out.println("submitAndGetToast: Submit click failed - " + e.getMessage()); }
         try {
@@ -154,6 +158,7 @@ public class NetworkMaster extends BasePage {
             page.waitForTimeout(2500);
             page.evaluate("() => { document.querySelectorAll('.toast-message,.toast,[id^=toast]').forEach(el=>{ const t=(el.textContent||'').replace(/\\s+/g,' ').trim(); if(t && !(window.__nwToasts||[]).includes(t)) (window.__nwToasts=window.__nwToasts||[]).push(t); }); }");
         }
+        try { page.offDialog(dlg); } catch (Exception ignore) { }
         Object r = page.evaluate("() => { const a=window.__nwToasts||[]; return a.find(x=>/saved|added|success/i.test(x)) || a.find(x=>/exist|already/i.test(x)) || a.find(x=>x) || ''; }");
         waitForAngular(400);
         return r == null ? "" : r.toString().trim();

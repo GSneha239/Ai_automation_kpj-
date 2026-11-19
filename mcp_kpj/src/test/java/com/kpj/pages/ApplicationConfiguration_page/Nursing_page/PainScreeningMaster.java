@@ -154,7 +154,8 @@ public class PainScreeningMaster extends BasePage {
         String code = "PS" + String.format("%05d", Math.abs((System.nanoTime() + attempt * 7919L) % 100000));
         lastCode = code;
         lastCategory = CATEGORIES[attempt % CATEGORIES.length] + (attempt >= CATEGORIES.length ? " " + (attempt / CATEGORIES.length + 1) : "");
-        lastDescription = DESCRIPTIONS[attempt % DESCRIPTIONS.length] + (attempt >= DESCRIPTIONS.length ? " " + (attempt / DESCRIPTIONS.length + 1) : "");
+        // Description is stamped with a unique time suffix (never taken from the fixed pool alone - the shared environment exhausts a pool for good).
+        lastDescription = DESCRIPTIONS[attempt % DESCRIPTIONS.length] + " " + new java.text.SimpleDateFormat("ddMMHHmmssSSS").format(new java.util.Date()) + (attempt > 0 ? "-" + attempt : "");
         lastCatDescription = CAT_DESCRIPTIONS[attempt % CAT_DESCRIPTIONS.length] + (attempt >= CAT_DESCRIPTIONS.length ? " " + (attempt / CAT_DESCRIPTIONS.length + 1) : "");
         lastScale = String.valueOf(1 + Math.abs(System.nanoTime() % 10));
         Object r = page.evaluate("(a) => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const A=window.angular; const $=window.jQuery;"

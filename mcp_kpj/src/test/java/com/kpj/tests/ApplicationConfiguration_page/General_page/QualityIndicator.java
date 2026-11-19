@@ -76,14 +76,18 @@ public class QualityIndicator extends DevHisBase {
         addSummary("Screen controls", qi.describeControls());
 
         // 2) Form Name
-        String picked = qi.selectFormName(formWanted);
-        boolean formOk = qi.formNameSelected();
-        step(page, "Select Form Name", "Select the Form Name (option matching " + formWanted + ")",
-                "A Form Name is selected",
-                (formOk ? "PASSES because the select shows it and the screen's model holds it: " : "FAILS because the choice did not take: ")
-                        + picked + " — " + qi.readFormName(),
-                formOk ? "PASS" : "FAIL");
-        if (!formOk) { addSummary("Result", "FAILED — the Form Name could not be selected"); return; }
+        // The screen fixes the Form Name itself (a disabled select bound to "QualityIndicator"): nothing to pick, so there is no step.
+        final boolean formPreset = qi.formNamePreset();
+        if (!formPreset) {
+            String picked = qi.selectFormName(formWanted);
+            boolean formOk = qi.formNameSelected();
+            step(page, "Select Form Name", "Select the Form Name (option matching " + formWanted + ")",
+                    "A Form Name is selected",
+                    (formOk ? "PASSES because the select shows it and the screen's model holds it: " : "FAILS because the choice did not take: ")
+                            + picked + " — " + qi.readFormName(),
+                    formOk ? "PASS" : "FAIL");
+            if (!formOk) { addSummary("Result", "FAILED — the Form Name could not be selected"); return; }
+        }
 
         // 3) Code + Remark, 4) Submit -> toast. A different pair is entered when the server says "already exists".
         String entry = "", toast = "";
@@ -93,7 +97,7 @@ public class QualityIndicator extends DevHisBase {
         // filled form BEFORE Submit (afterwards the form is cleared) and the page right after the toast was read (they fade).
         byte[] filledShot = null, toastShot = null;
         for (int attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-            if (attempt > 0 && !qi.formNameSelected()) qi.selectFormName(formWanted);   // a refused save may reset the form
+            if (attempt > 0 && !formPreset && !qi.formNameSelected()) qi.selectFormName(formWanted);   // a refused save may reset the form
             entry = qi.fillDetails(attempt);
             entered = qi.detailsEntered();
             used++;

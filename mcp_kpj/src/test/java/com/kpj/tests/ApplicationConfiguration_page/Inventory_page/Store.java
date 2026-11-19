@@ -56,7 +56,10 @@ public class Store extends DevHisBase {
                         + "transaction tick, the profit/discount row, Add, Submit.");
 
         String counter = System.getProperty("counter", COUNTER_FOR_MENU);
-        String stamp = String.format("%05d", Math.abs(System.nanoTime() % 100000));
+        // Wall-clock seconds, not nanoTime: on Windows nanoTime ticks in 100 ns units, so "% 100000" only ever gave multiples of 100 (about 1,000
+        // different codes) and a run met "Code Already exists!" against the stores earlier runs had saved (ST10500). Seconds since the epoch
+        // mod 100000 moves every second and repeats only every ~28 hours.
+        String stamp = String.format("%05d", (System.currentTimeMillis() / 1000) % 100000);
         String code = System.getProperty("code", "ST" + stamp);
         // Each value carries its own field name, so a value landing in a neighbouring box is visible.
         String remark = System.getProperty("remark", "Auto store " + stamp);

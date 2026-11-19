@@ -246,6 +246,13 @@ public class AcceptRadiologyOrder extends BasePage {
                     + " if(r && !r.checked) r.click(); }");
             waitForAngular(700);
         }
+        // Reg. Type is PRE-SELECTED to "OPD" on a fresh screen, which hides every non-OPD order (live 2026-11-18: 44 Not Accepted orders exist,
+        // none of them OPD - the OPD-only search saw 0 and "nothing to accept"). Select "All" first.
+        page.evaluate("() => {" + JS
+                + " const rs=[...document.querySelectorAll(\"input[type='radio'][ng-model$='OPDIPD']\")].filter(vis);"
+                + " const all=rs.find(r=>/^\\s*all\\s*$/i.test(norm((r.closest('label')||r.parentElement||{}).textContent)) || String(r.value)==='null');"
+                + " if(all && !all.checked) all.click(); }");
+        waitForAngular(500);
         page.evaluate("() => {" + JS
                 + " const b=[...document.querySelectorAll('button')].filter(vis)"
                 + "   .find(x=>/fnSearchorderbooking/i.test(x.getAttribute('ng-click')||''));"

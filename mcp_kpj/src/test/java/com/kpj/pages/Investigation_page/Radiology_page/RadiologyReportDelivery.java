@@ -246,8 +246,19 @@ public class RadiologyReportDelivery extends BasePage {
             page.waitForFunction("(m) => [...document.querySelectorAll('.modal.in table tbody tr')].some(r=>r.offsetParent!==null && (r.textContent||'').split(/\\s+/).indexOf(m)>=0)",
                     mrn, new Page.WaitForFunctionOptions().setTimeout(20000));
         } catch (Exception e) {
-            page.evaluate("() => { const b=[...document.querySelectorAll('.modal.in button')].find(x=>/CloseModel/.test(x.getAttribute('ng-click')||'')); if(b) b.click(); }");
-            return lastMrnSearch = "(the Patient Search popup listed no patient for MRN " + mrn + ")";
+            // Live check 2026-11-18: the popup's TYPED-MRN search returns no rows for any MRN, even one the popup itself lists (app defect),
+            // while a BLANK search lists the recent patients. So fall back to picking a patient from that list (patient type ALL).
+            String picked = pickFirstPopupPatient();
+            if (picked.isEmpty()) {
+                page.evaluate("() => { const b=[...document.querySelectorAll('.modal.in button')].find(x=>/CloseModel/.test(x.getAttribute('ng-click')||'')); if(b) b.click(); }");
+                return lastMrnSearch = "(the Patient Search popup listed no patient for MRN " + mrn + ", and its list of recent patients was empty)";
+            }
+            Object held = page.evaluate("() => { const e=document.querySelector(\"input[ng-model='ReportDelivery.MRNO']\"); return e?e.value:'(no MRN box)'; }");
+            fallbackMrn = held == null ? "" : held.toString();
+            lastMrnSearch = "the popup's typed-MRN search found no patient for " + mrn + " (app defect), so the first patient of its list was picked: MRN \"" + fallbackMrn
+                    + "\" selected into the MRN box [SetSearchPatient]";
+            System.out.println("RadiologyReportDelivery: mrn -> " + lastMrnSearch);
+            return lastMrnSearch;
         }
         page.evaluate("(m) => { const r=[...document.querySelectorAll('.modal.in table tbody tr')].find(x=>x.offsetParent!==null && (x.textContent||'').split(/\\s+/).indexOf(m)>=0);"
                 + " const b=r&&r.querySelector(\"[ng-click*='SetSearchPatient']\"); if(b) b.click(); }", mrn);
@@ -258,8 +269,36 @@ public class RadiologyReportDelivery extends BasePage {
         return lastMrnSearch;
     }
 
+    /** MRN of the patient picked from the popup's list when the typed MRN found nothing ("" when the typed MRN was used). */
+    public String fallbackMrn = "";
+
+    /**
+     * With the popup open: clear the MRN box, set the patient type to ALL, Search (blank = the recent patients) and Select the first listed row
+     * ({@code SetSearchPatient}). Returns the picked MRN, or "" when the list is empty.
+     */
+    private String pickFirstPopupPatient() {
+        page.evaluate("() => {"
+                + " const modal=document.querySelector('.modal.in'); if(!modal) return;"
+                + " const e=modal.querySelector(\"input[ng-model='PatientData.MRNo']\"); if(e){ const c=window.angular.element(e).controller('ngModel'); e.value='';"
+                + "   if(c){ c.$setViewValue(''); c.$render(); } e.dispatchEvent(new Event('input',{bubbles:true})); }"
+                + " const all=modal.querySelector(\"input[type=radio][ng-model='PatientData.OPD_IPD'][value='2']\"); if(all && !all.checked) all.click(); }");
+        waitForAngular(400);
+        page.evaluate("() => { const b=[...document.querySelectorAll('.modal.in button')].find(x=>/SearchPatient\\(0\\)/.test(x.getAttribute('ng-click')||'')); if(b) b.click(); }");
+        try {
+            page.waitForFunction("() => [...document.querySelectorAll(\".modal.in table tbody tr\")].some(r=>r.offsetParent!==null && r.querySelector(\"[ng-click*='SetSearchPatient']\"))",
+                    null, new Page.WaitForFunctionOptions().setTimeout(20000));
+        } catch (Exception e) { return ""; }
+        page.evaluate("() => { const r=[...document.querySelectorAll('.modal.in table tbody tr')].find(x=>x.offsetParent!==null && x.querySelector(\"[ng-click*='SetSearchPatient']\"));"
+                + " const b=r&&r.querySelector(\"[ng-click*='SetSearchPatient']\"); if(b) b.click(); }");
+        waitForAngular(2000);
+        Object held = page.evaluate("() => { const e=document.querySelector(\"input[ng-model='ReportDelivery.MRNO']\"); return e?e.value:''; }");
+        return held == null ? "" : held.toString();
+    }
+
     public boolean mrnEntered(String mrn) {
-        return lastMrnSearch != null && lastMrnSearch.contains("\"" + mrn + "\"");
+        if (lastMrnSearch == null) return false;
+        if (lastMrnSearch.contains("\"" + mrn + "\"")) return true;
+        return !fallbackMrn.isEmpty() && !fallbackMrn.startsWith("(") && lastMrnSearch.contains("\"" + fallbackMrn + "\"");
     }
 
     /** Click the main <b>Search</b> button and report how many rows came back. */

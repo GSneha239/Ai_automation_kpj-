@@ -8,7 +8,7 @@ import com.kpj.pages.Op_page.RegistrationPage.SaveOutcome;
 import com.microsoft.playwright.Page;
 
 /**
- * TC16 - Emergency &gt; <b>Emergency Registration (Conscious)</b> (route {@code #/EmergencyRegistrationConsious}).
+ * Emergency &gt; <b>Emergency Registration (Conscious)</b> (route {@code #/EmergencyRegistrationConsious}).
  *
  * <p>A conscious emergency patient gives their full details, so this screen is the SAME form as OP
  * Registration (identical {@code Registration.*}/{@code Visit.*} ng-models, same {@code IUDRegistration()}
@@ -26,7 +26,7 @@ public class EmergencyRegistrationConscious extends DevHisBase {
 
     private static final String ROUTE = "#/EmergencyRegistrationConsious"; // app's spelling ("Consious")
 
-    public EmergencyRegistrationConscious() { super("TC16_EmergencyRegistrationConscious"); }
+    public EmergencyRegistrationConscious() { super("emergency_EmergencyRegistrationConscious"); }
 
     public static void main(String[] args) {
         EmergencyRegistrationConscious t = new EmergencyRegistrationConscious();
@@ -62,10 +62,10 @@ public class EmergencyRegistrationConscious extends DevHisBase {
 
         // 2) Open Emergency > Emergency Registration (Conscious) — reuses the OP Registration form.
         boolean masterLoaded = reg.open(BASE);
-        step("Navigate Emergency > Registration (Conscious)", "Open " + ROUTE,
+        step(page, "Open Emergency Registration (Conscious) screen", "Click Emergency -> Emergency Registration (Conscious)",
                 "Registration form + dropdown master-data loaded",
-                masterLoaded ? "Emergency (Conscious) registration loaded (dropdowns populated)"
-                             : "Form loaded but dropdown master-data NOT populated",
+                masterLoaded ? "Opened " + page.url() + " via the " + reg.reachedVia + " (dropdowns populated)"
+                             : "Form loaded but dropdown master-data NOT populated (reached via the " + reg.reachedVia + ": " + page.url() + ")",
                 masterLoaded ? "PASS" : "FAIL");
         if (!masterLoaded) return;
 

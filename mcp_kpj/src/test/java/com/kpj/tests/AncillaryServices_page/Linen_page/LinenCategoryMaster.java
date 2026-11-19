@@ -29,7 +29,7 @@ import java.util.Map;
  * </ol>
  *
  * <p>JUnit status: the test FAILS when any report step is FAIL (the existing tests only flag failures in the HTML
- * report and FAILED_STEPS.html; this class additionally fails the JUnit test so {@code mvn test} reports it).</p>
+ * report and SUMMARY_REPORT.html; this class additionally fails the JUnit test so {@code mvn test} reports it).</p>
  */
 public class LinenCategoryMaster extends DevHisBase {
 

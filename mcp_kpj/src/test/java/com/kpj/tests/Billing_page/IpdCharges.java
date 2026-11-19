@@ -82,9 +82,18 @@ public class IpdCharges extends DevHisBase {
         // data state (this patient has no package admission / no cancelled charges), not a defect — same category
         // as other "the data genuinely isn't there" cases in this project, so these always PASS on reachability.
         String pkgRead = ipc.readPackageTab();
-        step(page, "View Package tab", "Click the Package tab and read its table (Cost Centre/Service/Qty/amounts/Doctor Share/Remark)",
-                "The Package table is shown (0 rows is normal for a non-package admission)", pkgRead,
-                pkgRead.startsWith("(") ? "FAIL" : "PASS");
+        // A tab this build does not show has no step at all (user rule 2026-11-18: "remove this step if there is no such tab").
+        if (!pkgRead.startsWith("(tab link")) {
+            step(page, "View Package Service tab", "Click the Package Service tab and read its table (Cost Centre/Service/Qty/amounts/Remark)",
+                    "The Package Service table is shown (0 rows is normal for a non-package admission)", pkgRead,
+                    pkgRead.startsWith("(") ? "FAIL" : "PASS");
+        }
+        String pkgItemRead = ipc.readPackageItemTab();
+        if (!pkgItemRead.startsWith("(tab link")) {
+            step(page, "View Package Item tab", "Click the Package Item tab and read its table (Item Code/Name, Store, Batch, quantities, Remark)",
+                    "The Package Item table is shown (0 rows is normal for a non-package admission)", pkgItemRead,
+                    pkgItemRead.startsWith("(") ? "FAIL" : "PASS");
+        }
         String cancRead = ipc.readCancelledChargesTab();
         step(page, "View Cancelled Charges tab", "Click the Cancelled Charges tab and read its table (Authorize/Authorized By/Cancelled By/Cancellation Reason)",
                 "The Cancelled Charges table is shown (0 rows is normal when nothing has been cancelled)", cancRead,

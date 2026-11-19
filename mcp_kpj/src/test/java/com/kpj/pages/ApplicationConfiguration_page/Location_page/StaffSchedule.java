@@ -192,7 +192,8 @@ public class StaffSchedule extends BasePage {
 
     /** Select the {@code index}-th <b>Payable</b>. */
     public String selectPayable(int index) {
-        lastPayable = selectByLabel("^payable\\*?$", index);
+        // Renamed "Staff*" on v2026.11.17 (still staffScheduleInfo.Payableid, mandatory); older builds call it "Payable".
+        lastPayable = selectByLabel("^(payable|staff)\\*?$", index);
         return lastPayable;
     }
 
