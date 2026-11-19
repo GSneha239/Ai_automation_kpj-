@@ -55,7 +55,11 @@ public class Preadmission extends DevHisBase {
 
         // Each section is guarded so one section's crash (e.g. a patient that closes the browser during Admission
         // Save) doesn't abort the remaining sections / surface as a raw top-level ERROR.
+        // -Dpre.only=reserve runs ONLY the Reserve section: it leaves the reserved patient NOT admitted (the Admission section admits him, after which his reservation can no longer be unreserved -
+        // "The patient is already admitted!") - which is what the Unreservation test needs. Without the property all four sections run as before.
+        final String only = System.getProperty("pre.only", "").trim().toLowerCase();
         runSection(this::sectionReserveBed, "Reserve");
+        if (only.equals("reserve") || only.equals("scan")) return;
         runSection(this::sectionRequestMrd, "Request MRD File");
         runSection(this::sectionAdmission, "Admission");
         runSection(this::sectionPrint, "Print");
@@ -88,6 +92,14 @@ public class Preadmission extends DevHisBase {
     private java.util.List<String> shuffledReserveCandidates() {
         java.util.List<String> list = new java.util.ArrayList<>(new java.util.LinkedHashSet<>(java.util.Arrays.asList(RESERVE_MRN_POOL)));
         java.util.Collections.shuffle(list);
+        // -Dpre.mrns=<mrn>[,<mrn>...] puts MRNs that exist in THIS environment first (on 2026-11-18 none of the 28 pool MRNs below bound a patient on devhis any more)
+        String extra = System.getProperty("pre.mrns", "").trim();
+        if (!extra.isEmpty()) {
+            java.util.List<String> first = new java.util.ArrayList<>();
+            for (String m : extra.split(",")) if (!m.trim().isEmpty()) first.add(m.trim());
+            list.removeAll(first);
+            list.addAll(0, first);
+        }
         return list;
     }
 
@@ -114,16 +126,39 @@ public class Preadmission extends DevHisBase {
                 onForm ? "PASS" : "FAIL");
         if (!onForm) return;
 
+        // -Dpre.only=scan: classify EVERY candidate MRN (search + wait for it to finish loading + read the answer) WITHOUT reserving anything - how many are reservable, how many have an active admission that
+        // has not been discharged (the application refuses to pre-admit those), how many are not found.
+        if ("scan".equals(System.getProperty("pre.only", "").trim().toLowerCase())) {
+            java.util.List<String> admitted = new java.util.ArrayList<>(), notFound = new java.util.ArrayList<>(), reservable = new java.util.ArrayList<>();
+            java.util.List<String> all = shuffledReserveCandidates();
+            java.util.Collections.sort(all);
+            for (String cand : all) {
+                pa.reserveEnterMrnAndSearch(cand);
+                String cls = pa.classifyMrn();
+                String toasts = pa.mrnToasts();
+                System.out.println("scan " + cand + " -> " + cls + (toasts.isEmpty() ? "" : "  [" + toasts + "]"));
+                if ("ADMITTED".equals(cls)) admitted.add(cand); else if ("OK".equals(cls)) reservable.add(cand); else notFound.add(cand + ("DECEASED".equals(cls) ? " (deceased)" : ""));
+                pa.clearToasts();
+            }
+            step(page, "Scan the candidate MRNs", "Search each MRN, wait for the search to finish loading, read the answer (nothing is reserved)",
+                    "Every MRN is classified", all.size() + " MRNs: " + reservable.size() + " reservable " + reservable + "; " + admitted.size() + " with an active admission not yet discharged " + admitted + "; "
+                            + notFound.size() + " not found " + notFound, "PASS");
+            addSummary("Reservable", reservable.size() + " " + reservable);
+            addSummary("Active admission (not reservable)", admitted.size() + " " + admitted);
+            addSummary("Not found", notFound.size() + " " + notFound);
+            return;
+        }
+
         // AUTO-PICK: try each candidate MRN, use the first that binds a reservable patient AND reserves successfully
         // (a fixed MRN becomes Admitted/non-reservable over runs → "Please Select Patient"). Self-heals across data.
         String usedMrn = null, bed = null, toast = null, details = "";
         boolean ok = false, bedOk = false;
         StringBuilder tried = new StringBuilder();
         for (String cand : shuffledReserveCandidates()) {
-            pa.reserveEnterMrnAndSearch(cand);
-            boolean bound = pa.isPatientBound();
-            tried.append(cand).append(bound ? "(bound)" : "(not-bound)").append(" ");
-            if (!bound) continue;                        // patient not found / not reservable → next candidate
+            pa.reserveEnterMrnAndSearch(cand);      // returns only after the search has FINISHED loading (every API call answered)
+            String cls = pa.classifyMrn();           // OK | ADMITTED (active admission not discharged - cannot be pre-admitted) | NOT_FOUND
+            tried.append(cand).append("(").append(cls).append(") ");
+            if (!"OK".equals(cls)) { pa.clearToasts(); continue; }      // not reservable → next candidate, only after this one is fully read
             usedMrn = cand;
             details = pa.fillReserveDetails(today);
             pa.ensureRoomTypeAndWard();
@@ -314,7 +349,8 @@ public class Preadmission extends DevHisBase {
     /** Extract the first MRN-like token (100xxxxxx) from a grid row's text. */
     private String firstMrn(String rowText) {
         if (rowText == null) return null;
-        java.util.regex.Matcher m = java.util.regex.Pattern.compile("\\b(100\\d{6})\\b").matcher(rowText);
+        // build .488 shows the MRN with a check digit (10 digits: 1000001199 = pool MRN 100000119), which the old 9-digit pattern never matched (selMrn was null, so nothing could be discharged afterwards): take the first 9 digits
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("\\b(100\\d{6})\\d?\\b").matcher(rowText);
         return m.find() ? m.group(1) : null;
     }
 

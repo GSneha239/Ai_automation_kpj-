@@ -73,19 +73,29 @@ public class Unreservation extends BasePage {
 
     /** Tick the SELECT checkbox of the first row in the <b>List of Reserved Beds</b> table (real click). Returns the
      *  patient name of that row (for verifying it later in the unreserved list), or null. */
-    public String selectFirstReservedBed() {
+    public String selectFirstReservedBed() { return selectReservedBed(0); }
+
+    /** Tick the SELECT checkbox of row {@code idx} (0-based, among the real rows) of the <b>List of Reserved Beds</b> and UNtick every other row; same return as {@link #selectFirstReservedBed()}. */
+    public String selectReservedBed(final int idx) {
         // Set the checkbox's ng-model + fire change/triggerHandler (the reliable "select" mechanism — the validation
         // reads the model, and the styled checkbox often isn't directly clickable). Also tag it for a force click.
-        Object r = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const A=window.angular; const t=" + RESERVED_TABLE_JS + "; if(!t) return null;"
-                + " const row=[...t.querySelectorAll('tbody tr')].find(r=>[...r.querySelectorAll('td')].length>3 && norm(r.textContent) && !/no records/i.test(r.textContent)); if(!row) return null;"
+        Object r = page.evaluate("(idx) => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const A=window.angular; const t=" + RESERVED_TABLE_JS + "; if(!t) return null;"
+                + " const rows=[...t.querySelectorAll('tbody tr')].filter(r=>[...r.querySelectorAll('td')].length>3 && norm(r.textContent) && !/no records/i.test(r.textContent)); const row=rows[idx]; if(!row) return null;"
+                + " rows.forEach(x=>{ if(x===row) return; const o=x.querySelector('input[type=checkbox],input[type=radio]'); if(o && o.checked){ const oc=A.element(o).controller('ngModel'); o.checked=false; if(oc){ oc.$setViewValue(false); oc.$render(); } o.dispatchEvent(new Event('change',{bubbles:true})); } });"
                 + " const cells=[...row.querySelectorAll('td')].map(td=>norm(td.textContent)); const name=cells[1]||cells.find(c=>c && !/^\\d+$/.test(c))||'';"
                 + " const cb=row.querySelector('input[type=checkbox],input[type=radio]'); if(!cb) return name+'||nocb';"
                 + " cb.id='__unresSel'; const c=A.element(cb).controller('ngModel'); cb.checked=true; if(c){ c.$setViewValue(true); c.$render(); } cb.dispatchEvent(new Event('change',{bubbles:true})); try{A.element(cb).triggerHandler('change');}catch(e){} if(window.jQuery){try{jQuery(cb).trigger('change');}catch(e){}}"
-                + " return name+'||ticked='+cb.checked; }");
+                + " return name+'||ticked='+cb.checked+'||'+(cells[4]||'')+'||'+(cells[5]||''); }", idx);
         if (r == null) { System.out.println("selectFirstReservedBed: no reserved row"); return null; }
         waitForAngular(500);
-        return r.toString().split("\\|\\|")[0];
+        String[] parts = r.toString().split("\\|\\|");
+        lastBed = parts.length > 2 ? parts[2].trim() : "";
+        lastFromDate = parts.length > 3 ? parts[3].trim() : "";
+        return parts[0];
     }
+
+    /** The Bed and From Date of the row ticked by {@link #selectFirstReservedBed()} - what the unreserved list must show for it. */
+    public String lastBed = "", lastFromDate = "";
 
     /** Click <b>Unreserve</b> ({@code SaveUnreserve()}), answer any confirm Yes/OK, and return the success toast. */
     public String clickUnreserveAndGetToast() {
@@ -113,7 +123,10 @@ public class Unreservation extends BasePage {
         if (patientName == null || patientName.isEmpty()) return false;
         String key = patientName.replaceAll("\\s+", "").toLowerCase();
         for (int i = 0; i < 12; i++) {
-            boolean found = Boolean.TRUE.equals(page.evaluate("(key) => { const t=" + UNRESERVED_TABLE_JS + "; if(!t) return false; return [...t.querySelectorAll('tbody tr')].some(r=>(r.textContent||'').replace(/\\s+/g,'').toLowerCase().includes(key)); }", key));
+            String bedKey = lastBed.replaceAll("\\s+", "").toLowerCase(), dateKey = lastFromDate.replaceAll("\\s+", "").toLowerCase();
+            // the patient's NAME alone also matches an OLD unreservation of the same patient (found on 2026-11-18: 'John Peter' of 24/10 in CICU matched a refused unreserve of his PREMIER WARD bed), so the
+            // row must show the bed and the From Date of the reservation that was ticked as well
+            boolean found = Boolean.TRUE.equals(page.evaluate("(k) => { const t=" + UNRESERVED_TABLE_JS + "; if(!t) return false; return [...t.querySelectorAll('tbody tr')].some(r=>{ const x=(r.textContent||'').replace(/\\s+/g,'').toLowerCase(); return x.includes(k[0]) && (!k[1] || x.includes(k[1])) && (!k[2] || x.includes(k[2])); }); }", java.util.Arrays.asList(key, bedKey, dateKey)));
             if (found) return true;
             if (i == 3 || i == 7) enterMrnAndSearch("");   // force a reload partway through the wait
             page.waitForTimeout(700);
@@ -123,27 +136,67 @@ public class Unreservation extends BasePage {
 
     // ---- navigation ------------------------------------------------------
 
-    /** Open IP → Bed Management → Unreservation (real clicks + direct-route fallback discovered after first run). */
+    private static final String NJS =
+            "const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+          + "const vis=e=>!!e && !!(e.offsetWidth||e.offsetHeight||e.getClientRects().length);";
+
+    /** 1 = the group is open (its li carries menu-open), 0 = closed, -1 = not on screen. {@code group} null = the IP entry itself. */
+    private int menuState(String group) {
+        Object r = page.evaluate("(g) => {" + NJS + " const pa=[...document.querySelectorAll('a')].filter(vis).find(x=>norm(x.textContent)==='IP'); if(!pa) return -1; const pli=pa.closest('li'); if(!pli) return -1;"
+                + " if(!g) return pli.classList.contains('menu-open')?1:0;"
+                + " const c=[...pli.querySelectorAll('a')].filter(vis).find(x=>x!==pa && norm(x.textContent)===g); if(!c) return -1; const li=c.closest('li'); return li && li.classList.contains('menu-open')?1:0; }", group);
+        return r instanceof Number ? ((Number) r).intValue() : -1;
+    }
+
+    private boolean clickMenu(String group) {
+        Object r = page.evaluate("(g) => {" + NJS + " const pa=[...document.querySelectorAll('a')].filter(vis).find(x=>norm(x.textContent)==='IP'); if(!pa) return false;"
+                + " if(!g){ pa.click(); return true; } const pli=pa.closest('li'); const c=[...pli.querySelectorAll('a')].filter(vis).find(x=>x!==pa && norm(x.textContent)===g); if(!c) return false; c.click(); return true; }", group);
+        return Boolean.TRUE.equals(r);
+    }
+
+    /** Tag the "UnReservation" link inside the IP entry (visible only once Bed Management is open). */
+    private boolean tagUnreservationLink() {
+        Object r = page.evaluate("() => {" + NJS + " const pa=[...document.querySelectorAll('a')].filter(vis).find(x=>norm(x.textContent)==='IP'); if(!pa) return false; const pli=pa.closest('li');"
+                + " const l=[...pli.querySelectorAll('a[href]')].filter(vis).find(x=>/^un[-\\s]?reservation$/i.test(norm(x.textContent))); if(!l) return false; l.id='__unresvMenu'; return true; }");
+        return Boolean.TRUE.equals(r);
+    }
+
+    private boolean untagProbe() {
+        boolean t = tagUnreservationLink();
+        page.evaluate("() => { const e=document.getElementById('__unresvMenu'); if(e) e.removeAttribute('id'); }");
+        return t;
+    }
+
+    private boolean waitFor(java.util.function.BooleanSupplier cond, int ms) {
+        long end = System.currentTimeMillis() + ms;
+        while (System.currentTimeMillis() < end) { if (cond.getAsBoolean()) return true; page.waitForTimeout(250); }
+        return cond.getAsBoolean();
+    }
+
+    /**
+     * Open IP → Bed Management → UnReservation. The menu builds each level lazily (the Bed Management children took seconds to appear on build .488, so the old 0.7 s wait found no link and fell back to a hash change
+     * that raised the "Reload page" prompt - same fault as Under Maintenance, fixed the same way): the IP entry and the Bed Management group are each opened ONCE and awaited before the link is looked for.
+     */
     public boolean navigateViaMenu() {
         page.evaluate("() => { const $=window.jQuery; try{ if($) [...document.querySelectorAll('.modal.in,.modal.show')].forEach(m=>{try{$(m).modal('hide');}catch(e){}}); }catch(e){} [...document.querySelectorAll('.modal-backdrop')].forEach(b=>b.remove()); document.body.classList.remove('modal-open'); }");
         try { for (Page pg : page.context().pages()) { if (pg != page && !pg.isClosed()) pg.close(); } } catch (Exception ignore) {}
         try { page.bringToFront(); } catch (Exception ignore) {}
-        waitForAngular(400);
-        // IP
-        Object ip = page.evaluate("() => { const lis=[...document.querySelectorAll('li')]; const ipLi=lis.find(li=>{ const a=li.querySelector(':scope > a'); return a && /^\\s*IP\\s*$/i.test((a.textContent||'').trim()); }); const a=ipLi&&ipLi.querySelector(':scope > a'); if(!a) return false; a.id='__ipMenuTab'; return true; }");
-        if (Boolean.TRUE.equals(ip)) { try { page.locator("#__ipMenuTab").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000)); } catch (Exception e) {} waitForAngular(800); }
-        // Bed Management
-        page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const a=[...document.querySelectorAll('a')].find(x=>/^\\s*bed\\s*management\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null && !(x.getAttribute('href')||'').includes('#/')); if(a) a.click(); }");
-        waitForAngular(700);
-        // Unreservation
-        Object un = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const a=[...document.querySelectorAll('a')].find(x=>/^\\s*un[-\\s]?reservation\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null); if(!a) return false; a.id='__unresvMenu'; return true; }");
-        if (Boolean.TRUE.equals(un)) { try { page.locator("#__unresvMenu").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000)); } catch (Exception e) {} }
-        else System.out.println("Unreservation.nav: 'Unreservation' link not found — using direct route");
+        try { page.waitForFunction("() => window.angular && [...document.querySelectorAll('a')].some(x=>(x.textContent||'').replace(/\\s+/g,' ').trim()==='IP')",
+                null, new Page.WaitForFunctionOptions().setTimeout(45000)); } catch (Exception ignore) { }
         waitForAngular(1200);
-        // Fallback: hash-navigate directly to #/UnReservation.
-        if (!page.url().toLowerCase().contains("unreservation")) {
-            try { page.evaluate("() => { window.location.hash = '#/UnReservation'; }"); } catch (Exception ignore) {}
-            waitForAngular(1200);
+        for (int attempt = 0; attempt < 3 && !page.url().toLowerCase().contains("unreservation"); attempt++) {
+            if (!untagProbe()) {
+                if (menuState(null) != 1) clickMenu(null);
+                waitFor(() -> menuState("Bed Management") >= 0, 15000);
+                if (menuState("Bed Management") == 0) clickMenu("Bed Management");
+                waitFor(this::untagProbe, 15000);
+            }
+            if (tagUnreservationLink()) {
+                try { page.locator("#__unresvMenu").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000)); }
+                catch (Exception e) { System.out.println("Unreservation.nav: click failed - " + e.getMessage().split("\n")[0]); }
+                page.evaluate("() => { const e=document.getElementById('__unresvMenu'); if(e) e.removeAttribute('id'); }");
+                waitForAngular(2500);
+            } else System.out.println("Unreservation.nav: 'UnReservation' link not found (attempt " + (attempt + 1) + ")");
         }
         try {
             page.waitForFunction("() => /unreservation/i.test(location.hash) && [...document.querySelectorAll('button')].some(b=>/fnSearch/.test(b.getAttribute('ng-click')||''))",

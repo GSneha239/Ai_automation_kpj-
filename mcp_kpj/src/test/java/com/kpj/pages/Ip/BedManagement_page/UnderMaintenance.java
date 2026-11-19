@@ -376,22 +376,67 @@ public class UnderMaintenance extends BasePage {
 
     // ---- navigation ------------------------------------------------------
 
+    private static final String NJS =
+            "const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+          + "const vis=e=>!!e && !!(e.offsetWidth||e.offsetHeight||e.getClientRects().length);";
+
+    /** 1 = the group is open (its li carries menu-open), 0 = closed, -1 = not on screen. {@code group} null = the IP entry itself. */
+    private int menuState(String group) {
+        Object r = page.evaluate("(g) => {" + NJS + " const pa=[...document.querySelectorAll('a')].filter(vis).find(x=>norm(x.textContent)==='IP'); if(!pa) return -1; const pli=pa.closest('li'); if(!pli) return -1;"
+                + " if(!g) return pli.classList.contains('menu-open')?1:0;"
+                + " const c=[...pli.querySelectorAll('a')].filter(vis).find(x=>x!==pa && norm(x.textContent)===g); if(!c) return -1; const li=c.closest('li'); return li && li.classList.contains('menu-open')?1:0; }", group);
+        return r instanceof Number ? ((Number) r).intValue() : -1;
+    }
+
+    private boolean clickMenu(String group) {
+        Object r = page.evaluate("(g) => {" + NJS + " const pa=[...document.querySelectorAll('a')].filter(vis).find(x=>norm(x.textContent)==='IP'); if(!pa) return false;"
+                + " if(!g){ pa.click(); return true; } const pli=pa.closest('li'); const c=[...pli.querySelectorAll('a')].filter(vis).find(x=>x!==pa && norm(x.textContent)===g); if(!c) return false; c.click(); return true; }", group);
+        return Boolean.TRUE.equals(r);
+    }
+
+    /** Tag the "Under Maintenance" link inside the IP entry (visible only once Bed Management is open). */
+    private boolean tagUnderMaintenanceLink() {
+        Object r = page.evaluate("() => {" + NJS + " const pa=[...document.querySelectorAll('a')].filter(vis).find(x=>norm(x.textContent)==='IP'); if(!pa) return false; const pli=pa.closest('li');"
+                + " const l=[...pli.querySelectorAll('a[href]')].filter(vis).find(x=>norm(x.textContent)==='Under Maintenance'); if(!l) return false; l.id='__umMenu'; return true; }");
+        return Boolean.TRUE.equals(r);
+    }
+
+    private boolean untagProbe() {
+        boolean t = tagUnderMaintenanceLink();
+        page.evaluate("() => { const e=document.getElementById('__umMenu'); if(e) e.removeAttribute('id'); }");
+        return t;
+    }
+
+    private boolean waitFor(java.util.function.BooleanSupplier cond, int ms) {
+        long end = System.currentTimeMillis() + ms;
+        while (System.currentTimeMillis() < end) { if (cond.getAsBoolean()) return true; page.waitForTimeout(250); }
+        return cond.getAsBoolean();
+    }
+
+    /**
+     * IP &gt; Bed Management &gt; Under Maintenance. The menu builds each level lazily (the Bed Management children took seconds to appear on build .488; a 0.7 s wait found no link and the old code fell back to
+     * a hash change that triggered the "Reload page" prompt), so the IP entry and the Bed Management group are each opened ONCE and awaited before the link is looked for.
+     */
     public boolean navigateViaMenu() {
         page.evaluate("() => { const $=window.jQuery; try{ if($) [...document.querySelectorAll('.modal.in,.modal.show')].forEach(m=>{try{$(m).modal('hide');}catch(e){}}); }catch(e){} [...document.querySelectorAll('.modal-backdrop')].forEach(b=>b.remove()); document.body.classList.remove('modal-open'); }");
         try { for (Page pg : page.context().pages()) { if (pg != page && !pg.isClosed()) pg.close(); } } catch (Exception ignore) {}
         try { page.bringToFront(); } catch (Exception ignore) {}
-        waitForAngular(400);
-        Object ip = page.evaluate("() => { const lis=[...document.querySelectorAll('li')]; const ipLi=lis.find(li=>{ const a=li.querySelector(':scope > a'); return a && /^\\s*IP\\s*$/i.test((a.textContent||'').trim()); }); const a=ipLi&&ipLi.querySelector(':scope > a'); if(!a) return false; a.id='__ipMenuTab'; return true; }");
-        if (Boolean.TRUE.equals(ip)) { try { page.locator("#__ipMenuTab").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000)); } catch (Exception e) {} waitForAngular(800); }
-        page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const a=[...document.querySelectorAll('a')].find(x=>/^\\s*bed\\s*management\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null && !(x.getAttribute('href')||'').includes('#/')); if(a) a.click(); }");
-        waitForAngular(700);
-        Object um = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const a=[...document.querySelectorAll('a')].find(x=>/under\\s*mainten|bed\\s*mainten/i.test(norm(x.textContent)) && x.offsetParent!==null); if(!a) return false; a.id='__umMenu'; return true; }");
-        if (Boolean.TRUE.equals(um)) { try { page.locator("#__umMenu").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000)); } catch (Exception e) {} }
-        else System.out.println("UnderMaintenance.nav: 'Under Maintenance' link not found — using direct route");
+        try { page.waitForFunction("() => window.angular && [...document.querySelectorAll('a')].some(x=>(x.textContent||'').replace(/\\s+/g,' ').trim()==='IP')",
+                null, new Page.WaitForFunctionOptions().setTimeout(45000)); } catch (Exception ignore) { }
         waitForAngular(1200);
-        if (!page.url().toLowerCase().contains("undermaintenance")) {
-            try { page.evaluate("() => { window.location.hash = '#/underMaintenanceList'; }"); } catch (Exception ignore) {}
-            waitForAngular(1200);
+        for (int attempt = 0; attempt < 3 && !page.url().toLowerCase().contains("undermaintenance"); attempt++) {
+            if (!untagProbe()) {
+                if (menuState(null) != 1) clickMenu(null);
+                waitFor(() -> menuState("Bed Management") >= 0, 15000);
+                if (menuState("Bed Management") == 0) clickMenu("Bed Management");
+                waitFor(this::untagProbe, 15000);
+            }
+            if (tagUnderMaintenanceLink()) {
+                try { page.locator("#__umMenu").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000)); }
+                catch (Exception e) { System.out.println("UnderMaintenance.nav: click failed - " + e.getMessage().split("\n")[0]); }
+                page.evaluate("() => { const e=document.getElementById('__umMenu'); if(e) e.removeAttribute('id'); }");
+                waitForAngular(2500);
+            } else System.out.println("UnderMaintenance.nav: 'Under Maintenance' link not found (attempt " + (attempt + 1) + ")");
         }
         try {
             page.waitForFunction("() => /undermaintenance/i.test(location.hash) && [...document.querySelectorAll('button,a')].some(b=>/AddUnderMaintence/.test(b.getAttribute('ng-click')||''))",

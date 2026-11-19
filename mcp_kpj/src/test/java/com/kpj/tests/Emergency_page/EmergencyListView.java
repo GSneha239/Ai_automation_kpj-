@@ -17,6 +17,10 @@ import com.kpj.pages.LoginPage;
  *   <li>Fill all 3 sections (Patient Information, Admission Information, remaining mandatory fields).</li>
  *   <li>Save → success toast.</li>
  * </ol>
+ *
+ * <p>Statuses follow the standard report template ({@code HtmlReport}): PASS / FAIL as before; <b>BLOCKED</b> when the data the step needs is not on the
+ * environment (no referred patient, nobody awaiting ward acceptance, nothing unbilled to convert, no open admission to cancel / close, patient already
+ * bedded); <b>SKIPPED</b> when the app no longer offers the action on this screen (Plan Discharge, Print Barcode as of build v2026.11.17.488).</p>
  */
 public class EmergencyListView extends DevHisBase {
 
@@ -144,33 +148,41 @@ public class EmergencyListView extends DevHisBase {
         // ===== Plan Discharge =====
         // Select ANY patient, then click Plan Discharge (a fresh search repopulates the grid; clickPlanDischarge
         // falls back to the scope GetAdviceDischarge() if the footer button is disabled for a non-bedded patient).
-        lv.searchByDateAndMrn(FROM_DATE, TO_DATE, MRN);
-        String pd = lv.selectFirstPatient();
-        step(page, "Plan Discharge · Select a patient",
-                "Select any patient from the results",
-                "A patient is selected", pd == null ? "No patient row to select" : "Selected: " + pd,
-                pd == null ? "FAIL" : "PASS");
-        if (pd != null) {
-            boolean pdOpened = lv.clickPlanDischarge();
-            step(page, "Plan Discharge · Open popup (wait for load)", "Click 'Plan Discharge'; wait for the popup to load",
-                    "The Plan Discharge popup (advice list) is loaded",
-                    pdOpened ? "Popup loaded" : "Popup did NOT load", pdOpened ? "PASS" : "FAIL");
-            if (pdOpened) {
-                String pdDept = lv.selectDepartmentAndRemark("Plan discharge - automated test");
-                boolean pdDeptOk = pdDept != null && !pdDept.startsWith("(");
-                step(page, "Plan Discharge · Select department + remark", "Tick a department and enter a remark",
-                        "A department is selected and the remark is entered", pdDept, pdDeptOk ? "PASS" : "FAIL");
+        boolean planDischargeOnScreen = lv.footerButtonVisible("GetAdviceDischarge");
+        if (planDischargeOnScreen) {
+            lv.searchByDateAndMrn(FROM_DATE, TO_DATE, MRN);
+            String pd = lv.selectFirstPatient();
+            step(page, "Plan Discharge · Select a patient",
+                    "Select any patient from the results",
+                    "A patient is selected", pd == null ? "No patient row to select" : "Selected: " + pd,
+                    pd == null ? "FAIL" : "PASS");
+            if (pd != null) {
+                boolean pdOpened = lv.clickPlanDischarge();
+                step(page, "Plan Discharge · Open popup (wait for load)", "Click 'Plan Discharge'; wait for the popup to load",
+                        "The Plan Discharge popup (advice list) is loaded",
+                        pdOpened ? "Popup loaded" : "Popup did NOT load", pdOpened ? "PASS" : "FAIL");
+                if (pdOpened) {
+                    String pdDept = lv.selectDepartmentAndRemark("Plan discharge - automated test");
+                    boolean pdDeptOk = pdDept != null && !pdDept.startsWith("(");
+                    step(page, "Plan Discharge · Select department + remark", "Tick a department and enter a remark",
+                            "A department is selected and the remark is entered", pdDept, pdDeptOk ? "PASS" : "FAIL");
 
-                String pdToast = lv.savePlanDischargeAndGetToast();
-                boolean pdOk = pdToast != null && pdToast.toLowerCase().matches(".*(advice discharge saved|saved successfully|success).*");
-                step(page, "Plan Discharge · Save", "Click Save (IUDAdviceDescharge); wait for the success toast",
-                        "'Advice Discharge saved successfully.' toast is shown",
-                        pdToast == null || pdToast.isEmpty() ? "No toast appeared" : pdToast, pdOk ? "PASS" : "FAIL");
+                    String pdToast = lv.savePlanDischargeAndGetToast();
+                    boolean pdOk = pdToast != null && pdToast.toLowerCase().matches(".*(advice discharge saved|saved successfully|success).*");
+                    step(page, "Plan Discharge · Save", "Click Save (IUDAdviceDescharge); wait for the success toast",
+                            "'Advice Discharge saved successfully.' toast is shown",
+                            pdToast == null || pdToast.isEmpty() ? "No toast appeared" : pdToast, pdOk ? "PASS" : "FAIL");
 
-                lv.closePlanDischargePopup();
-                addSummary("Plan Discharge · Patient", pd);
-                addSummary("Plan Discharge · Result", pdOk ? (pdDept + " -> " + pdToast) : "Not confirmed");
+                    lv.closePlanDischargePopup();
+                    addSummary("Plan Discharge · Patient", pd);
+                    addSummary("Plan Discharge · Result", pdOk ? (pdDept + " -> " + pdToast) : "Not confirmed");
+                }
             }
+        } else {
+            step(page, "Plan Discharge · Not available on this screen", "Look for the footer 'Plan Discharge' button",
+                    "The Plan Discharge popup can be opened",
+                    "SKIPPED: the app hides Plan Discharge on the Emergency List View since build v2026.11.17.488 (the button carries ng-hide=isOnEmergencyListView()); it is an IP admission-list action", "SKIPPED");
+            addSummary("Plan Discharge · Result", "SKIPPED - not available on the Emergency List View in this build");
         }
 
         // ===== Change Refer Entity =====
@@ -261,35 +273,43 @@ public class EmergencyListView extends DevHisBase {
         // Read-only: re-search, select any patient, open the Barcode popup, read the MRN + tick Small Size,
         // click Print (produces the barcode label — a new tab / print preview), then Close. Save is skipped
         // (it would persist a barcode row to trn_patientqrbarcode).
-        lv.searchByDateAndMrn(FROM_DATE, TO_DATE, MRN);
-        String pb = lv.selectFirstPatient();
-        step(page, "Print Barcode · Select a patient", "Select any patient from the results",
-                "A patient is selected", pb == null ? "No patient row to select" : "Selected: " + pb,
-                pb == null ? "FAIL" : "PASS");
-        if (pb != null) {
-            boolean pbOpened = lv.clickPrintBarcode();
-            step(page, "Print Barcode · Open popup", "Click 'Print Barcode' for the selected patient",
-                    "The Barcode popup opens (MRN + Small Size + Print)",
-                    pbOpened ? "Barcode popup opened" : "Barcode popup did NOT open", pbOpened ? "PASS" : "FAIL");
-            if (pbOpened) {
-                String pbInfo = lv.selectBarcodeOptionsAndRead();
-                boolean pbInfoOk = pbInfo != null && pbInfo.contains("Small Size=ticked");
-                step(page, "Print Barcode · Select Small Size", "Tick the Small Size option in the Barcode popup",
-                        "Small Size is selected (patient MRN shown)", pbInfo, pbInfoOk ? "PASS" : "MANUAL");
+        boolean printBarcodeOnScreen = lv.footerButtonVisible("printpatient");
+        if (printBarcodeOnScreen) {
+            lv.searchByDateAndMrn(FROM_DATE, TO_DATE, MRN);
+            String pb = lv.selectFirstPatient();
+            step(page, "Print Barcode · Select a patient", "Select any patient from the results",
+                    "A patient is selected", pb == null ? "No patient row to select" : "Selected: " + pb,
+                    pb == null ? "FAIL" : "PASS");
+            if (pb != null) {
+                boolean pbOpened = lv.clickPrintBarcode();
+                step(page, "Print Barcode · Open popup", "Click 'Print Barcode' for the selected patient",
+                        "The Barcode popup opens (MRN + Small Size + Print)",
+                        pbOpened ? "Barcode popup opened" : "Barcode popup did NOT open", pbOpened ? "PASS" : "FAIL");
+                if (pbOpened) {
+                    String pbInfo = lv.selectBarcodeOptionsAndRead();
+                    boolean pbInfoOk = pbInfo != null && pbInfo.contains("Small Size=ticked");
+                    step(page, "Print Barcode · Select Small Size", "Tick the Small Size option in the Barcode popup",
+                            "Small Size is selected (patient MRN shown)", pbInfo, pbInfoOk ? "PASS" : "MANUAL");
 
-                String pbToast = lv.saveBarcodeAndGetToast();
-                boolean pbSaveOk = pbToast != null && pbToast.toLowerCase().matches(".*(barcode|saved|success).*");
-                step(page, "Print Barcode · Save", "Click Save (SaveBarcode); wait for the success toast",
-                        "'Barcode Saved Successfully !!!.' toast is shown",
-                        pbToast == null || pbToast.isEmpty() ? "No toast appeared" : pbToast, pbSaveOk ? "PASS" : "FAIL");
+                    String pbToast = lv.saveBarcodeAndGetToast();
+                    boolean pbSaveOk = pbToast != null && pbToast.toLowerCase().matches(".*(barcode|saved|success).*");
+                    step(page, "Print Barcode · Save", "Click Save (SaveBarcode); wait for the success toast",
+                            "'Barcode Saved Successfully !!!.' toast is shown",
+                            pbToast == null || pbToast.isEmpty() ? "No toast appeared" : pbToast, pbSaveOk ? "PASS" : "FAIL");
 
-                lv.closeBarcodePopup();
-                step(page, "Print Barcode · Close", "Click Close on the popup",
-                        "The popup is closed", "Close clicked", "PASS");
+                    lv.closeBarcodePopup();
+                    step(page, "Print Barcode · Close", "Click Close on the popup",
+                            "The popup is closed", "Close clicked", "PASS");
 
-                addSummary("Print Barcode · Patient", pb);
-                addSummary("Print Barcode · Result", pbSaveOk ? (pbInfo + " -> " + pbToast) : "Not confirmed");
+                    addSummary("Print Barcode · Patient", pb);
+                    addSummary("Print Barcode · Result", pbSaveOk ? (pbInfo + " -> " + pbToast) : "Not confirmed");
+                }
             }
+        } else {
+            step(page, "Print Barcode · Not available on this screen", "Look for the footer 'Print Barcode' button",
+                    "The Barcode popup can be opened",
+                    "SKIPPED: the Print Barcode button is no longer on the Emergency List View (removed from the screen in build v2026.11.17.488)", "SKIPPED");
+            addSummary("Print Barcode · Result", "SKIPPED - button removed from the Emergency List View in this build");
         }
 
         // ===== Assign Triage =====
@@ -350,12 +370,16 @@ public class EmergencyListView extends DevHisBase {
 
                 if (abBedOk) {
                     String abToast = lv.saveAssignBedAndGetToast();
-                    boolean abOk = abToast != null && abToast.toLowerCase().matches(".*(success|saved|assigned|allocat).*")
-                            && !abToast.toLowerCase().contains("please");
+                    String abTl = abToast == null ? "" : abToast.toLowerCase();
+                    boolean abAlready = abTl.contains("already");   // "Bed is already assigned for this Patient!" is a refusal, not a success
+                    boolean abOk = abTl.matches(".*(success|saved|allocat).*") && !abTl.contains("please") && !abAlready;
                     step(page, "Assign Bed · Save", "Click Save; wait for the success toast",
                             "Bed allocation success toast is shown",
-                            abToast == null || abToast.isEmpty() ? "No toast appeared" : abToast, abOk ? "PASS" : "FAIL");
-                    addSummary("Assign Bed · Result", abOk ? (abBed + " -> " + abToast) : "Not confirmed");
+                            abToast == null || abToast.isEmpty() ? "No toast appeared"
+                                    : abAlready ? "BLOCKED: \"" + abToast.replaceAll("^[^A-Za-z0-9]+", "").replaceAll("^KPJ\\s*Portal\\s*", "") + "\" — the patient is already bedded; Assign Bed needs a non-bedded patient"
+                                    : abToast,
+                            abOk ? "PASS" : abAlready ? "BLOCKED" : "FAIL");
+                    addSummary("Assign Bed · Result", abOk ? (abBed + " -> " + abToast) : abAlready ? "BLOCKED - patient already bedded" : "Not confirmed");
                 }
 
                 lv.closeAssignBedPopup();
@@ -423,47 +447,15 @@ public class EmergencyListView extends DevHisBase {
                     "The report opens in a new tab", "Report tab did NOT open", "FAIL");
         }
 
-        // ===== Cancel Admission =====
-        // Cancel Admission is only enabled under the "All Inpatients" filter — switch to it and re-search.
-        lv.useInpatientFilter();
-        String p3 = lv.selectFirstPatient();
-        step(page, "Cancel Admission · Select an inpatient",
-                "Switch to the 'All Inpatients' filter (Cancel Admission is enabled there) and select a patient",
-                "An inpatient is selected", p3 == null ? "No inpatient row to select" : "Selected: " + p3,
-                p3 == null ? "FAIL" : "PASS");
-        if (p3 != null) {
-            boolean cOpened = lv.clickCancelAdmission();
-            step(page, "Cancel Admission · Open popup", "Click 'Cancel Admission' for the selected patient",
-                    "The 'Reason for Cancellation' popup opens",
-                    cOpened ? "Popup opened" : "Popup did NOT open", cOpened ? "PASS" : "FAIL");
-            if (cOpened) {
-                String reason = lv.selectCancelReason();
-                step(page, "Cancel Admission · Select reason", "Select a reason from the Cancellation Reason dropdown",
-                        "A cancellation reason is selected", "Reason = " + reason, "PASS");
-
-                String cMsg = lv.saveCancelAndGetMessage();
-                boolean cOk = cMsg != null && cMsg.toLowerCase().matches(".*(cancelled|success).*");
-                step(page, "Cancel Admission · Save", "Click Save; wait for the success message in the popup",
-                        "'Admission Cancelled Successfully!' message is shown",
-                        cMsg == null || cMsg.isEmpty() ? "No success message appeared" : cMsg, cOk ? "PASS" : "FAIL");
-
-                lv.closeCancelPopup();
-                step(page, "Cancel Admission · Close", "Click Close on the popup",
-                        "The popup is closed", "Close clicked", "PASS");
-
-                addSummary("Cancel Admission · Patient", p3);
-                addSummary("Cancel Admission · Result", cOk ? (reason + " -> " + cMsg) : "Not confirmed");
-            }
-        }
-
         // ===== Close Admission =====
         // Close Admission (like Cancel) is enabled under the All Inpatients filter — ensure it, re-select.
         lv.useInpatientFilter();
-        String p4 = lv.selectFirstPatient();
-        step(page, "Close Admission · Select an inpatient",
-                "Under the 'All Inpatients' filter, select a patient",
-                "An inpatient is selected", p4 == null ? "No inpatient row to select" : "Selected: " + p4,
-                p4 == null ? "FAIL" : "PASS");
+        String p4 = lv.selectPatientForAction("#btnCloseVisit", FROM_DATE, TO_DATE);
+        step(page, "Close Admission · Select a patient whose Close Admission is enabled",
+                "Under the 'All Inpatients' filter (then All Patients with the MRN cleared) select a patient whose 'Close Admission' button is enabled — the app disables it for an admission that is already closed",
+                "A patient with an open admission is selected",
+                p4 == null ? "BLOCKED: no listed patient has an open admission — Close Admission is disabled for every one (already closed)" : "Selected: " + p4,
+                p4 == null ? "BLOCKED" : "PASS");
         if (p4 != null) {
             boolean clOpened = lv.clickCloseAdmission();
             step(page, "Close Admission · Open popup", "Click 'Close Admission' for the selected patient",
@@ -528,6 +520,52 @@ public class EmergencyListView extends DevHisBase {
             }
         }
 
+        // ===== Cancel Admission =====
+        // Runs AFTER Close -> Revoke: that pair puts the admission back, Cancel cannot be undone, so the reversible pair gets first use of the open admission.
+        // Cancel Admission is only enabled under the "All Inpatients" filter — switch to it and re-search.
+        lv.useInpatientFilter();
+        String p3 = lv.selectPatientForAction("#CancelAdd", FROM_DATE, TO_DATE);
+        step(page, "Cancel Admission · Select a patient whose Cancel Admission is enabled",
+                "Under the 'All Inpatients' filter (then All Patients with the MRN cleared) select a patient whose 'Cancel Admission' button is enabled — the app disables it for an admission that is already closed",
+                "A patient with an open admission is selected",
+                p3 == null ? "BLOCKED: no listed patient has an open admission — Cancel Admission is disabled for every one (already closed)" : "Selected: " + p3,
+                p3 == null ? "BLOCKED" : "PASS");
+        if (p3 != null) {
+            boolean cOpened = lv.clickCancelAdmission();
+            step(page, "Cancel Admission · Open popup", "Click 'Cancel Admission' for the selected patient",
+                    "The 'Reason for Cancellation' popup opens",
+                    cOpened ? "Popup opened" : "Popup did NOT open", cOpened ? "PASS" : "FAIL");
+            if (cOpened) {
+                String reason = lv.selectCancelReason();
+                step(page, "Cancel Admission · Select reason", "Select a reason from the Cancellation Reason dropdown",
+                        "A cancellation reason is selected", "Reason = " + reason, "PASS");
+
+                // Cancel Admission cannot be undone: -Dem.cancel.save=false stops at the popup (reason selected) and does not click Save.
+                boolean cancelSave = !"false".equalsIgnoreCase(System.getProperty("em.cancel.save", "true"));
+                String cMsg = "";
+                boolean cOk = false;
+                if (cancelSave) {
+                    cMsg = lv.saveCancelAndGetMessage();
+                    cOk = cMsg != null && cMsg.toLowerCase().matches(".*(cancelled|success).*");
+                    step(page, "Cancel Admission · Save", "Click Save; wait for the success message in the popup",
+                            "'Admission Cancelled Successfully!' message is shown",
+                            cMsg == null || cMsg.isEmpty() ? "No success message appeared — " + lv.lastCancelAnswer : cMsg, cOk ? "PASS" : "FAIL");
+                } else {
+                    step(page, "Cancel Admission · Save (skipped)", "Save is not clicked when -Dem.cancel.save=false (Cancel Admission cannot be undone)",
+                            "The cancellation is recorded",
+                            "SKIPPED: Save was not clicked (-Dem.cancel.save=false); the popup opened and a reason was selected", "SKIPPED");
+                }
+
+                lv.closeCancelPopup();
+                step(page, "Cancel Admission · Close", "Click Close on the popup",
+                        "The popup is closed", "Close clicked", "PASS");
+
+                addSummary("Cancel Admission · Patient", p3);
+                addSummary("Cancel Admission · Result", !cancelSave ? "SKIPPED - Save not clicked (-Dem.cancel.save=false)"
+                        : cOk ? (reason + " -> " + cMsg) : "Not confirmed - " + lv.lastCancelAnswer);
+            }
+        }
+
         // ===== Referred Patients =====
         // Click Referred Patients; simple rule: if the list popup does not open — for ANY reason, including a
         // "No Records Found" toast — this section FAILS outright, no retry. If it opens: tick any row, click
@@ -537,11 +575,16 @@ public class EmergencyListView extends DevHisBase {
         lv.searchByDateAndMrn(FROM_DATE, TO_DATE, MRN);
         String rpOutcome = lv.clickReferredPatients();
         boolean rpModalOpened = "MODAL".equals(rpOutcome);
+        // "No referred patients found" means nothing has been referred to Emergency: missing test data (BLOCKED), not a screen failure. Any other
+        // way of not opening stays a FAIL (the original rule: no retry).
+        boolean rpNoData = rpOutcome.startsWith("NO_RECORDS::");
         step(page, "Referred Patients · Click Referred Patients", "Click 'Referred Patients'; the referred-patients list popup opens",
                 "The list popup opens (Select / MRN / Patient Name / ... / Registration / Admission / Cancel)",
                 rpModalOpened ? "Popup opened"
-                        : "Popup did NOT open" + (rpOutcome.startsWith("NO_RECORDS::") ? " — app showed \"No Records Found\" instead" : ""),
-                rpModalOpened ? "PASS" : "FAIL");
+                        : rpNoData ? "BLOCKED: there are no referred patients to list (nothing has been referred to Emergency for this date range) — the app answered \""
+                                + rpOutcome.substring("NO_RECORDS::".length()).replaceAll("^[^A-Za-z0-9]+", "").replaceAll("^KPJ\\s*Portal\\s*", "") + "\"; refer a patient to Emergency to exercise this"
+                        : "Popup did NOT open",
+                rpModalOpened ? "PASS" : rpNoData ? "BLOCKED" : "FAIL");
         if (rpModalOpened) {
             String rpPatient = lv.selectAnyReferredPatientRow();
             step(page, "Referred Patients · Select a patient", "Tick any row's Select checkbox",
@@ -610,12 +653,13 @@ public class EmergencyListView extends DevHisBase {
         }
         lv.dismissAnyModal();
 
-        // ===== Convert IPD Charges =====
-        // Select patient -> click Convert IPD Charges -> accept the alert (click Save) -> success toast.
-        // "No Unbilled Ipd Charges!" means THIS patient has nothing to convert — not a failure, try the next
-        // patient (same iterate-until-eligible pattern as OP > Outpatient Queue Management).
+        // ===== Convert Opd Charges (this was "Convert IPD Charges" before build v2026.11.17.488) =====
+        // Select patient -> click Convert Opd Charges -> when the app finds unbilled OPD charges it asks to convert (click Save) -> success toast.
+        // "No Unbilled Opd Charges!" means THIS patient has nothing to convert — not a failure, try the next patient. When NOBODY has anything to
+        // convert, that is missing test data: the step is reported BLOCKED (the report template's status for it), not FAIL.
         lv.searchByDateAndMrn(FROM_DATE, TO_DATE, MRN);
-        String cicPatient = null, cicToast = "";
+        String cicPatient = null, cicToast = "", cicLast = "";
+        boolean cicConfirm = false;
         int cicTried = 0;
         for (int i = 0; i < 12; i++) {
             String cand = lv.selectNthPatient(i);
@@ -623,49 +667,68 @@ public class EmergencyListView extends DevHisBase {
             cicPatient = cand;
             cicTried++;
             String outcome = lv.clickConvertIpdCharges();
+            cicLast = outcome;
             if (!outcome.equals("confirm")) continue;
+            cicConfirm = true;
             cicToast = lv.acceptConvertIpdChargesAndGetToast();
-            if (cicToast != null && cicToast.toLowerCase().contains("no unbilled")) continue;
+            if (cicToast != null && cicToast.toLowerCase().contains("no unbilled")) { cicConfirm = false; continue; }
             break;
         }
-        step(page, "Convert IPD Charges · Select a patient & click Convert IPD Charges",
-                "Select a patient; click 'Convert IPD Charges' (try a different patient on \"No Unbilled Ipd Charges!\")",
-                "The confirm dialog appears for some patient",
-                cicPatient == null ? "No patient found" : "Selected: " + cicPatient + " (tried " + cicTried + " patient(s))",
-                cicPatient == null ? "FAIL" : "PASS");
-        if (cicPatient != null) {
+        if (cicPatient == null) {
+            step(page, "Convert Opd Charges · Select a patient & click Convert Opd Charges",
+                    "Select a patient; click 'Convert Opd Charges'", "The confirm dialog appears for some patient", "No patient found", "FAIL");
+        } else if (!cicConfirm) {
+            step(page, "Convert Opd Charges · Select a patient & click Convert Opd Charges",
+                    "Select each patient in turn and click 'Convert Opd Charges' (a patient with nothing to convert answers \"No Unbilled Opd Charges!\")",
+                    "The confirm dialog appears for some patient",
+                    "BLOCKED: none of the " + cicTried + " patient(s) has unbilled OPD charges to convert (last answer: " + cicLast + ")", "BLOCKED");
+            addSummary("Convert Opd Charges · Result", "BLOCKED - no patient has unbilled OPD charges");
+        } else {
+            step(page, "Convert Opd Charges · Select a patient & click Convert Opd Charges",
+                    "Select a patient; click 'Convert Opd Charges' (try a different patient on \"No Unbilled Opd Charges!\")",
+                    "The confirm dialog appears for some patient",
+                    "Selected: " + cicPatient + " (tried " + cicTried + " patient(s))", "PASS");
             boolean cicOk = cicToast != null && !cicToast.isEmpty()
                     && (cicToast.toLowerCase().contains("success") || cicToast.toLowerCase().contains("saved") || cicToast.toLowerCase().contains("convert"));
-            step(page, "Convert IPD Charges · Accept alert (Save) & success toast",
+            step(page, "Convert Opd Charges · Accept alert (Save) & success toast",
                     "Click Save on the confirm; wait for the success toast",
                     "'... Converted/Saved Successfully' toast",
                     cicToast == null || cicToast.isEmpty() ? "No toast appeared" : cicToast, cicOk ? "PASS" : "FAIL");
-            addSummary("Convert IPD Charges · Patient", cicPatient + " (tried " + cicTried + ")");
-            addSummary("Convert IPD Charges · Result", cicOk ? cicToast : "Not confirmed");
+            addSummary("Convert Opd Charges · Patient", cicPatient + " (tried " + cicTried + ")");
+            addSummary("Convert Opd Charges · Result", cicOk ? cicToast : "Not confirmed");
         }
         lv.dismissAnyModal();
 
         // ===== Ward Acceptance =====
-        // Tick the Ward Acceptance checkbox in the Emergency Visits grid -> Search -> data loads -> select a
-        // patient -> click Ward Acceptance -> success toast.
+        // Tick the "Ward Acceptances" filter (a radio button) -> Search -> select a patient for whom Ward Acceptance is ENABLED (footer #btnConfirmAdmission,
+        // ng-disabled "wardacpt") -> click it -> "Admission Confirmed succesfully" toast. No patient awaiting ward acceptance (empty list, or the button
+        // disabled for every row) is missing test data: BLOCKED, not FAIL.
         boolean waLoaded = lv.useWardAcceptanceFilter();
-        step(page, "Ward Acceptance · Tick checkbox & Search", "Tick the 'Ward Acceptance' checkbox in the Emergency Visits grid; click Search",
-                "The grid loads data", waLoaded ? "Data loaded" : "Grid did not load data", waLoaded ? "PASS" : "FAIL");
-        if (waLoaded) {
-            String waPatient = lv.selectFirstPatient();
-            step(page, "Ward Acceptance · Select a patient", "Select any patient from the results",
-                    "A patient is selected", waPatient == null ? "No patient row to select" : "Selected: " + waPatient,
-                    waPatient == null ? "FAIL" : "PASS");
+        if (!waLoaded) {
+            step(page, "Ward Acceptance · Tick the 'Ward Acceptances' filter & Search", "Tick the 'Ward Acceptances' filter; click Search",
+                    "The grid loads data",
+                    "BLOCKED: the Ward Acceptances list is empty — no emergency patient is awaiting ward acceptance for this date range", "BLOCKED");
+            addSummary("Ward Acceptance · Result", "BLOCKED - no patient awaiting ward acceptance");
+        } else {
+            step(page, "Ward Acceptance · Tick the 'Ward Acceptances' filter & Search", "Tick the 'Ward Acceptances' filter; click Search",
+                    "The grid loads data", "Data loaded", "PASS");
+            String waPatient = lv.selectPatientWhereEnabled("#btnConfirmAdmission");
+            step(page, "Ward Acceptance · Select a patient whose Ward Acceptance is enabled", "Select a patient for whom the 'Ward Acceptance' button is enabled",
+                    "A patient awaiting ward acceptance is selected",
+                    waPatient == null ? "BLOCKED: none of the listed patients is awaiting ward acceptance (the button is disabled for every row)" : "Selected: " + waPatient,
+                    waPatient == null ? "BLOCKED" : "PASS");
             if (waPatient != null) {
                 String waToast = lv.clickWardAcceptanceAndGetToast();
                 String waTl = waToast == null ? "" : waToast.toLowerCase();
-                boolean waOk = waTl.contains("success") || waTl.contains("saved") || waTl.contains("accepted");
+                boolean waOk = waTl.contains("succes") || waTl.contains("saved") || waTl.contains("accepted") || waTl.contains("confirmed");
                 step(page, "Ward Acceptance · Click Ward Acceptance & success toast", "Click 'Ward Acceptance'; wait for the success toast",
-                        "A success toast appears",
+                        "A success toast appears (\"Admission Confirmed succesfully\")",
                         waToast == null || waToast.isEmpty() ? "No toast appeared" : waToast,
                         waOk ? "PASS" : "FAIL");
                 addSummary("Ward Acceptance · Patient", waPatient);
                 addSummary("Ward Acceptance · Result", waOk ? waToast : "Not confirmed");
+            } else {
+                addSummary("Ward Acceptance · Result", "BLOCKED - no listed patient is awaiting ward acceptance");
             }
         }
         lv.dismissAnyModal();
@@ -882,8 +945,8 @@ public class EmergencyListView extends DevHisBase {
                 step(page, "View Details · Click Update & toast",
                         "Click Update Registration (UpdateOnlyRegistration); confirm; wait for the success toast",
                         "'... Updated Successfully' toast",
-                        vdToast == null || vdToast.isEmpty() ? "No toast appeared"
-                                : (vdOk ? vdToast : "Update not confirmed - the app showed: \"" + vdToast + "\""),
+                        vdToast == null || vdToast.isEmpty() ? "No toast appeared" + (lv.lastViewDetailsAnswer.isEmpty() ? " and the server gave no answer" : "; server answered " + lv.lastViewDetailsAnswer)
+                                : (vdOk ? vdToast : "Update not confirmed - the app showed: \"" + vdToast + "\"" + (lv.lastViewDetailsAnswer.isEmpty() ? "" : "; server answered " + lv.lastViewDetailsAnswer)),
                         vdOk ? "PASS" : "FAIL");
 
                 lv.closeViewDetails();
@@ -896,33 +959,34 @@ public class EmergencyListView extends DevHisBase {
         lv.dismissAnyModal();
 
         // ===== Consent2 (SPC consent form) =====
-        // Select any patient, open Consent2 (#/admission-consent/{AdmissionId}/), pick an SPC form, Add, fill, Save.
-        // This navigates AWAY from the Emergency List View, so it runs LAST.
+        // Select any patient, click the Consent2 LINK (it opens #/admission-consent/{id}/{MRNo} in a NEW TAB — the app bounces a typed navigation to that
+        // route since build v2026.11.17.488), pick an SPC form in that tab, Add, fill, Save. The form is driven in the new tab.
         lv.searchByDateAndMrn(FROM_DATE, TO_DATE, MRN);
         String cp = lv.selectFirstPatient();
         step(page, "Consent2 · Select a patient", "Select any patient from the results",
                 "A patient is selected", cp == null ? "No patient row to select" : "Selected: " + cp,
                 cp == null ? "FAIL" : "PASS");
         if (cp != null) {
-            String admId = lv.getSelectedAdmissionId();
-            boolean consentOpened = lv.openConsent2(BASE, admId);
-            step(page, "Consent2 · Open", "Click Consent2 for the selected patient (#/admission-consent/" + admId + "/)",
-                    "The Consent2 (admission consent) form opens",
-                    consentOpened ? "Consent2 opened (AdmissionId " + admId + ")" : "Consent2 did NOT open",
+            com.microsoft.playwright.Page consentTab = lv.openConsent2FromLink();
+            boolean consentOpened = consentTab != null;
+            step(consentOpened ? consentTab : page, "Consent2 · Open", "Click the Consent2 link for the selected patient (opens #/admission-consent/{id}/{MRNo} in a new tab)",
+                    "The Consent2 (admission consent) form opens in a new tab",
+                    consentOpened ? "Consent2 opened in a new tab: " + consentTab.url() : "Consent2 did NOT open (no new tab, or its consent dropdown never loaded)",
                     consentOpened ? "PASS" : "FAIL");
             if (consentOpened) {
-                String spc = lv.selectSpcConsentAndAdd();
+                com.kpj.pages.Emergency_page.EmergencyListView cl = new com.kpj.pages.Emergency_page.EmergencyListView(consentTab);
+                String spc = cl.selectSpcConsentAndAdd();
                 boolean spcOk = spc != null && !spc.startsWith("ERR") && !spc.startsWith("(");
-                step(page, "Consent2 · Enter SPC + Add", "Set Date, select an SPC consent form, click Add (loads the template)",
+                step(consentTab, "Consent2 · Enter SPC + Add", "Set Date, select an SPC consent form, click Add (loads the template)",
                         "An SPC consent form is selected and its template is loaded", spc, spcOk ? "PASS" : "FAIL");
 
-                String filled = lv.fillConsentForm("Consent acknowledged and completed for the SPC procedure.");
-                step(page, "Consent2 · Fill the form", "Fill the Description (consent template) editor",
+                String filled = cl.fillConsentForm("Consent acknowledged and completed for the SPC procedure.");
+                step(consentTab, "Consent2 · Fill the form", "Fill the Description (consent template) editor",
                         "The consent form has content", filled, "PASS");
 
-                String cToast = lv.saveConsentAndGetToast();
+                String cToast = cl.saveConsentAndGetToast();
                 boolean cOk = cToast != null && cToast.toLowerCase().matches(".*(success|saved).*");
-                step(page, "Consent2 · Submit (Save)", "Click Save (IUDconsentdetail); wait for the success toast",
+                step(consentTab, "Consent2 · Submit (Save)", "Click Save (IUDconsentdetail); wait for the success toast",
                         "Success toast is shown",
                         cToast == null || cToast.isEmpty()
                                 ? "No toast — server ConsentTemplate API returns 500 (TX Text Control 'txkernel' missing on server)"
@@ -931,6 +995,8 @@ public class EmergencyListView extends DevHisBase {
                 addSummary("Consent2 · Patient", cp);
                 addSummary("Consent2 · SPC form", spc);
                 addSummary("Consent2 · Result", cOk ? cToast : "Blocked by server ConsentTemplate 500 (txkernel dependency)");
+                try { consentTab.close(); } catch (Exception ignore) { }
+                page.bringToFront();
             }
         }
 

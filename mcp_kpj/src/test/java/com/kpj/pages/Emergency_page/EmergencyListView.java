@@ -92,7 +92,8 @@ public class EmergencyListView extends BasePage {
      */
     public String searchByDateAndMrn(String fromDate, String toDate, String mrn) {
         tickFilter("All Patients");
-        Object applied = page.evaluate("(a) => { const [f,t,m]=a;"
+        final Object[] appliedBox = new Object[1];
+        runAndAwaitList(() -> appliedBox[0] = page.evaluate("(a) => { const [f,t,m]=a;"
                 + " const norm=s=>(s||'').replace(/\\s+/g,' ').trim().toLowerCase();"
                 + " const setVal=(e,v)=>{ if(!e) return false; const c=angular.element(e).controller('ngModel'); e.value=v; if(c){c.$setViewValue(v);c.$render();} e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true})); return true; };"
                 + " const byModel=names=>{ for(const n of names){ const e=[...document.querySelectorAll('input')].find(x=>x.getAttribute('ng-model')===n && x.offsetParent!==null); if(e) return e; } return null; };"
@@ -108,7 +109,8 @@ public class EmergencyListView extends BasePage {
                 + "   if(ic) ic.click(); else { mrnE.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',keyCode:13,bubbles:true})); } }"
                 + " const btn=[...document.querySelectorAll('button')].find(x=>/^\\s*search\\s*$/i.test((x.textContent||'').trim()) && x.offsetParent!==null); if(btn) btn.click();"
                 + " return 'From='+(okF?f:'(not set)')+' | To='+(okT?t:'(not set)')+' | MRN='+(okM?m:'(optional/skipped)')+' | Search='+(btn?'clicked':'(no button)'); }",
-                java.util.Arrays.asList(fromDate, toDate, mrn));
+                java.util.Arrays.asList(fromDate, toDate, mrn)));
+        Object applied = appliedBox[0];
         // Wait for the page/search to settle before reading the grid.
         try { page.waitForLoadState(com.microsoft.playwright.options.LoadState.NETWORKIDLE); } catch (Exception ignore) {}
         waitForGridData();
@@ -117,17 +119,41 @@ public class EmergencyListView extends BasePage {
             // MRN filter matched nothing — clear it and search again so a patient row is still available.
             page.evaluate("() => { const mrnE=[...document.querySelectorAll('input')].find(x=>/mrn/i.test((x.getAttribute('ng-model')||'')+(x.getAttribute('placeholder')||'')) && x.type!=='checkbox' && x.offsetParent!==null);"
                     + " if(mrnE){ const c=angular.element(mrnE).controller('ngModel'); mrnE.value=''; if(c){c.$setViewValue('');c.$render();} mrnE.dispatchEvent(new Event('change',{bubbles:true})); }"
-                    + " const btn=[...document.querySelectorAll('button')].find(x=>/^\\s*search\\s*$/i.test((x.textContent||'').trim()) && x.offsetParent!==null); if(btn) btn.click(); }");
+                    + " }");
+            searchAndWait();
             waitForGridData();
             rows = resultRowCount();
         }
         return (applied == null ? "" : applied.toString()) + " | rows=" + rows;
     }
 
-    /** Tick a filter checkbox by its adjacent label text (e.g. "All Patients"). */
+    /**
+     * Run {@code action} (which clicks Search) and wait for the list query ({@code FetchAdmissionData}, {@code ExecFlag GetAdmissionList}) to ANSWER.
+     * The grid keeps its previous rows until a slow query returns (the Closed Admission one takes ~10 s), so "the grid has rows" is no evidence the
+     * search finished — scanning it earlier read the PREVIOUS filter's patients.
+     */
+    private void runAndAwaitList(Runnable action) {
+        try {
+            page.waitForResponse(r -> {
+                try { String post = r.request().postData(); return r.url().contains("FetchAdmissionData") && post != null && post.contains("\"GetAdmissionList\""); }
+                catch (Exception e) { return false; }
+            }, new Page.WaitForResponseOptions().setTimeout(45000), action);
+        } catch (Exception e) { System.out.println("runAndAwaitList: the list search did not answer within 45 s"); }
+        waitForAngular(900);
+    }
+
+    /** Click Search and wait for the list to answer (see {@link #runAndAwaitList(Runnable)}). */
+    private void searchAndWait() {
+        runAndAwaitList(() -> page.evaluate("() => { const b=document.querySelector(\"button[ng-click='SearchBtnClick(2);']\") || [...document.querySelectorAll('button')].find(x=>/^\\s*search\\s*$/i.test((x.textContent||'').trim()) && x.offsetParent!==null); if(b) b.click(); }"));
+    }
+
+    /**
+     * Tick a filter by its adjacent label text (e.g. "All Patients"). The filters are RADIO buttons since build v2026.11.17.488 (All Patients, All
+     * Inpatients, Ward Acceptances, Closed Admission, …) — they used to be checkboxes, and looking only for checkboxes meant no filter was ever applied.
+     */
     private boolean tickFilter(String labelText) {
         Object r = page.evaluate("(t)=>{ const norm=s=>(s||'').replace(/\\s+/g,' ').trim().toLowerCase();"
-                + " const cbs=[...document.querySelectorAll('input[type=checkbox]')];"
+                + " const cbs=[...document.querySelectorAll('input[type=checkbox],input[type=radio]')].filter(x=>!x.closest('.modal'));"
                 + " for(const cb of cbs){ let lab=''; if(cb.id){ const l=document.querySelector('label[for=\"'+cb.id+'\"]'); if(l) lab=l.textContent; }"
                 + "   if(!lab){ lab=(cb.closest('label')&&cb.closest('label').textContent) || (cb.parentElement&&cb.parentElement.textContent) || ''; }"
                 + "   if(norm(lab).includes(norm(t))){ if(!cb.checked){ cb.click(); } return true; } } return false; }", labelText);
@@ -171,6 +197,7 @@ public class EmergencyListView extends BasePage {
                 + " return (name||'(patient)')+' / MRN '+(mrn||'-')+(adm?(' / Adm '+adm):'')+' [row '+(idx+1)+'/'+d.length+']'; }");
         String s = r == null ? null : r.toString();
         if (s != null && s.startsWith("ERR:")) { System.out.println("selectFirstPatient: " + s); return null; }
+        rememberSelection(s);
         waitForAngular(600);
         return s;
     }
@@ -207,8 +234,78 @@ public class EmergencyListView extends BasePage {
                 + " return (name||'(patient)')+' / MRN '+(mrn||'-')+(adm?(' / Adm '+adm):'')+' [row '+(i+1)+'/'+d.length+']'; }", idx);
         String s = r == null ? null : r.toString();
         if (s != null && s.startsWith("ERR:")) return null;
+        rememberSelection(s);
         waitForAngular(500);
         return s;
+    }
+
+    // ---- selection upkeep / eligibility ------------------------------------
+
+    /** AdmissionId of the row last selected through this page object (the list drops its selection on auto-refresh). */
+    private String lastSelectedAdmissionId;
+
+    private void rememberSelection(String descriptor) {
+        if (descriptor == null) return;
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("Adm\\s+(\\d+)").matcher(descriptor);
+        if (m.find()) lastSelectedAdmissionId = m.group(1);
+    }
+
+    /**
+     * The list refreshes itself about every 60 s (the "Refreshing in …" countdown) and a few seconds later CLEARS the selected row, after which
+     * a footer button silently does nothing. Put the last selected patient back (by AdmissionId) when the selection has gone. Called before
+     * every footer action.
+     */
+    public void ensureSelected() {
+        Object r = page.evaluate("(id) => { let gs=null; document.querySelectorAll('*').forEach(el=>{ if(gs)return; try{ const s=angular.element(el).scope(); if(s&&s.grid&&s.grid.api&&s.grid.options&&Array.isArray(s.grid.options.data)) gs=s; }catch(e){} });"
+                + " if(!gs) return 'no-grid'; if(gs.grid.api.selection.getSelectedRows().length) return 'ok'; if(!id) return 'nothing-remembered';"
+                + " const p=(gs.grid.options.data||[]).find(x=>String(x.AdmissionId)===String(id)); if(!p) return 'gone';"
+                + " try{ gs.grid.api.selection.selectRow(p); }catch(e){ return 'select-failed'; } return 'reselected'; }", lastSelectedAdmissionId);
+        if ("reselected".equals(String.valueOf(r))) {
+            System.out.println("ensureSelected: the list had cleared its selection (auto-refresh) - re-selected admission " + lastSelectedAdmissionId);
+            waitForAngular(500);
+        }
+    }
+
+    /**
+     * Walk the grid rows, selecting each in turn, and stop at the first one for which the footer button {@code buttonCss} is on screen and ENABLED
+     * (the app disables e.g. {@code #CancelAdd} / {@code #btnCloseVisit} for an admission that is already closed). Returns that row's descriptor,
+     * or null when no listed patient qualifies.
+     */
+    public String selectPatientWhereEnabled(String buttonCss) {
+        Object countObj = page.evaluate("() => { let gs=null; document.querySelectorAll('*').forEach(el=>{ if(gs)return; try{ const s=angular.element(el).scope(); if(s&&s.grid&&s.grid.api&&s.grid.options&&Array.isArray(s.grid.options.data)) gs=s; }catch(e){} });"
+                + " return gs ? gs.grid.options.data.length : 0; }");
+        int n = countObj instanceof Number ? ((Number) countObj).intValue() : 0;
+        for (int i = 0; i < n; i++) {
+            String desc = selectNthPatient(i);
+            if (desc == null) continue;
+            Object enabled = page.evaluate("(css) => { const b=document.querySelector(css); return !!b && !!(b.offsetWidth||b.offsetHeight) && !b.disabled; }", buttonCss);
+            if (Boolean.TRUE.equals(enabled)) {
+                System.out.println("selectPatientWhereEnabled(" + buttonCss + "): found enabled row - " + desc);
+                return desc;
+            }
+        }
+        System.out.println("selectPatientWhereEnabled(" + buttonCss + "): no row (of " + n + ") had the button enabled");
+        return null;
+    }
+
+    /**
+     * As {@link #selectPatientWhereEnabled(String)}, widened: when nobody in the current grid qualifies, clear the MRN filter, search All Patients
+     * over the same dates and look again. Returns the descriptor, or null when nobody anywhere qualifies (the caller reports BLOCKED).
+     */
+    public String selectPatientForAction(String buttonCss, String fromDate, String toDate) {
+        String d = selectPatientWhereEnabled(buttonCss);
+        if (d != null) return d;
+        searchByDateAndMrn(fromDate, toDate, "");
+        return selectPatientWhereEnabled(buttonCss);
+    }
+
+    /**
+     * True when a footer button whose ng-click contains {@code ngClickPart} is actually on screen. The app hides or removes some footer buttons from
+     * this screen (v2026.11.17.488: Plan Discharge is {@code ng-hide="isOnEmergencyListView()"}, Print Barcode is gone from the template).
+     */
+    public boolean footerButtonVisible(String ngClickPart) {
+        Object r = page.evaluate("(p) => [...document.querySelectorAll('button,a')].some(x=>(x.getAttribute('ng-click')||'').indexOf(p)>=0 && !x.closest('.modal') && (x.offsetWidth||x.offsetHeight))", ngClickPart);
+        return Boolean.TRUE.equals(r);
     }
 
     // ---- Change Admission Type -------------------------------------------
@@ -218,6 +315,7 @@ public class EmergencyListView extends BasePage {
      * open (its Save button / a Patient or Admission section). Returns true if the form opened.
      */
     public boolean clickChangeAdmissionType() {
+        ensureSelected();
         Object tagged = page.evaluate("() => { const b=[...document.querySelectorAll('button,a')].find(x=>/change admission type/i.test((x.textContent||'').replace(/\\s+/g,' ').trim()) && x.offsetParent!==null);"
                 + " if(!b) return false; b.id='__emChangeAdmType'; return true; }");
         if (Boolean.TRUE.equals(tagged)) {
@@ -496,7 +594,7 @@ public class EmergencyListView extends BasePage {
      * then any visible "Save" button (covers a modal Save on this screen).
      */
     public String saveAndGetToast() {
-        page.evaluate("() => { window.__elvToasts=[]; if(window.__elvObs) window.__elvObs.disconnect();"
+        page.evaluate("() => { window.__elvToasts=[]; try{ if(window.toastr) toastr.clear(); }catch(e){} document.querySelectorAll('#toast-container .toast,.toast-message').forEach(t=>{ try{ t.remove(); }catch(e){} }); if(window.__elvObs) window.__elvObs.disconnect();"
                 + " const grab=()=>{ document.querySelectorAll('.toast-message,.toast,[id^=toast]').forEach(el=>{ const t=(el.textContent||'').replace(/\\s+/g,' ').trim(); if(t && !window.__elvToasts.includes(t)) window.__elvToasts.push(t); }); };"
                 + " window.__elvObs=new MutationObserver(grab); window.__elvObs.observe(document.body,{childList:true,subtree:true}); grab();"
                 + " let b=[...document.querySelectorAll('button')].find(x=>x.getAttribute('ng-click')==='IUDAdmission();' && x.offsetParent!==null);"
@@ -521,6 +619,7 @@ public class EmergencyListView extends BasePage {
      * for its popup. Returns true if the popup opened.
      */
     public boolean clickExpectedDischargeDate() {
+        ensureSelected();
         Object tagged = page.evaluate("() => { const b=[...document.querySelectorAll('button,a,span,div')].find(x=>/^\\s*expected discharge date\\s*$/i.test((x.textContent||'').replace(/\\s+/g,' ').trim()) && x.offsetParent!==null); if(!b) return false; b.id='__expDisBtn'; return true; }");
         if (!Boolean.TRUE.equals(tagged)) { System.out.println("clickExpectedDischargeDate: button not found"); return false; }
         try { page.locator("#__expDisBtn").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000)); }
@@ -555,7 +654,7 @@ public class EmergencyListView extends BasePage {
      * captured via a MutationObserver.
      */
     public String saveDischargeAndGetToast() {
-        Object tagged = page.evaluate("() => { window.__edToasts=[]; if(window.__edObs) window.__edObs.disconnect();"
+        Object tagged = page.evaluate("() => { window.__edToasts=[]; try{ if(window.toastr) toastr.clear(); }catch(e){} document.querySelectorAll('#toast-container .toast,.toast-message').forEach(t=>{ try{ t.remove(); }catch(e){} }); if(window.__edObs) window.__edObs.disconnect();"
                 + " const grab=()=>{ document.querySelectorAll('.toast-message,.toast,[id^=toast]').forEach(el=>{ const t=(el.textContent||'').replace(/\\s+/g,' ').trim(); if(t && !window.__edToasts.includes(t)) window.__edToasts.push(t); }); };"
                 + " window.__edObs=new MutationObserver(grab); window.__edObs.observe(document.body,{childList:true,subtree:true}); grab();"
                 + " const b=[...document.querySelectorAll('button,a')].find(x=>((x.getAttribute('ng-click')||'').indexOf('IUDExpectedDischarge')>=0) && x.offsetParent!==null); if(!b) return false; b.id='__edSave'; return true; }");
@@ -594,12 +693,10 @@ public class EmergencyListView extends BasePage {
         // Tick All Inpatients once; then (re-)run Search, retrying if the grid comes back empty — under load
         // the re-search right after a modal save can transiently return 0 rows, which would strand the
         // Plan Discharge / Cancel / Close sections with "no inpatient to select".
-        page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim().toLowerCase();"
-                + " const set=(lab,want)=>{ for(const cb of [...document.querySelectorAll('input[type=checkbox]')]){ let l=''; if(cb.id){ const e=document.querySelector('label[for=\"'+cb.id+'\"]'); if(e) l=e.textContent; } if(!l){ l=(cb.closest('label')&&cb.closest('label').textContent)||(cb.parentElement&&cb.parentElement.textContent)||''; } if(norm(l).includes(norm(lab))){ if(cb.checked!==want) cb.click(); return; } } };"
-                + " set('all patients', false); set('all inpatients', true); }");
+        if (!tickFilter("All Inpatients")) System.out.println("useInpatientFilter: the 'All Inpatients' filter was not found");
         String gridHasRows = "() => { let ok=false; document.querySelectorAll('*').forEach(el=>{ if(ok)return; try{ const s=angular.element(el).scope(); if(s&&s.grid&&s.grid.options&&Array.isArray(s.grid.options.data)&&s.grid.options.data.length) ok=true; }catch(e){} }); return ok; }";
         for (int attempt = 0; attempt < 3; attempt++) {
-            page.evaluate("() => { const b=[...document.querySelectorAll('button')].find(x=>/^\\s*search\\s*$/i.test((x.textContent||'').trim()) && x.offsetParent!==null); if(b) b.click(); }");
+            searchAndWait();
             try {
                 page.waitForFunction(gridHasRows, null, new Page.WaitForFunctionOptions().setTimeout(15000));
                 waitForAngular(800);
@@ -621,17 +718,14 @@ public class EmergencyListView extends BasePage {
     public boolean useWardAcceptanceFilter() {
         boolean ticked = tickFilter("Ward Acceptance");
         if (!ticked) System.out.println("useWardAcceptanceFilter: 'Ward Acceptance' checkbox not found");
-        String gridHasRows = "() => { let ok=false; document.querySelectorAll('*').forEach(el=>{ if(ok)return; try{ const s=angular.element(el).scope(); if(s&&s.grid&&s.grid.options&&Array.isArray(s.grid.options.data)&&s.grid.options.data.length) ok=true; }catch(e){} }); return ok; }";
-        for (int attempt = 0; attempt < 3; attempt++) {
-            page.evaluate("() => { const b=[...document.querySelectorAll('button')].find(x=>/^\\s*search\\s*$/i.test((x.textContent||'').trim()) && x.offsetParent!==null); if(b) b.click(); }");
-            try {
-                page.waitForFunction(gridHasRows, null, new Page.WaitForFunctionOptions().setTimeout(15000));
-                waitForAngular(800);
-                return true;
-            } catch (Exception ignore) { System.out.println("useWardAcceptanceFilter: grid empty (attempt " + (attempt + 1) + ") — re-searching"); }
-            waitForAngular(1500);
+        // searchAndWait() returns once the list query has ANSWERED, so an empty grid here means "nobody is awaiting ward acceptance"
+        // (one more try only, in case a re-search right after a save answered transiently empty)
+        for (int attempt = 0; attempt < 2; attempt++) {
+            searchAndWait();
+            if (resultRowCount() > 0) { waitForAngular(400); return true; }
+            System.out.println("useWardAcceptanceFilter: the search answered with no rows (attempt " + (attempt + 1) + ")");
         }
-        System.out.println("useWardAcceptanceFilter: grid did not populate after retries");
+        System.out.println("useWardAcceptanceFilter: no patient is awaiting ward acceptance");
         waitForAngular(500);
         return false;
     }
@@ -642,14 +736,15 @@ public class EmergencyListView extends BasePage {
      * resulting success toast.
      */
     public String clickWardAcceptanceAndGetToast() {
+        ensureSelected();
         Object tagged = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                + " const b=[...document.querySelectorAll('button,a')].find(x=>/wardacceptance/i.test(x.getAttribute('ng-click')||'') && x.offsetParent!==null)"
+                + " const b=[...document.querySelectorAll('button,a')].find(x=>/wardacceptance|ConfirmAdmission/i.test(x.getAttribute('ng-click')||'') && x.offsetParent!==null)"
                 + " || [...document.querySelectorAll('button,a')].find(x=>/^\\s*ward\\s*acceptance\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null);"
                 + " if(!b) return 'no-button'; if(b.disabled) return 'disabled'; b.id='__waBtn'; return true; }");
         String st = String.valueOf(tagged);
         if ("no-button".equals(st)) { System.out.println("clickWardAcceptanceAndGetToast: 'Ward Acceptance' button not found"); return ""; }
         if ("disabled".equals(st)) { System.out.println("clickWardAcceptanceAndGetToast: button not enabled for this patient"); return ""; }
-        page.evaluate("() => { window.__waToasts=[]; if(window.__waObs) window.__waObs.disconnect();"
+        page.evaluate("() => { window.__waToasts=[]; try{ if(window.toastr) toastr.clear(); }catch(e){} document.querySelectorAll('#toast-container .toast,.toast-message').forEach(t=>{ try{ t.remove(); }catch(e){} }); if(window.__waObs) window.__waObs.disconnect();"
                 + " window.__waObs=new MutationObserver(()=>{ document.querySelectorAll('.toast-message,.toast,[id^=toast]').forEach(el=>{ const t=(el.textContent||'').trim(); if(t && !window.__waToasts.includes(t)) window.__waToasts.push(t); }); });"
                 + " window.__waObs.observe(document.body,{childList:true,subtree:true}); }");
         try { page.locator("#__waBtn").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000)); }
@@ -665,7 +760,7 @@ public class EmergencyListView extends BasePage {
                 waitForAngular(400);
             }
             Object t = page.evaluate("() => { document.querySelectorAll('.toast-message,.toast,[id^=toast]').forEach(el=>{ const m=(el.textContent||'').replace(/\\s+/g,' ').trim(); if(m){ window.__waToasts=window.__waToasts||[]; if(!window.__waToasts.includes(m)) window.__waToasts.push(m); } });"
-                    + " const a=window.__waToasts||[]; return a.find(x=>/success|saved|accepted/i.test(x)) || a[0] || ''; }");
+                    + " const a=window.__waToasts||[]; return a.find(x=>/succes|saved|accepted|confirmed/i.test(x)) || a[0] || ''; }");
             if (t != null && !t.toString().trim().isEmpty()) { toast = t.toString().trim(); break; }
             page.waitForTimeout(500);
         }
@@ -680,6 +775,7 @@ public class EmergencyListView extends BasePage {
      * dropdown. Returns true if the popup opened.
      */
     public boolean clickCancelAdmission() {
+        ensureSelected();
         Object tagged = page.evaluate("() => { const b=[...document.querySelectorAll('button,a')].find(x=>/^\\s*cancel admission\\s*$/i.test((x.textContent||'').replace(/\\s+/g,' ').trim()) && x.offsetParent!==null); if(!b) return 'none'; if(b.disabled) return 'disabled'; b.id='__cancelAdmBtn'; return true; }");
         String st = String.valueOf(tagged);
         if ("disabled".equals(st)) { System.out.println("clickCancelAdmission: button disabled (needs the All Inpatients filter)"); return false; }
@@ -710,12 +806,46 @@ public class EmergencyListView extends BasePage {
         return r == null ? "(null)" : r.toString();
     }
 
+    /** What the server and the screen said to the last Cancel Admission Save: the {@code UpdateAdmission} answer and any toast (e.g. the server's reason for refusing). */
+    public String lastCancelAnswer = "";
+
+    /**
+     * Save the cancellation and return the in-popup success message ("" when nothing recorded). The cancel call ({@code IUDConsent},
+     * {@code ExecFlag: UpdateAdmission}) answers with a Message that the screen only shows as a toast when it REFUSES, and the old code never read it, so a
+     * refused cancel just looked like "no success message". It is kept in {@link #lastCancelAnswer}.
+     */
+    public String saveCancelAndGetMessage() {
+        lastCancelAnswer = "";
+        final java.util.List<String> answers = new java.util.concurrent.CopyOnWriteArrayList<>();
+        java.util.function.Consumer<com.microsoft.playwright.Response> watcher = r -> {
+            try {
+                String post = r.request().postData();
+                if (r.url().contains("IUDConsent") && post != null && post.contains("UpdateAdmission")) {
+                    String body = "";
+                    try { body = r.text(); } catch (Exception ignore) { }
+                    body = body.replaceAll("\\s+", " ");
+                    answers.add("HTTP " + r.status() + " " + body.substring(0, Math.min(200, body.length())));
+                }
+            } catch (Exception ignore) { }
+        };
+        page.onResponse(watcher);
+        page.evaluate("() => { try{ if(window.toastr) toastr.clear(); }catch(e){} document.querySelectorAll('#toast-container .toast,.toast-message').forEach(t=>{ try{ t.remove(); }catch(e){} }); }");
+        String msg;
+        try { msg = saveCancelAndGetMessageCore(); }
+        finally { page.offResponse(watcher); }
+        Object t = page.evaluate("() => [...document.querySelectorAll('#toast-container .toast')].map(x=>(x.textContent||'').replace(/\\s+/g,' ').trim().replace(/^[^A-Za-z0-9]+/,'').replace(/^KPJ\\s*Portal\\s*/,'')).filter(Boolean).join(' | ')");
+        String toast = t == null ? "" : t.toString();
+        lastCancelAnswer = (answers.isEmpty() ? "no UpdateAdmission answer seen" : "server answered " + String.join(" ; ", answers)) + (toast.isEmpty() ? "" : "; the screen showed \"" + toast + "\"");
+        System.out.println("saveCancelAndGetMessage: " + lastCancelAnswer);
+        return msg;
+    }
+
     /**
      * Click <b>Save</b> in the popup and confirm the cancellation. The success shows inside the popup —
      * the "Cancellation Remark" table gains a row ("reason | Added By | Cancellation Date"), replacing
      * "No records found". Returns "Admission Cancelled Successfully! (row…)", or "" if it didn't record.
      */
-    public String saveCancelAndGetMessage() {
+    private String saveCancelAndGetMessageCore() {
         Object tagged = page.evaluate("() => { const box=[...document.querySelectorAll('.ng-confirm-box,.jconfirm')].find(m=>m.offsetParent!==null); if(!box) return false;"
                 + " const b=[...box.querySelectorAll('button,a')].find(x=>/^\\s*save\\s*$/i.test((x.textContent||'').trim()) && x.offsetParent!==null); if(!b) return false; b.id='__ccSave'; return true; }");
         if (!Boolean.TRUE.equals(tagged)) { System.out.println("saveCancelAndGetMessage: Save button not found"); return ""; }
@@ -754,6 +884,7 @@ public class EmergencyListView extends BasePage {
      * (a Remark textarea + Save/Close). Returns true if the popup opened.
      */
     public boolean clickCloseAdmission() {
+        ensureSelected();
         Object tagged = page.evaluate("() => { const b=[...document.querySelectorAll('button,a')].find(x=>/^\\s*close admission\\s*$/i.test((x.textContent||'').replace(/\\s+/g,' ').trim()) && x.offsetParent!==null); if(!b) return 'none'; if(b.disabled) return 'disabled'; b.id='__closeAdmBtn'; return true; }");
         String st = String.valueOf(tagged);
         if ("disabled".equals(st)) { System.out.println("clickCloseAdmission: button disabled (needs the All Inpatients filter)"); return false; }
@@ -781,7 +912,7 @@ public class EmergencyListView extends BasePage {
      * captured via a MutationObserver.
      */
     public String saveCloseAdmissionAndGetToast() {
-        Object tagged = page.evaluate("() => { window.__clToasts=[]; if(window.__clObs) window.__clObs.disconnect();"
+        Object tagged = page.evaluate("() => { window.__clToasts=[]; try{ if(window.toastr) toastr.clear(); }catch(e){} document.querySelectorAll('#toast-container .toast,.toast-message').forEach(t=>{ try{ t.remove(); }catch(e){} }); if(window.__clObs) window.__clObs.disconnect();"
                 + " const grab=()=>{ document.querySelectorAll('.toast-message,.toast,[id^=toast]').forEach(el=>{ const t=(el.textContent||'').replace(/\\s+/g,' ').trim(); if(t && !window.__clToasts.includes(t)) window.__clToasts.push(t); }); };"
                 + " window.__clObs=new MutationObserver(grab); window.__clObs.observe(document.body,{childList:true,subtree:true});"
                 + " const m=[...document.querySelectorAll('.modal-content,.modal')].find(x=>x.offsetParent!==null && /close admission/i.test(x.textContent||'')); if(!m) return false;"
@@ -819,22 +950,35 @@ public class EmergencyListView extends BasePage {
      * search can return 0 under load). Returns the row count.
      */
     public int useClosedAdmissionFilter(String targetMrn) {
-        page.evaluate("() => { let sc=null; document.querySelectorAll('*').forEach(el=>{ if(sc)return; try{ const s=angular.element(el).scope(); let x=s; for(let i=0;i<15&&x;i++){ if(typeof x.SearchBtnClick==='function' && typeof x.OpenRevokeTypeModal==='function'){sc=x;break;} x=x.$parent; } }catch(e){} });"
-                + " if(!sc) return; sc.$apply(()=>{ if(!sc.AdmissionList) sc.AdmissionList={}; sc.AdmissionList.Admitted=false; sc.AdmissionList.AllPatient=false; sc.AdmissionList.ClosedVisit=true;"
-                + "   sc.AdmissionList.FromDate='01/01/2026'; sc.AdmissionList.ToDate='31/12/2026'; }); }");
-        // The just-closed patient can take a few seconds to surface in the Closed list (server lag/throttle);
-        // re-search until the SPECIFIC MRN appears (up to ~6 tries), not merely until any rows load.
+        // The Closed Admission filter is a RADIO button (a real click), and the date range must END TODAY or earlier. The query is SLOW
+        // (about 10 s): the old code re-clicked Search every ~3 s, which restarted it each time so the grid never filled — click once and wait.
+        if (!tickFilter("Closed Admission")) System.out.println("useClosedAdmissionFilter: the 'Closed Admission' filter was not found");
+        java.time.format.DateTimeFormatter dmy = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy");
+        String from = java.time.LocalDate.now().minusMonths(6).format(dmy), to = java.time.LocalDate.now().format(dmy);
+        page.evaluate("(a) => { const setVal=(e,v)=>{ const c=angular.element(e).controller('ngModel'); e.value=v; if(c){c.$setViewValue(v);c.$render();} e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true})); };"
+                + " const q=n=>[...document.querySelectorAll('input')].find(x=>x.getAttribute('ng-model')===n && x.offsetParent!==null);"
+                + " const f=q('AdmissionList.FromDate'), t=q('AdmissionList.ToDate'), m=q('AdmissionList.MRNo'); if(f) setVal(f,a[0]); if(t) setVal(t,a[1]); if(m) setVal(m,''); }",
+                java.util.Arrays.asList(from, to));
         String rowsFor = "(mrn) => { let gs=null; document.querySelectorAll('*').forEach(el=>{ if(gs)return; try{ const s=angular.element(el).scope(); if(s&&s.grid&&s.grid.options&&Array.isArray(s.grid.options.data)) gs=s; }catch(e){} }); if(!gs) return {n:0,hit:false}; const d=gs.grid.options.data; const getk=(o,ks)=>{ for(const k of ks){ for(const kk in o){ if(kk.toLowerCase()===k){ const v=o[kk]; if(v!=null&&(''+v).trim()) return (''+v).trim(); } } } return ''; }; return { n:d.length, hit: mrn!=null && d.some(x=>getk(x,['mrno','mrnno','mrn','mrnumber'])===String(mrn)) }; }";
         int rows = 0;
-        for (int attempt = 0; attempt < 6; attempt++) {
-            page.evaluate("() => { let sc=null; document.querySelectorAll('*').forEach(el=>{ if(sc)return; try{ const s=angular.element(el).scope(); let x=s; for(let i=0;i<15&&x;i++){ if(typeof x.SearchBtnClick==='function' && typeof x.OpenRevokeTypeModal==='function'){sc=x;break;} x=x.$parent; } }catch(e){} }); if(sc) sc.$apply(()=>{ try{ sc.SearchBtnClick(2); }catch(e){} }); }");
-            waitForAngular(2800);
-            Object res = page.evaluate(rowsFor, targetMrn);
-            @SuppressWarnings("unchecked") java.util.Map<String,Object> m = (java.util.Map<String,Object>) res;
-            rows = m.get("n") == null ? 0 : ((Number) m.get("n")).intValue();
-            boolean hit = Boolean.TRUE.equals(m.get("hit"));
-            if (hit) { System.out.println("useClosedAdmissionFilter: found MRN " + targetMrn + " (" + rows + " closed rows) on attempt " + (attempt + 1)); waitForAngular(400); return rows; }
-            System.out.println("useClosedAdmissionFilter: MRN " + targetMrn + " not in closed list yet (attempt " + (attempt + 1) + ", " + rows + " rows) — retrying");
+        for (int attempt = 0; attempt < 3; attempt++) {
+            // click Search ONCE and wait for THIS query's answer (the grid keeps its previous rows until it arrives)
+            searchAndWait();
+            // then look for the specific MRN (a few seconds' grace for the grid to render)
+            for (int k = 0; k < 6; k++) {
+                waitForAngular(1000);
+                Object res = page.evaluate(rowsFor, targetMrn);
+                @SuppressWarnings("unchecked") java.util.Map<String,Object> m = (java.util.Map<String,Object>) res;
+                rows = m.get("n") == null ? 0 : ((Number) m.get("n")).intValue();
+                if (Boolean.TRUE.equals(m.get("hit"))) {
+                    System.out.println("useClosedAdmissionFilter: found MRN " + targetMrn + " (" + rows + " closed rows) on attempt " + (attempt + 1) + " after ~" + (k + 1) + " s");
+                    waitForAngular(400);
+                    return rows;
+                }
+                if (targetMrn == null && rows > 0) return rows;
+            }
+            if (targetMrn == null) return rows;
+            System.out.println("useClosedAdmissionFilter: MRN " + targetMrn + " not in the closed list after the search answered (attempt " + (attempt + 1) + ", " + rows + " rows) — searching again");
         }
         return rows;
     }
@@ -861,6 +1005,7 @@ public class EmergencyListView extends BasePage {
                 + " const name=getk(p,['patientname','name','pname']); const m2=getk(p,['mrno','mrnno','mrn','mrnumber']); return (name||'(patient)')+' / MRN '+(m2||'-'); }", mrn);
         String s = r == null ? null : r.toString();
         if (s != null && s.startsWith("ERR:")) { System.out.println("reselectPatientByMrn(" + mrn + "): " + s); return null; }
+        lastSelectedAdmissionId = null;   // this descriptor carries no AdmissionId - never re-select an older patient in its place
         waitForAngular(500);
         return s;
     }
@@ -880,6 +1025,7 @@ public class EmergencyListView extends BasePage {
      * isRevokeAdmission==true}). Returns true if the popup opened.
      */
     public boolean clickRevokeAdmission() {
+        ensureSelected();
         Object tagged = page.evaluate("() => { const b=[...document.querySelectorAll('button,a')].find(x=>/^\\s*revoke admission\\s*$/i.test((x.textContent||'').replace(/\\s+/g,' ').trim()) && x.offsetParent!==null); if(!b) return 'none'; if(b.disabled) return 'disabled'; b.id='__revokeAdmBtn'; return true; }");
         String st = String.valueOf(tagged);
         if (Boolean.TRUE.equals(tagged)) {
@@ -924,7 +1070,7 @@ public class EmergencyListView extends BasePage {
      * MutationObserver. Scoped to the Revoke modal so it doesn't grab the Close popup's Save.
      */
     public String saveRevokeAdmissionAndGetToast() {
-        Object tagged = page.evaluate("() => { window.__rvToasts=[]; if(window.__rvObs) window.__rvObs.disconnect();"
+        Object tagged = page.evaluate("() => { window.__rvToasts=[]; try{ if(window.toastr) toastr.clear(); }catch(e){} document.querySelectorAll('#toast-container .toast,.toast-message').forEach(t=>{ try{ t.remove(); }catch(e){} }); if(window.__rvObs) window.__rvObs.disconnect();"
                 + " const grab=()=>{ document.querySelectorAll('.toast-message,.toast,[id^=toast]').forEach(el=>{ const t=(el.textContent||'').replace(/\\s+/g,' ').trim(); if(t && !window.__rvToasts.includes(t)) window.__rvToasts.push(t); }); };"
                 + " window.__rvObs=new MutationObserver(grab); window.__rvObs.observe(document.body,{childList:true,subtree:true}); grab();"
                 + " const m=document.querySelector('#RevokeType') || [...document.querySelectorAll('.modal-content,.modal')].find(x=>x.offsetParent!==null && /revoke admission/i.test(x.textContent||'')); if(!m) return false;"
@@ -1018,7 +1164,7 @@ public class EmergencyListView extends BasePage {
      * (expect <b>"Advice Discharge saved successfully."</b>), captured via a MutationObserver.
      */
     public String savePlanDischargeAndGetToast() {
-        Object tagged = page.evaluate("() => { window.__pdToasts=[]; if(window.__pdObs) window.__pdObs.disconnect();"
+        Object tagged = page.evaluate("() => { window.__pdToasts=[]; try{ if(window.toastr) toastr.clear(); }catch(e){} document.querySelectorAll('#toast-container .toast,.toast-message').forEach(t=>{ try{ t.remove(); }catch(e){} }); if(window.__pdObs) window.__pdObs.disconnect();"
                 + " const grab=()=>{ document.querySelectorAll('.toast-message,.toast,[id^=toast]').forEach(el=>{ const t=(el.textContent||'').replace(/\\s+/g,' ').trim(); if(t && !window.__pdToasts.includes(t)) window.__pdToasts.push(t); }); };"
                 + " window.__pdObs=new MutationObserver(grab); window.__pdObs.observe(document.body,{childList:true,subtree:true}); grab();"
                 + " const m=document.querySelector('#adviseDischrg'); if(!m) return false;"
@@ -1055,6 +1201,7 @@ public class EmergencyListView extends BasePage {
      * dropdowns, Add, Save, Close). One real click opens the modal (bootstrap data-target). Returns true if it opened.
      */
     public boolean clickChangeReferEntity() {
+        ensureSelected();
         Object tagged = page.evaluate("() => { const b=[...document.querySelectorAll('button,a')].find(x=>/^\\s*change refer entity\\s*$/i.test((x.textContent||'').replace(/\\s+/g,' ').trim()) && x.offsetParent!==null); if(!b) return 'none'; if(b.disabled) return 'disabled'; b.id='__chgRefBtn'; return true; }");
         String st = String.valueOf(tagged);
         if (Boolean.TRUE.equals(tagged)) {
@@ -1117,7 +1264,7 @@ public class EmergencyListView extends BasePage {
      * <b>"Refer Entity Added Succesfully."</b> — the app's own spelling), captured via a MutationObserver.
      */
     public String saveReferEntityAndGetToast() {
-        Object tagged = page.evaluate("() => { window.__reToasts=[]; if(window.__reObs) window.__reObs.disconnect();"
+        Object tagged = page.evaluate("() => { window.__reToasts=[]; try{ if(window.toastr) toastr.clear(); }catch(e){} document.querySelectorAll('#toast-container .toast,.toast-message').forEach(t=>{ try{ t.remove(); }catch(e){} }); if(window.__reObs) window.__reObs.disconnect();"
                 + " const grab=()=>{ document.querySelectorAll('.toast-message,.toast,[id^=toast]').forEach(el=>{ const t=(el.textContent||'').replace(/\\s+/g,' ').trim(); if(t && !window.__reToasts.includes(t)) window.__reToasts.push(t); }); };"
                 + " window.__reObs=new MutationObserver(grab); window.__reObs.observe(document.body,{childList:true,subtree:true}); grab();"
                 + " const m=document.querySelector('#chngRefEnty'); if(!m) return false;"
@@ -1157,7 +1304,43 @@ public class EmergencyListView extends BasePage {
     }
 
     /**
-     * Emulate the footer <b>Consent2</b> link (an {@code <a href="#/admission-consent/{admissionId}/" target="_blank">})
+     * Open <b>Consent2</b> the way a user does: click the footer link ({@code <a target="_blank" rel="opener"
+     * href="#/admission-consent/{SelectedPatientID}/{SelectedMRNo}">}) and return the NEW TAB it opens once its consent form dropdown
+     * ({@code consent.consentid}) has loaded, or null. Since build v2026.11.17.488 the route is {@code /admission-consent/:admisionId/:MRNo} and a typed
+     * or hash navigation to it is bounced back to the list by the app, so the real link click is the only way in. The returned tab is where the
+     * consent form is filled — wrap it in {@code new EmergencyListView(tab)} to reuse {@link #selectSpcConsentAndAdd()} and the other consent steps.
+     * (The list screen itself holds a Consent modal with a {@code consent.consentid} select, so the dropdown must be looked for in the NEW tab.)
+     */
+    public com.microsoft.playwright.Page openConsent2FromLink() {
+        ensureSelected();
+        Object tagged = page.evaluate("() => { const a=[...document.querySelectorAll('a')].find(x=>/^\\s*consent2\\s*$/i.test((x.textContent||'').trim()) && x.offsetParent!==null); if(!a) return false; a.id='__emConsent2'; return true; }");
+        if (!Boolean.TRUE.equals(tagged)) { System.out.println("openConsent2FromLink: the Consent2 link was not found"); return null; }
+        com.microsoft.playwright.Page tab = null;
+        try {
+            tab = page.context().waitForPage(new com.microsoft.playwright.BrowserContext.WaitForPageOptions().setTimeout(20000), () -> {
+                try { page.locator("#__emConsent2").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000)); }
+                catch (Exception e) { System.out.println("openConsent2FromLink: click failed - " + e.getMessage()); }
+            });
+        } catch (Exception e) {
+            System.out.println("openConsent2FromLink: no new tab opened - " + e.getMessage());
+            return null;
+        } finally {
+            page.evaluate("() => { const e=document.getElementById('__emConsent2'); if(e) e.removeAttribute('id'); }");
+        }
+        try {
+            tab.waitForFunction("() => window.angular && [...document.querySelectorAll('select')].some(s=>s.getAttribute('ng-model')==='consent.consentid' && s.options.length>1)",
+                    null, new Page.WaitForFunctionOptions().setTimeout(30000));
+        } catch (Exception e) {
+            System.out.println("openConsent2FromLink: the consent form dropdown did not load in the new tab (" + tab.url() + ")");
+            return null;
+        }
+        tab.waitForTimeout(900);
+        return tab;
+    }
+
+    /**
+     * (Superseded by {@link #openConsent2FromLink()} — the app bounces a typed navigation to this route since build v2026.11.17.488, and the route
+     * now takes {@code :admisionId/:MRNo}.) Emulate the footer <b>Consent2</b> link (an {@code <a href="#/admission-consent/{admissionId}/" target="_blank">})
      * for the selected patient: navigate to that route and wait for the consent form dropdown
      * ({@code consent.consentid}). We navigate with the REAL AdmissionId (the on-screen link's href carries a
      * placeholder id). Returns true if the consent page loaded.
@@ -1226,7 +1409,7 @@ public class EmergencyListView extends BasePage {
      */
     public String saveConsentAndGetToast() {
         page.evaluate("() => { try{ if(typeof CKEDITOR!=='undefined'){ for(const k in CKEDITOR.instances){ try{ CKEDITOR.instances[k].updateElement(); }catch(e){} } } }catch(e){}"
-                + " window.__csToasts=[]; if(window.__csObs) window.__csObs.disconnect();"
+                + " window.__csToasts=[]; try{ if(window.toastr) toastr.clear(); }catch(e){} document.querySelectorAll('#toast-container .toast,.toast-message').forEach(t=>{ try{ t.remove(); }catch(e){} }); if(window.__csObs) window.__csObs.disconnect();"
                 + " const grab=()=>{ document.querySelectorAll('.toast-message,.toast,[id^=toast]').forEach(el=>{ const t=(el.textContent||'').replace(/\\s+/g,' ').trim(); if(t && !window.__csToasts.includes(t)) window.__csToasts.push(t); }); };"
                 + " window.__csObs=new MutationObserver(grab); window.__csObs.observe(document.body,{childList:true,subtree:true}); grab();"
                 + " const b=[...document.querySelectorAll('button,a')].find(x=>(x.getAttribute('ng-click')||'').indexOf('IUDconsentdetail')>=0 && x.offsetParent!==null); if(b) b.click(); }");
@@ -1252,6 +1435,7 @@ public class EmergencyListView extends BasePage {
      * (with its eye/View icon) or the empty-state <b>"No records found."</b>. Returns true if the modal opened.
      */
     public boolean clickViewConsent() {
+        ensureSelected();
         page.evaluate("() => { const $=window.jQuery||window.$;"
                 + " ['#consent','#viewConsentFormsModal'].forEach(id=>{ try{ if($) $(id).modal('hide'); }catch(e){} });"
                 + " [...document.querySelectorAll('.modal-backdrop')].forEach(b=>b.remove()); document.body.classList.remove('modal-open'); }");
@@ -1382,7 +1566,7 @@ public class EmergencyListView extends BasePage {
      * print preview), per the flow: open → tick Small Size → Save → verify toast → Close.
      */
     public String saveBarcodeAndGetToast() {
-        page.evaluate("() => { window.__bcToasts=[]; if(window.__bcObs) window.__bcObs.disconnect();"
+        page.evaluate("() => { window.__bcToasts=[]; try{ if(window.toastr) toastr.clear(); }catch(e){} document.querySelectorAll('#toast-container .toast,.toast-message').forEach(t=>{ try{ t.remove(); }catch(e){} }); if(window.__bcObs) window.__bcObs.disconnect();"
                 + " const grab=()=>{ document.querySelectorAll('.toast-message,.toast,[id^=toast]').forEach(el=>{ const t=(el.textContent||'').replace(/\\s+/g,' ').trim(); if(t && !window.__bcToasts.includes(t)) window.__bcToasts.push(t); }); };"
                 + " window.__bcObs=new MutationObserver(grab); window.__bcObs.observe(document.body,{childList:true,subtree:true}); grab();"
                 + " const m=[...document.querySelectorAll('.modal,[role=dialog]')].find(x=>x.getBoundingClientRect().width>0 && /barcode/i.test(x.textContent||''));"
@@ -1419,6 +1603,7 @@ public class EmergencyListView extends BasePage {
      * zone {@code <select>}. Returns true if the modal opened.
      */
     public boolean clickAssignTriage() {
+        ensureSelected();
         Object clicked = page.evaluate("() => { const b=[...document.querySelectorAll('button,a')].find(x=>(x.getAttribute('ng-click')||'').indexOf('BtnAssignTriage')>=0 && x.offsetParent!==null)"
                 + " || [...document.querySelectorAll('button,a')].find(x=>/^\\s*assign triage\\s*$/i.test((x.textContent||'').replace(/\\s+/g,' ').trim()) && x.offsetParent!==null);"
                 + " if(!b) return 'no-button';"
@@ -1462,7 +1647,7 @@ public class EmergencyListView extends BasePage {
      * toast (captured via a MutationObserver — the slow-toast pattern). Expected: "Triage Assigned Successfully.".
      */
     public String saveTriageAndGetToast() {
-        page.evaluate("() => { window.__tgToasts=[]; if(window.__tgObs) window.__tgObs.disconnect();"
+        page.evaluate("() => { window.__tgToasts=[]; try{ if(window.toastr) toastr.clear(); }catch(e){} document.querySelectorAll('#toast-container .toast,.toast-message').forEach(t=>{ try{ t.remove(); }catch(e){} }); if(window.__tgObs) window.__tgObs.disconnect();"
                 + " const grab=()=>{ document.querySelectorAll('.toast-message,.toast,[id^=toast]').forEach(el=>{ const t=(el.textContent||'').replace(/\\s+/g,' ').trim(); if(t && !window.__tgToasts.includes(t)) window.__tgToasts.push(t); }); };"
                 + " window.__tgObs=new MutationObserver(grab); window.__tgObs.observe(document.body,{childList:true,subtree:true}); grab();"
                 + " const m=[...document.querySelectorAll('.modal,[role=dialog]')].find(x=>x.getBoundingClientRect().width>0 && /triage/i.test(x.textContent||''));"
@@ -1499,6 +1684,7 @@ public class EmergencyListView extends BasePage {
      * from a live screen) — tighten if a step logs "not found". Returns true if the picker opened.
      */
     public boolean clickAssignBed() {
+        ensureSelected();
         Object tagged = page.evaluate("() => { const b=[...document.querySelectorAll('button,a')].find(x=>(x.getAttribute('ng-click')||'').indexOf('fnOnBedClick')>=0 && x.offsetParent!==null)"
                 + " || [...document.querySelectorAll('button,a')].find(x=>/^\\s*assign bed\\s*$/i.test((x.textContent||'').replace(/\\s+/g,' ').trim()) && x.offsetParent!==null);"
                 + " if(!b) return false; b.id='__emAssignBed'; return true; }");
@@ -1545,7 +1731,7 @@ public class EmergencyListView extends BasePage {
                 + "       try{ sc.$apply(()=>{ if(v.ent) v.ent.isbedselect=true; if(typeof sc.SelectedBedCensus==='function') sc.SelectedBedCensus(v.ent); }); }catch(e){}"
                 // Click Update (FnSaveAssignBed) IMMEDIATELY, in this same evaluate — the grid auto-refresh clears
                 // CensusBedList a moment later, and FnSaveAssignBed answers 'Please Select Bed!' if the list is empty.
-                + "       window.__abToasts=[]; if(window.__abObs) window.__abObs.disconnect(); const grab=()=>{ document.querySelectorAll('.toast-message,.toast,[id^=toast]').forEach(el=>{ const t=(el.textContent||'').replace(/\\s+/g,' ').trim(); if(t && !window.__abToasts.includes(t)) window.__abToasts.push(t); }); }; window.__abObs=new MutationObserver(grab); window.__abObs.observe(document.body,{childList:true,subtree:true}); grab();"
+                + "       window.__abToasts=[]; try{ if(window.toastr) toastr.clear(); }catch(e){} document.querySelectorAll('#toast-container .toast,.toast-message').forEach(t=>{ try{ t.remove(); }catch(e){} }); if(window.__abObs) window.__abObs.disconnect(); const grab=()=>{ document.querySelectorAll('.toast-message,.toast,[id^=toast]').forEach(el=>{ const t=(el.textContent||'').replace(/\\s+/g,' ').trim(); if(t && !window.__abToasts.includes(t)) window.__abToasts.push(t); }); }; window.__abObs=new MutationObserver(grab); window.__abObs.observe(document.body,{childList:true,subtree:true}); grab();"
                 + "       const sv=[...m.querySelectorAll('button,a')].find(x=>/FnSaveAssignBed/.test(x.getAttribute('ng-click')||'') && x.offsetParent!==null); if(sv) sv.click();"
                 + "       return 'Bed='+v.text; } } }"
                 + " return 'NONE'; }");
@@ -1599,7 +1785,7 @@ public class EmergencyListView extends BasePage {
      * choosing the file. Toast captured via the MutationObserver slow-toast pattern. Returns the toast text.
      */
     public String attachSignatureAndGetToast(String filePath) {
-        page.evaluate("() => { window.__sigToasts=[]; if(window.__sigObs) window.__sigObs.disconnect();"
+        page.evaluate("() => { window.__sigToasts=[]; try{ if(window.toastr) toastr.clear(); }catch(e){} document.querySelectorAll('#toast-container .toast,.toast-message').forEach(t=>{ try{ t.remove(); }catch(e){} }); if(window.__sigObs) window.__sigObs.disconnect();"
                 + " const grab=()=>{ document.querySelectorAll('.toast-message,.toast,[id^=toast]').forEach(el=>{ const t=(el.textContent||'').replace(/\\s+/g,' ').trim(); if(t && !window.__sigToasts.includes(t)) window.__sigToasts.push(t); }); };"
                 + " window.__sigObs=new MutationObserver(grab); window.__sigObs.observe(document.body,{childList:true,subtree:true}); grab(); }");
         try {
@@ -1673,7 +1859,7 @@ public class EmergencyListView extends BasePage {
         if ("no-button".equals(st)) { System.out.println("clickReferredPatients: 'Referred Patients' button not found"); return "NONE"; }
         if ("disabled".equals(st)) { System.out.println("clickReferredPatients: button not enabled"); return "NONE"; }
         // Arm the toast observer BEFORE the click so a fast "No Records Found" can't be missed.
-        page.evaluate("() => { window.__rpToasts=[]; if(window.__rpObs) window.__rpObs.disconnect();"
+        page.evaluate("() => { window.__rpToasts=[]; try{ if(window.toastr) toastr.clear(); }catch(e){} document.querySelectorAll('#toast-container .toast,.toast-message').forEach(t=>{ try{ t.remove(); }catch(e){} }); if(window.__rpObs) window.__rpObs.disconnect();"
                 + " window.__rpObs=new MutationObserver(()=>{ document.querySelectorAll('.toast-message,.toast,[id^=toast]').forEach(el=>{ const t=(el.textContent||'').replace(/\\s+/g,' ').trim(); if(t && !window.__rpToasts.includes(t)) window.__rpToasts.push(t); }); });"
                 + " window.__rpObs.observe(document.body,{childList:true,subtree:true}); }");
         try { page.locator("#__rpBtn").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000)); }
@@ -1835,6 +2021,7 @@ public class EmergencyListView extends BasePage {
                     + " return b ? !b.disabled : false; }");
             if (Boolean.TRUE.equals(enabled)) {
                 System.out.println("selectPatientEligibleForCompanyApproveAmounts: found enabled row - " + desc);
+                rememberSelection(desc);
                 return desc;
             }
         }
@@ -1851,6 +2038,7 @@ public class EmergencyListView extends BasePage {
      * doesn't open it, invoke the button's {@code ng-click} expression directly on its Angular scope.
      */
     public boolean clickCompanyApproveAmounts() {
+        ensureSelected();
         Object tagged = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
                 + " const b=[...document.querySelectorAll('button,a')].find(x=>/CompanyApprove/i.test(x.getAttribute('ng-click')||'') && x.offsetParent!==null)"
                 + " || [...document.querySelectorAll('button,a')].find(x=>/^\\s*company\\s*approved?\\s*amounts?\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null);"
@@ -1898,6 +2086,11 @@ public class EmergencyListView extends BasePage {
      * has NO real option, that is called out explicitly as {@code "EMPTY DROPDOWN: <ng-model>"}.
      */
     public String fillCompanyApproveAmountDetails() {
+        // The Payor list (~430 companies) arrives about 1.2 s AFTER the modal appears; reading it earlier saw an empty dropdown.
+        try {
+            page.waitForFunction("() => { const m=" + CAA_MODAL_JS + "; const s=m&&[...m.querySelectorAll(\"[ng-model='Company.companyid']\")].find(x=>x.offsetParent!==null); return !!s && s.options.length>2; }",
+                    null, new Page.WaitForFunctionOptions().setTimeout(15000));
+        } catch (Exception e) { System.out.println("fillCompanyApproveAmountDetails: the Payor dropdown did not fill within 15s"); }
         Object r = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
                 + " const m=" + CAA_MODAL_JS + "; if(!m) return '(modal gone)';"
                 + " const el=ng=>[...m.querySelectorAll(\"[ng-model='\"+ng+\"']\")].find(x=>x.offsetParent!==null);"
@@ -1937,7 +2130,7 @@ public class EmergencyListView extends BasePage {
                 + " const btns=[...m.querySelectorAll('button')].filter(b=>b.offsetParent!==null).map(b=>norm(b.textContent)+'['+(b.getAttribute('ng-click')||'')+']');"
                 + " return 'fields=['+fields.join(' || ')+'] buttons=['+btns.join(' || ')+']'; }");
         System.out.println("addCompanyApproveAmountAndGetToast: pre-add state -> " + diag);
-        page.evaluate("() => { window.__caaToasts=[]; if(window.__caaObs) window.__caaObs.disconnect();"
+        page.evaluate("() => { window.__caaToasts=[]; try{ if(window.toastr) toastr.clear(); }catch(e){} document.querySelectorAll('#toast-container .toast,.toast-message').forEach(t=>{ try{ t.remove(); }catch(e){} }); if(window.__caaObs) window.__caaObs.disconnect();"
                 + " window.__caaObs=new MutationObserver(()=>{ document.querySelectorAll('.toast-message,.toast,[id^=toast]').forEach(el=>{ const t=(el.textContent||'').trim(); if(t && !window.__caaToasts.includes(t)) window.__caaToasts.push(t); }); });"
                 + " window.__caaObs.observe(document.body,{childList:true,subtree:true});"
                 + " const m=" + CAA_MODAL_JS + "; const scope=m||document;"
@@ -1976,25 +2169,27 @@ public class EmergencyListView extends BasePage {
     // Ported from OP > Outpatient Queue Management's Convert IPD Charges.
 
     /**
-     * Click the footer <b>Convert IPD Charges</b> button and wait for its confirm dialog (or a direct toast
-     * if the app skips confirmation for this patient). Returns <b>"confirm"</b> (dialog appeared),
+     * Click the footer <b>Convert Opd Charges</b> button ({@code fncheckOpdCharges()}; it was "Convert IPD Charges" before build
+     * v2026.11.17.488) and wait for its confirm dialog (or a direct toast — "No Unbilled Opd Charges!" when the patient has nothing to
+     * convert). Returns <b>"confirm"</b> (dialog appeared),
      * <b>"toast:&lt;text&gt;"</b> (a toast fired directly), or <b>"none"</b> (neither appeared — try the next
      * patient).
      */
     public String clickConvertIpdCharges() {
+        ensureSelected();
         Object found = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                + " const b=[...document.querySelectorAll('button,a')].find(x=>/ConvertIPD|ConvertIpdCharges/i.test(x.getAttribute('ng-click')||'') && x.offsetParent!==null)"
-                + " || [...document.querySelectorAll('button,a')].find(x=>/convert.{0,3}ipd.{0,3}charges/i.test(norm(x.textContent)) && x.offsetParent!==null);"
+                + " const b=[...document.querySelectorAll('button,a')].find(x=>/ConvertIPD|ConvertIpdCharges|checkOpdCharges/i.test(x.getAttribute('ng-click')||'') && x.offsetParent!==null)"
+                + " || [...document.querySelectorAll('button,a')].find(x=>/convert.{0,3}(ipd|opd).{0,3}charges/i.test(norm(x.textContent)) && x.offsetParent!==null);"
                 + " if(!b) return 'no-button'; return (b.disabled?'disabled:':'ok:')+norm(b.textContent)+'['+(b.getAttribute('ng-click')||'')+']'; }");
         String fs = String.valueOf(found);
         if ("no-button".equals(fs)) { System.out.println("clickConvertIpdCharges: 'Convert IPD Charges' button not found on this screen"); return "none"; }
         if (fs.startsWith("disabled:")) { System.out.println("clickConvertIpdCharges: button disabled for this patient - " + fs); return "none"; }
-        page.evaluate("() => { window.__cicToasts=[]; if(window.__cicObs) window.__cicObs.disconnect();"
+        page.evaluate("() => { window.__cicToasts=[]; try{ if(window.toastr) toastr.clear(); }catch(e){} document.querySelectorAll('#toast-container .toast,.toast-message').forEach(t=>{ try{ t.remove(); }catch(e){} }); if(window.__cicObs) window.__cicObs.disconnect();"
                 + " window.__cicObs=new MutationObserver(()=>{ document.querySelectorAll('.toast-message,.toast,[id^=toast]').forEach(el=>{ const t=(el.textContent||'').trim(); if(t && !window.__cicToasts.includes(t)) window.__cicToasts.push(t); }); });"
                 + " window.__cicObs.observe(document.body,{childList:true,subtree:true});"
                 + " const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                + " const b=[...document.querySelectorAll('button,a')].find(x=>/ConvertIPD|ConvertIpdCharges/i.test(x.getAttribute('ng-click')||'') && x.offsetParent!==null)"
-                + " || [...document.querySelectorAll('button,a')].find(x=>/convert.{0,3}ipd.{0,3}charges/i.test(norm(x.textContent)) && x.offsetParent!==null);"
+                + " const b=[...document.querySelectorAll('button,a')].find(x=>/ConvertIPD|ConvertIpdCharges|checkOpdCharges/i.test(x.getAttribute('ng-click')||'') && x.offsetParent!==null)"
+                + " || [...document.querySelectorAll('button,a')].find(x=>/convert.{0,3}(ipd|opd).{0,3}charges/i.test(norm(x.textContent)) && x.offsetParent!==null);"
                 + " if(b) b.click(); }");
         for (int i = 0; i < 30; i++) {
             boolean dlg = Boolean.TRUE.equals(page.evaluate(
@@ -2054,6 +2249,7 @@ public class EmergencyListView extends BasePage {
      * Returns true if the modal opened.
      */
     public boolean clickFallRiskAssessment() {
+        ensureSelected();
         Object tagged = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
                 + " const b=[...document.querySelectorAll('button,a')].find(x=>/fallrisk/i.test(x.getAttribute('ng-click')||'') && x.offsetParent!==null)"
                 + " || [...document.querySelectorAll('button,a')].find(x=>/^\\s*fall\\s*risk\\s*assessment\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null);"
@@ -2118,7 +2314,7 @@ public class EmergencyListView extends BasePage {
      * resulting success toast (verified live elsewhere: "Fall Risk Assessment saved successfully.").
      */
     public String saveFallRiskAssessmentAndGetToast() {
-        page.evaluate("() => { window.__fraToasts=[]; if(window.__fraObs) window.__fraObs.disconnect();"
+        page.evaluate("() => { window.__fraToasts=[]; try{ if(window.toastr) toastr.clear(); }catch(e){} document.querySelectorAll('#toast-container .toast,.toast-message').forEach(t=>{ try{ t.remove(); }catch(e){} }); if(window.__fraObs) window.__fraObs.disconnect();"
                 + " window.__fraObs=new MutationObserver(()=>{ document.querySelectorAll('.toast-message,.toast,[id^=toast]').forEach(el=>{ const t=(el.textContent||'').trim(); if(t && !window.__fraToasts.includes(t)) window.__fraToasts.push(t); }); });"
                 + " window.__fraObs.observe(document.body,{childList:true,subtree:true});"
                 + " const m=" + FRA_MODAL_JS + "; const scope=m||document;"
@@ -2167,9 +2363,11 @@ public class EmergencyListView extends BasePage {
                 + " const p=d.find(x=>!get(x,['mrdfileno'])) || d[0];"
                 + " try{ gs.grid.api.selection.clearSelectedRows(); }catch(e){} try{ gs.grid.api.selection.selectRow(p); }catch(e){}"
                 + " const name=get(p,['patientname','name','pname']); const mrn=get(p,['mrno','mrnno','mrn','mrnumber']);"
-                + " return (name||'(patient)')+' / MRN '+(mrn||'-'); }");
+                + " return (name||'(patient)')+' / MRN '+(mrn||'-')+' / Adm '+get(p,['admissionid']); }");
         waitForAngular(500);
-        return r == null ? null : r.toString();
+        String desc = r == null ? null : r.toString();
+        rememberSelection(desc);
+        return desc;
     }
 
     /**
@@ -2178,6 +2376,7 @@ public class EmergencyListView extends BasePage {
      * opened — the patient already has a file), or <b>"none"</b>.
      */
     public String clickRequestMrdFile() {
+        ensureSelected();
         int tabsBefore = page.context().pages().size();
         page.evaluate("() => { const b=[...document.querySelectorAll('button')].find(x=>x.getAttribute('ng-click')==='fnRequestMRDFile()' && x.offsetParent!==null); if(b) b.click(); }");
         for (int i = 0; i < 60; i++) {
@@ -2220,7 +2419,7 @@ public class EmergencyListView extends BasePage {
                 + " const pick=(ng)=>{ const e=[...m.querySelectorAll('select')].find(x=>x.getAttribute('ng-model')===ng); if(!e) return; const idx=[...e.options].findIndex(o=>o.value && !/^-*\\s*select/i.test((o.text||'').trim())); if(idx<0) return; e.selectedIndex=idx; e.dispatchEvent(new Event('change',{bubbles:true})); const $=window.jQuery||window.$; if($){try{$(e).trigger('change');}catch(err){}} };"
                 + " pick('MRDAllocation.rowid'); }");
         waitForAngular(1200);
-        page.evaluate("() => { window.__mrdToasts=[]; if(window.__mrdObs) window.__mrdObs.disconnect();"
+        page.evaluate("() => { window.__mrdToasts=[]; try{ if(window.toastr) toastr.clear(); }catch(e){} document.querySelectorAll('#toast-container .toast,.toast-message').forEach(t=>{ try{ t.remove(); }catch(e){} }); if(window.__mrdObs) window.__mrdObs.disconnect();"
                 + " window.__mrdObs=new MutationObserver(()=>{ document.querySelectorAll('.toast-message,.toast').forEach(el=>{ const t=(el.textContent||'').replace(/\\s+/g,' ').trim(); if(t && !window.__mrdToasts.includes(t)) window.__mrdToasts.push(t); }); });"
                 + " window.__mrdObs.observe(document.body,{childList:true,subtree:true});"
                 + " const m=[...document.querySelectorAll('.modal,[role=dialog]')].find(x=>x.getBoundingClientRect().width>0 && /mrd details/i.test(x.textContent||''));"
@@ -2257,9 +2456,11 @@ public class EmergencyListView extends BasePage {
                 + " const get=(o,ks)=>{ for(const k of ks){ for(const kk in o){ if(kk.toLowerCase()===k){ const v=o[kk]; if(v!=null&&(''+v).trim()) return (''+v).trim(); } } } return ''; };"
                 + " const p=d.find(x=>get(x,['mrdfileno'])); if(!p) return null;"
                 + " try{ gs.grid.api.selection.clearSelectedRows(); }catch(e){} try{ gs.grid.api.selection.selectRow(p); }catch(e){}"
-                + " const name=get(p,['patientname','name','pname']); return (name||'(patient)')+' | mrdfileno='+get(p,['mrdfileno']); }");
+                + " const name=get(p,['patientname','name','pname']); return (name||'(patient)')+' | mrdfileno='+get(p,['mrdfileno'])+' | Adm '+get(p,['admissionid']); }");
         waitForAngular(500);
-        return r == null ? null : r.toString();
+        String desc = r == null ? null : r.toString();
+        rememberSelection(desc);
+        return desc;
     }
 
     /**
@@ -2267,6 +2468,7 @@ public class EmergencyListView extends BasePage {
      * <b>MRDReturn</b> modal (its Save is {@code fnIUDReturn()}). Returns true if it opened.
      */
     public boolean clickReturnMrdFile() {
+        ensureSelected();
         page.evaluate("() => { const b=[...document.querySelectorAll('button,a')].find(x=>x.getAttribute('ng-click')==='fnReturnMRDFile()' && x.offsetParent!==null); if(b) b.click(); }");
         try {
             page.waitForFunction("() => [...document.querySelectorAll('.modal,[role=dialog]')].some(m=>m.getBoundingClientRect().width>0 && (/mrdreturn|mrd return/i.test(m.textContent||'') || m.querySelector(\"button[ng-click='fnIUDReturn()']\") || m.querySelector(\"[ng-model='MRDReturn.remark']\")))",
@@ -2293,7 +2495,7 @@ public class EmergencyListView extends BasePage {
         page.evaluate("() => { const m=[...document.querySelectorAll('.modal,[role=dialog]')].find(x=>x.getBoundingClientRect().width>0 && (/mrdreturn|mrd return/i.test(x.textContent||'') || x.querySelector(\"[ng-model='MRDReturn.remark']\"))); if(!m) return;"
                 + " const rk=[...m.querySelectorAll('input,textarea')].find(x=>x.getAttribute('ng-model')==='MRDReturn.remark'); if(rk){ const c=angular.element(rk).controller('ngModel'); rk.value='Automation return'; if(c){c.$setViewValue('Automation return');c.$render();} rk.dispatchEvent(new Event('input',{bubbles:true})); rk.dispatchEvent(new Event('change',{bubbles:true})); } }");
         waitForAngular(500);
-        page.evaluate("() => { window.__rmToasts=[]; if(window.__rmObs) window.__rmObs.disconnect();"
+        page.evaluate("() => { window.__rmToasts=[]; try{ if(window.toastr) toastr.clear(); }catch(e){} document.querySelectorAll('#toast-container .toast,.toast-message').forEach(t=>{ try{ t.remove(); }catch(e){} }); if(window.__rmObs) window.__rmObs.disconnect();"
                 + " window.__rmObs=new MutationObserver(()=>{ document.querySelectorAll('.toast-message,.toast,[id^=toast]').forEach(el=>{ const t=(el.textContent||'').replace(/\\s+/g,' ').trim(); if(t && !window.__rmToasts.includes(t)) window.__rmToasts.push(t); }); }); window.__rmObs.observe(document.body,{childList:true,subtree:true});"
                 + " const m=[...document.querySelectorAll('.modal,[role=dialog]')].find(x=>x.getBoundingClientRect().width>0 && (/mrdreturn|mrd return/i.test(x.textContent||'') || x.querySelector(\"[ng-model='MRDReturn.remark']\")));"
                 + " const b=m&&[...m.querySelectorAll('button')].find(x=>x.getAttribute('ng-click')==='fnIUDReturn()' && x.offsetParent!==null); if(b) b.id='__emRmSaveBtn'; }");
@@ -2359,6 +2561,7 @@ public class EmergencyListView extends BasePage {
      * true if the modal opened.
      */
     public boolean clickPatientStatus() {
+        ensureSelected();
         Object tagged = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
                 + " const b=[...document.querySelectorAll('button,a')].find(x=>/patientstatus|nextaction/i.test(x.getAttribute('ng-click')||'') && x.offsetParent!==null)"
                 + " || [...document.querySelectorAll('button,a')].find(x=>/^\\s*(next\\s*action\\s*)?patient\\s*status\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null);"
@@ -2405,6 +2608,11 @@ public class EmergencyListView extends BasePage {
      * if no such select was found (so a naming mismatch shows up in the log instead of a silent no-op).
      */
     public String selectPatientStatus() {
+        // the status list is filled a moment AFTER the popup appears; reading it straight away saw an empty dropdown
+        try {
+            page.waitForFunction("() => { const m=" + PS_MODAL_JS + "; const s=m&&[...m.querySelectorAll('select')].find(x=>x.offsetParent!==null); return !!s && s.options.length>1; }",
+                    null, new Page.WaitForFunctionOptions().setTimeout(15000));
+        } catch (Exception e) { System.out.println("selectPatientStatus: the status dropdown did not fill within 15 s"); }
         Object r = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
                 + " const m=" + PS_MODAL_JS + "; if(!m) return '(modal gone)';"
                 + " const labelOf=e=>{ let p=e.closest('.form-group,.row,div'); const l=p?p.querySelector('label,.control-label'):null; return l?norm(l.textContent):''; };"
@@ -2422,7 +2630,7 @@ public class EmergencyListView extends BasePage {
 
     /** Click Save/Submit/OK in the Patient Status modal and return the resulting success toast. */
     public String savePatientStatusAndGetToast() {
-        page.evaluate("() => { window.__psToasts=[]; if(window.__psObs) window.__psObs.disconnect();"
+        page.evaluate("() => { window.__psToasts=[]; try{ if(window.toastr) toastr.clear(); }catch(e){} document.querySelectorAll('#toast-container .toast,.toast-message').forEach(t=>{ try{ t.remove(); }catch(e){} }); if(window.__psObs) window.__psObs.disconnect();"
                 + " window.__psObs=new MutationObserver(()=>{ document.querySelectorAll('.toast-message,.toast,[id^=toast]').forEach(el=>{ const t=(el.textContent||'').trim(); if(t && !window.__psToasts.includes(t)) window.__psToasts.push(t); }); });"
                 + " window.__psObs.observe(document.body,{childList:true,subtree:true});"
                 + " const m=" + PS_MODAL_JS + "; const scope=m||document;"
@@ -2463,6 +2671,7 @@ public class EmergencyListView extends BasePage {
      * direct action with no fill-in popup), then returns the resulting success toast.
      */
     public String clickSendDepositRequestSmsAndGetToast() {
+        ensureSelected();
         Object tagged = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
                 + " const b=[...document.querySelectorAll('button,a')].find(x=>/depositrequest|depositsms/i.test(x.getAttribute('ng-click')||'') && x.offsetParent!==null)"
                 + " || [...document.querySelectorAll('button,a')].find(x=>/^\\s*send\\s*deposit\\s*request\\s*sms\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null);"
@@ -2470,7 +2679,7 @@ public class EmergencyListView extends BasePage {
         String st = String.valueOf(tagged);
         if ("no-button".equals(st)) { System.out.println("clickSendDepositRequestSmsAndGetToast: 'Send Deposit Request SMS' button not found"); return ""; }
         if ("disabled".equals(st)) { System.out.println("clickSendDepositRequestSmsAndGetToast: button not enabled for this patient"); return ""; }
-        page.evaluate("() => { window.__drsToasts=[]; if(window.__drsObs) window.__drsObs.disconnect();"
+        page.evaluate("() => { window.__drsToasts=[]; try{ if(window.toastr) toastr.clear(); }catch(e){} document.querySelectorAll('#toast-container .toast,.toast-message').forEach(t=>{ try{ t.remove(); }catch(e){} }); if(window.__drsObs) window.__drsObs.disconnect();"
                 + " window.__drsObs=new MutationObserver(()=>{ document.querySelectorAll('.toast-message,.toast,[id^=toast]').forEach(el=>{ const t=(el.textContent||'').trim(); if(t && !window.__drsToasts.includes(t)) window.__drsToasts.push(t); }); });"
                 + " window.__drsObs.observe(document.body,{childList:true,subtree:true}); }");
         try { page.locator("#__emDrsBtn").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000)); }
@@ -2505,6 +2714,7 @@ public class EmergencyListView extends BasePage {
      * (Patient Information / Correspondence / NOK / Payor / Visit — ~180 fields). Returns true if it opened.
      */
     public boolean clickViewDetails() {
+        ensureSelected();
         page.evaluate("() => { let b=[...document.querySelectorAll('button,a')].find(x=>/OpenPatientRegistrationPopupScreen/.test(x.getAttribute('ng-click')||'') && x.offsetParent!==null);"
                 + " if(!b) b=[...document.querySelectorAll('button')].find(x=>/^view\\s*details$/i.test((x.textContent||'').trim()) && x.offsetParent!==null); if(b) b.click(); }");
         try {
@@ -2660,10 +2870,13 @@ public class EmergencyListView extends BasePage {
     public String fillViewDetailsAll() {
         StringBuilder log = new StringBuilder();
         expandSection("^Patient Information$");
+        touchViewDetailsAsAUser();   // freeze the popup's "no changes" baseline BEFORE anything is filled (see that method)
         log.append("[Patient/Correspondence/NOK] ").append(fillViewDetailsMandatory());
         expandSection("^Payor Information$");
-        boolean payor = selectPayorSelf();
-        log.append(" | Payor=").append(payor ? "Self" : "NOT set");
+        // A patient who already has payor rows keeps them: forcing Payor Mode / Payor Status in the "add payor" sub-form only changes the update payload.
+        int payorRows = existingPayorRows();
+        boolean payor = payorRows > 0 || selectPayorSelf();
+        log.append(" | Payor=").append(payorRows > 0 ? payorRows + " existing row(s) left alone" : payor ? "Self" : "NOT set");
         // Confirmed live: this screen's popup has no "Visit Information" accordion at all (expandSection always
         // reports COULD NOT EXPAND for it) — track that so the re-fill loop below doesn't keep chasing a section
         // that was never there, and doesn't re-run selectPayorSelf() once it already succeeded. Re-invoking
@@ -2684,6 +2897,31 @@ public class EmergencyListView extends BasePage {
         String left = remainingMandatoryAllSections();
         log.append(left.isEmpty() ? " || ALL MANDATORY FILLED (all sections checked)" : " || STILL EMPTY: " + left);
         return log.toString();
+    }
+
+    /**
+     * Since build v2026.11.17.488 <b>Update Registration</b> refuses with "No changes have been made" unless the form differs from a baseline snapshot
+     * ({@code fnRegNoChanges()}, CAT1227). The baseline FOLLOWS the model until the first <i>trusted</i> (real) mouse / key / input event inside the
+     * popup freezes it; synthetic events ({@code dispatchEvent}, {@code $setViewValue}) never do, so a popup filled only programmatically always compares
+     * equal to its own baseline. One real click into a harmless field (the first name, not the MRN box whose blur could re-search) freezes it, after
+     * which the programmatic fills count as changes.
+     */
+    public void touchViewDetailsAsAUser() {
+        // The popup RESETS its baseline whenever the patient's data (re)loads, so a click made before the load finishes is lost: wait for it first.
+        try {
+            page.waitForFunction("() => { const b=[...document.querySelectorAll(\"button[ng-click='UpdateOnlyRegistration();']\")].find(x=>x.offsetWidth); if(!b) return false; const r=angular.element(b).scope().Registration||{}; return !!r.ID && !!r.MRNo; }",
+                    null, new Page.WaitForFunctionOptions().setTimeout(20000));
+        } catch (Exception e) { System.out.println("touchViewDetailsAsAUser: the patient data did not load within 20 s"); }
+        waitForAngular(1500);
+        Object tagged = page.evaluate("() => { const m=[...document.querySelectorAll('.modal,[role=dialog]')].find(x=>x.getBoundingClientRect().width>0 && x.querySelectorAll('input,select,textarea').length>40);"
+                + " if(!m) return false; const e=[...m.querySelectorAll(\"input[ng-model='Registration.FirstName']\")].find(x=>x.offsetParent!==null && !x.disabled && !x.readOnly)"
+                + "   || [...m.querySelectorAll('input[type=text]')].find(x=>x.offsetParent!==null && !x.disabled && !x.readOnly && !/MRNo/.test(x.getAttribute('ng-model')||''));"
+                + " if(!e) return false; e.id='__vdTouch'; return true; }");
+        if (!Boolean.TRUE.equals(tagged)) { System.out.println("touchViewDetailsAsAUser: no harmless field found to click"); return; }
+        try { page.locator("#__vdTouch").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000)); }
+        catch (Exception e) { System.out.println("touchViewDetailsAsAUser: click failed - " + e.getMessage()); }
+        page.evaluate("() => { const e=document.getElementById('__vdTouch'); if(e) e.removeAttribute('id'); }");
+        waitForAngular(300);
     }
 
     /** Expand one accordion section of the View Details popup and wait for its body to render. */
@@ -2761,7 +2999,20 @@ public class EmergencyListView extends BasePage {
      * dialog, and return the success toast. NB the handler is {@code UpdateOnlyRegistration()}.
      */
     public String updateViewDetailsAndGetToast() {
-        page.evaluate("() => { window.__vdToasts=[]; if(window.__vdObs) window.__vdObs.disconnect();"
+        lastViewDetailsAnswer = "";
+        java.util.function.Consumer<com.microsoft.playwright.Response> vdWatcher = r -> {
+            try {
+                if (r.url().toLowerCase().contains("patientregistration/iud") && "POST".equalsIgnoreCase(r.request().method())) {
+                    String body = "";
+                    try { body = r.text(); } catch (Exception ignore) { }
+                    java.util.regex.Matcher st = java.util.regex.Pattern.compile("\"ResultStatus\"\\s*:\\s*(\\d+)").matcher(body);
+                    java.util.regex.Matcher ms = java.util.regex.Pattern.compile("\"Message\"\\s*:\\s*\"([^\"]*)\"").matcher(body);
+                    lastViewDetailsAnswer = "HTTP " + r.status() + (st.find() ? ", ResultStatus " + st.group(1) : "") + (ms.find() ? ", Message \"" + ms.group(1) + "\"" : "");
+                }
+            } catch (Exception ignore) { }
+        };
+        page.onResponse(vdWatcher);
+        page.evaluate("() => { window.__vdToasts=[]; try{ if(window.toastr) toastr.clear(); }catch(e){} document.querySelectorAll('#toast-container .toast,.toast-message').forEach(t=>{ try{ t.remove(); }catch(e){} }); if(window.__vdObs) window.__vdObs.disconnect();"
                 + " try{ if(window.toastr) toastr.clear(); }catch(e){}"
                 + " document.querySelectorAll('#toast-container .toast, .toast-message, .toast').forEach(t=>t.remove());"
                 + " window.__vdObs=new MutationObserver(()=>{ document.querySelectorAll('.toast-message,.toast').forEach(el=>{ const t=(el.textContent||'').replace(/\\s+/g,' ').trim(); if(t && !window.__vdToasts.includes(t)) window.__vdToasts.push(t); }); }); window.__vdObs.observe(document.body,{childList:true,subtree:true});"
@@ -2780,9 +3031,23 @@ public class EmergencyListView extends BasePage {
             page.waitForFunction("() => (window.__vdToasts||[]).some(a=>/updated|success|saved|please|select|enter/i.test(a))",
                     null, new Page.WaitForFunctionOptions().setTimeout(20000));
         } catch (Exception ignore) { }
+        // the registration save can be slow: give the server up to ~20 s more to answer even when no toast shows
+        for (int i = 0; i < 20 && lastViewDetailsAnswer.isEmpty(); i++) page.waitForTimeout(1000);
+        page.offResponse(vdWatcher);
         Object r = page.evaluate("() => { const a=window.__vdToasts||[]; return a.find(x=>/updated|success|saved/i.test(x)) || a[0] || ''; }");
         waitForAngular(400);
-        return r == null ? "" : r.toString().trim();
+        String toast = r == null ? "" : r.toString().trim();
+        if (toast.isEmpty() && lastViewDetailsAnswer.contains("ResultStatus 1")) return "Registration updated (the screen showed no toast; server answered " + lastViewDetailsAnswer + ")";
+        return toast;
+    }
+
+    /** What the server answered to the last View Details Update (the {@code patientregistration/IUD} call): status, ResultStatus and Message. */
+    public String lastViewDetailsAnswer = "";
+
+    /** How many payor rows (the popup's {@code Sponserlist}) the registration popup already holds. */
+    public int existingPayorRows() {
+        Object r = page.evaluate("() => { const b=[...document.querySelectorAll(\"button[ng-click='UpdateOnlyRegistration();']\")].find(x=>x.offsetWidth); if(!b) return 0; const sc=angular.element(b).scope(); return (sc.Sponserlist||[]).length; }");
+        return r instanceof Number ? ((Number) r).intValue() : 0;
     }
 
     /** Close the View Details (patient registration details) popup — click its Close/× and force-hide. */

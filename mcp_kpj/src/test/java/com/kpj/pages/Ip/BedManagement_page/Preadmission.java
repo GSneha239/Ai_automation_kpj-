@@ -276,11 +276,72 @@ public class Preadmission extends BasePage {
         return r == null ? "" : r.toString();
     }
 
+    // ---- waiting for an MRN search to FINISH loading -----------------------------------------------------------------------
+    // The MRN search fires several calls one after another (GetPatientInfo for the three visit types, CheckPatientAdmission, GetSponserByVisit ...) and the "already has an active admission" toast only comes with the
+    // CheckPatientAdmission answer - on the slow build .488 that can be well after the old fixed 3.5 s. Reading the screen too early took a patient who is admitted for a reservable one (or the PREVIOUS MRN's late
+    // toast for the next one). So every API call is counted and the search is only considered finished when none is in flight for a quiet spell.
+
+    private final java.util.concurrent.atomic.AtomicInteger inflight = new java.util.concurrent.atomic.AtomicInteger();
+    private volatile long lastApiActivity = System.currentTimeMillis();
+    private boolean listenersInstalled = false;
+
+    private void installLoadListeners() {
+        if (listenersInstalled) return;
+        listenersInstalled = true;
+        page.onRequest(r -> { if (r.url().contains("/api/")) { inflight.incrementAndGet(); lastApiActivity = System.currentTimeMillis(); } });
+        page.onRequestFinished(r -> { if (r.url().contains("/api/")) { if (inflight.decrementAndGet() < 0) inflight.set(0); lastApiActivity = System.currentTimeMillis(); } });
+        page.onRequestFailed(r -> { if (r.url().contains("/api/")) { if (inflight.decrementAndGet() < 0) inflight.set(0); lastApiActivity = System.currentTimeMillis(); } });
+    }
+
+    /** Wait until no API call is in flight and none started/ended for {@code quietMs}; gives up after {@code maxMs}. Returns true when the page went quiet. */
+    public boolean waitForLoaded(int maxMs, int quietMs) {
+        installLoadListeners();
+        long end = System.currentTimeMillis() + maxMs;
+        while (System.currentTimeMillis() < end) {
+            if (inflight.get() <= 0 && System.currentTimeMillis() - lastApiActivity >= quietMs) return true;
+            page.waitForTimeout(250);
+        }
+        return inflight.get() <= 0;
+    }
+
+    /** Start recording the toasts that appear from now on (they fade quickly), after removing the ones still on screen. */
+    public void armMrnToasts() {
+        page.evaluate("() => { try{ if(window.toastr) toastr.clear(); }catch(e){} document.querySelectorAll('#toast-container .toast').forEach(t=>{ try{ t.remove(); }catch(e){} });"
+                + " window.__preToasts=[]; if(window.__preToastObs) window.__preToastObs.disconnect();"
+                + " const grab=()=>document.querySelectorAll('.toast-message').forEach(e=>{ const t=(e.textContent||'').replace(/\\s+/g,' ').trim(); if(t && !window.__preToasts.includes(t)) window.__preToasts.push(t); });"
+                + " window.__preToastObs=new MutationObserver(grab); window.__preToastObs.observe(document.body,{childList:true,subtree:true,characterData:true}); grab(); }");
+    }
+
+    /** The toasts recorded since {@link #armMrnToasts()}, joined. */
+    public String mrnToasts() {
+        Object r = page.evaluate("() => { document.querySelectorAll('.toast-message').forEach(e=>{ const t=(e.textContent||'').replace(/\\s+/g,' ').trim(); window.__preToasts=window.__preToasts||[]; if(t && !window.__preToasts.includes(t)) window.__preToasts.push(t); }); return (window.__preToasts||[]).join(' | '); }");
+        return r == null ? "" : r.toString();
+    }
+
+    /** Remove the toasts still on screen, so they are not mistaken for the next MRN's. */
+    public void clearToasts() {
+        page.evaluate("() => { try{ if(window.toastr) toastr.clear(); }catch(e){} document.querySelectorAll('#toast-container .toast').forEach(t=>{ try{ t.remove(); }catch(e){} }); window.__preToasts=[]; }");
+    }
+
+    /**
+     * What the MRN just searched turned out to be, read only after the search has finished loading: {@code ADMITTED} (the application says the patient has an active admission that has not been discharged -
+     * he cannot be pre-admitted until he is discharged), {@code NOT_FOUND} (no patient was bound) or {@code OK} (a reservable patient is loaded).
+     */
+    public String classifyMrn() {
+        String toasts = mrnToasts().toLowerCase();
+        if (toasts.contains("active admission") || toasts.contains("not been discharged") || toasts.contains("already admitted")) return "ADMITTED";
+        if (toasts.contains("deceased")) return "DECEASED";   // "Bed reservation cannot be created for deceased patient!" - the patient loads, the reservation is refused
+        return isPatientBound() ? "OK" : "NOT_FOUND";
+    }
+
     /** On the reserve form: enter MRN ({@code Reservation.mrno}) and click the search icon ({@code SearchPatientByMRNo()})
      *  to load the patient. Returns the MRN value now in the field. */
     public String reserveEnterMrnAndSearch(String mrn) {
+        waitForLoaded(20000, 1500);      // never change the MRN while the previous search is still loading
+        armMrnToasts();
         page.evaluate("(mrn)=>{ const e=document.querySelector('#addReservationMrn') || [...document.querySelectorAll(\"input[ng-model='Reservation.mrno']\")].find(x=>x.offsetParent!==null); if(e){ const c=angular.element(e).controller('ngModel'); e.value=mrn; if(c){c.$setViewValue(mrn);c.$render();} e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true})); } const b=[...document.querySelectorAll('button,a')].find(x=>/SearchPatientByMRNo/.test(x.getAttribute('ng-click')||'') && x.offsetParent!==null); if(b) b.click(); }", mrn);
-        page.waitForTimeout(3500);
+        waitForLoaded(30000, 2500);      // the search is several calls in a row (patient info x3, CheckPatientAdmission, sponsor ...): wait for ALL of them
+        page.waitForTimeout(1500);
         // The MRN search can open a patient-results popup (SetSearchPatient) that must be selected, else Reserve
         // toasts "Please Select Patient!" — if a results row is present, click it to bind the patient. (Rule: after
         // entering an MRN you must Search AND select the resulting patient.)
@@ -297,6 +358,7 @@ public class Preadmission extends BasePage {
             if ("no-popup".equals(String.valueOf(picked))) break; // patient auto-loaded, no popup
             page.waitForTimeout(700);
         }
+        waitForLoaded(20000, 1500);
         Object r = page.evaluate("()=>{ const e=[...document.querySelectorAll(\"input[ng-model='Reservation.mrno']\")].find(x=>x.offsetParent!==null); return e?e.value:''; }");
         return r == null ? "" : r.toString();
     }
@@ -304,7 +366,10 @@ public class Preadmission extends BasePage {
     /** True if a patient is loaded/bound on the reserve form (the "Name : &lt;name&gt; MRN: &lt;mrn&gt;" banner shows
      *  after a successful MRN search). Used to skip MRNs that don't resolve to a reservable patient. */
     public boolean isPatientBound() {
-        return Boolean.TRUE.equals(page.evaluate("() => { const b=(document.body&&document.body.innerText)||''; const m=b.match(/Name\\s*:\\s*([A-Za-z][^\\n]{1,45}?)\\s+MRN\\s*:/i); return !!(m && m[1] && m[1].trim().length>1); }"));
+        // Two signals: the screen's own model holds the patient (Reservation.patientid - build .488's banner lists Name, DOB, Gender, NRIC and THEN MRN, so the old "Name : x MRN :" text match no longer fits
+        // and every MRN looked "not bound"), or the old banner text.
+        return Boolean.TRUE.equals(page.evaluate("() => { try{ const e=[...document.querySelectorAll(\"input[ng-model='Reservation.mrno']\")][0]; const r=e && angular.element(e).scope().Reservation; if(r && Number(r.patientid)>0 && String(r.mrno||'').trim()) return true; }catch(x){}"
+                + " const b=(document.body&&document.body.innerText)||''; const m=b.match(/Name\\s*:\\s*([A-Za-z][^\\n]{1,45}?)\\s+MRN\\s*:/i); return !!(m && m[1] && m[1].trim().length>1); }"));
     }
 
     /** Fill the reserve form's details: Admission Date + all the mandatory selects (Room Type, Ward, Payor Status,

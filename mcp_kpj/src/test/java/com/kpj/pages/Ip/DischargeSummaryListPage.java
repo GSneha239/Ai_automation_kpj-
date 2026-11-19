@@ -78,12 +78,32 @@ public class DischargeSummaryListPage extends BasePage {
     public String searchOneMonthToToday() {
         java.time.LocalDate today = java.time.LocalDate.now();
         java.time.format.DateTimeFormatter f = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy");
-        doSearch(today.minusMonths(1).format(f), today.format(f));
-        if (gridRows() == 0) doSearch(today.minusMonths(3).format(f), today.format(f));
-        return today.minusMonths(1).format(f) + " -> " + today.format(f);
+        // Widen 1 -> 3 -> 6 -> 12 -> 24 months until the grid has rows (confirmed live 2026-11-18, build .488: the 1- and
+        // 3-month ranges are genuinely EMPTY now - the newest discharge summaries are older - while 12 months lists 90).
+        // A range that is empty is given ONE patient attempt (the long re-search loop is only for the final range), so
+        // a genuinely empty range does not cost a minute.
+        int[] months = {1, 3, 6, 12, 24};
+        String used = "";
+        for (int i = 0; i < months.length; i++) {
+            boolean last = i == months.length - 1;
+            String from = today.minusMonths(months[i]).format(f);
+            doSearch(from, today.format(f), last ? 3 : 1);
+            used = from + " -> " + today.format(f);
+            if (gridRows() > 0) {
+                if (months[i] != 1) System.out.println("DischargeSummaryList.search: the 1-month range was empty - widened to " + months[i] + " months");
+                break;
+            }
+        }
+        lastSearchMonths = used;
+        return used;
     }
 
-    private void doSearch(String from, String to) {
+    /** The "from -> to" range the last {@link #searchOneMonthToToday()} finally used (may be wider than 1 month). */
+    public String lastSearchMonths = "";
+
+    private void doSearch(String from, String to) { doSearch(from, to, 3); }
+
+    private void doSearch(String from, String to, int attempts) {
         page.evaluate("(d) => { const setD=(ng,val)=>{ const el=[...document.querySelectorAll('input')].find(i=>i.getAttribute('ng-model')===ng); if(!el) return; const c=angular.element(el).controller('ngModel'); el.value=val; if(c){c.$setViewValue(val);c.$render();} el.dispatchEvent(new Event('input',{bubbles:true})); el.dispatchEvent(new Event('change',{bubbles:true})); };"
                 + " setD('Discharge.FromDate', d.from); setD('Discharge.ToDate', d.to); }",
                 java.util.Map.of("from", from, "to", to));
@@ -94,18 +114,24 @@ public class DischargeSummaryListPage extends BasePage {
         // 10/09/2026: the same 1-month range returned real rows), same pattern as
         // OutPatientQueueManagementPage.searchQueue() and BedboardOccupancyListPage.searchOneMonthToToday().
         String gridHasRows = "() => { let n=0; document.querySelectorAll('*').forEach(el=>{ try{ const s=angular.element(el).scope(); if(s&&s.grid&&s.grid.options&&s.grid.options.data) n=Math.max(n,s.grid.options.data.length);}catch(e){} }); return n>0; }";
-        for (int attempt = 0; attempt < 3; attempt++) {
+        for (int attempt = 0; attempt < attempts; attempt++) {
             try {
-                page.waitForFunction(gridHasRows, null, new Page.WaitForFunctionOptions().setTimeout(20000));
+                // poll every 500 ms - the default (every animation frame) rescans the whole DOM's angular scopes each frame and
+                // starves the page (screenshots timed out at 10 s while waiting on an empty grid)
+                page.waitForFunction(gridHasRows, null, new Page.WaitForFunctionOptions().setTimeout(attempts == 1 ? 12000 : 20000).setPollingInterval(500));
                 break;
             } catch (Exception ignore) {
-                System.out.println("doSearch: grid empty (attempt " + (attempt + 1) + "/3) — re-searching");
+                System.out.println("doSearch: grid empty (attempt " + (attempt + 1) + "/" + attempts + ")" + (attempt + 1 < attempts ? " — re-searching" : ""));
+                if (attempt + 1 >= attempts) break;
                 page.evaluate("() => { const b=[...document.querySelectorAll('button')].find(x=>/^search$/i.test((x.textContent||'').trim()) && x.offsetParent!==null); if(b) b.click(); }");
                 waitForAngular(1500);
             }
         }
         waitForAngular(800);
     }
+
+    /** True when the grid holds at least one row after the last search. */
+    public boolean hasRows() { return gridRows() > 0; }
 
     private int gridRows() {
         Object r = page.evaluate("() => { let n=0; document.querySelectorAll('*').forEach(el=>{ try{ const s=angular.element(el).scope(); if(s&&s.grid&&s.grid.options&&s.grid.options.data) n=Math.max(n,s.grid.options.data.length);}catch(e){} }); return n; }");
@@ -154,13 +180,22 @@ public class DischargeSummaryListPage extends BasePage {
         page.evaluate("() => { const a=[...document.querySelectorAll('button,a')].find(x=>/referral.?letter|medical report/i.test((x.textContent||'').replace(/\\s+/g,' ').trim()) && x.offsetParent!==null); if(a){ a.id='__refLetterBtn'; } }");
         try { page.locator("#__refLetterBtn").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000)); }
         catch (Exception e) { System.out.println("clickReferralLetterMedicalReport: click failed - " + e.getMessage()); }
+        // Build .488 (confirmed live 2026-11-18): the button is now fnSetCertificateSession('ReferralLetter') and opens the CERTIFICATE screen
+        // (#/add-Certificate: template / department / doctor / Authenticate / editor / Save) - earlier builds opened the discharge-template editor
+        // (#/edit-DischargeTemplateMaster). Accept either and record which one the app showed in landedOn.
+        landedOn = "";
         try {
-            page.waitForFunction("() => /edit-DischargeTemplateMaster/i.test(location.hash) && [...document.querySelectorAll('button')].some(b=>/fnIUDDischargetemplate/.test(b.getAttribute('ng-click')||''))",
+            page.waitForFunction("() => (/edit-DischargeTemplateMaster/i.test(location.hash) && [...document.querySelectorAll('button')].some(b=>/fnIUDDischargetemplate/.test(b.getAttribute('ng-click')||'')))"
+                    + " || (/add-(Birth)?Certificate/i.test(location.hash) && document.querySelector('select[ng-model=\"Certificate.Dischargeid\"],select[ng-model=\"BirthCertificate1.Dischargeid\"]'))",
                     null, new Page.WaitForFunctionOptions().setTimeout(20000));
-        } catch (Exception e) { System.out.println("clickReferralLetterMedicalReport: template editor not reached"); return false; }
+        } catch (Exception e) { System.out.println("clickReferralLetterMedicalReport: neither the template editor nor the certificate screen was reached"); return false; }
+        landedOn = page.url().toLowerCase().contains("edit-dischargetemplatemaster") ? "template-editor" : "certificate";
         waitForAngular(1200);
         return true;
     }
+
+    /** Which screen the last {@link #clickReferralLetterMedicalReport()} / {@link #clickDeath()} reached: "template-editor" or "certificate". */
+    public String landedOn = "";
 
     /**
      * Tick a template-field checkbox that has no sub-fields (<b>Post Mortem Report</b>, so no Add step is
@@ -257,9 +292,12 @@ public class DischargeSummaryListPage extends BasePage {
         try { page.locator("#__deathBtn").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000)); }
         catch (Exception e) { System.out.println("clickDeath: click failed - " + e.getMessage()); }
         try {
-            page.waitForFunction("() => /add-Certificate/i.test(location.hash) && document.querySelector('select[ng-model=\"Certificate.Dischargeid\"]')",
+            // Build .488: Death is fnSetDeathCertificateSession() and opens its OWN "Death Certificate" screen (#/add-BirthCertificate, fields
+            // BirthCertificate1.*, Save = IUDDischaresummary()) - the same layout as add-Certificate. Accept either route.
+            page.waitForFunction("() => /add-(Birth)?Certificate/i.test(location.hash) && document.querySelector('select[ng-model=\"Certificate.Dischargeid\"],select[ng-model=\"BirthCertificate1.Dischargeid\"]')",
                     null, new Page.WaitForFunctionOptions().setTimeout(20000));
-        } catch (Exception e) { System.out.println("clickDeath: add-Certificate not reached"); return false; }
+        } catch (Exception e) { System.out.println("clickDeath: neither add-Certificate nor add-BirthCertificate was reached"); return false; }
+        landedOn = "certificate";
         waitForAngular(1500);
         return true;
     }
@@ -274,14 +312,16 @@ public class DischargeSummaryListPage extends BasePage {
      */
     public String fillCertificateAndSave() {
         String pickJs = "(ng) => { const s=[...document.querySelectorAll('select[ng-model=\"'+ng+'\"]')].find(e=>e.offsetParent!==null); if(!s) return 'no'; const i=[...s.options].findIndex(o=>o.value && !/^-*\\s*select/i.test((o.textContent||'').trim())); if(i<0) return 'noopt'; s.selectedIndex=i; s.dispatchEvent(new Event('change',{bubbles:true})); const $=window.jQuery||window.$; if($){try{$(s).trigger('change');}catch(e){}} return (s.options[i].textContent||'').trim(); }";
-        page.evaluate(pickJs, "Certificate.Dischargeid");   // template — loads its text into the editor
+        // The Death screen (#/add-BirthCertificate, build .488) uses the same controls under the BirthCertificate1.* models.
+        final String pfx = Boolean.TRUE.equals(page.evaluate("() => !!document.querySelector('select[ng-model=\"BirthCertificate1.Dischargeid\"]')")) ? "BirthCertificate1" : "Certificate";
+        page.evaluate(pickJs, pfx + ".Dischargeid");   // template — loads its text into the editor
         waitForAngular(1600);
-        page.evaluate(pickJs, "Certificate.departmentid");  // department — fnSetDoctor loads doctors
+        page.evaluate(pickJs, pfx + ".departmentid");  // department — fnSetDoctor loads doctors
         waitForAngular(1800);
-        page.evaluate(pickJs, "Certificate.payableid");     // doctor
+        page.evaluate(pickJs, pfx + ".payableid");     // doctor
         waitForAngular(800);
         // Authenticate = the Certificate.isfinalized checkbox — real click so its handler fires.
-        page.evaluate("() => { const c=[...document.querySelectorAll('input[type=checkbox]')].find(x=>x.offsetParent!==null && (x.getAttribute('ng-model')||'')==='Certificate.isfinalized'); if(c && !c.checked){ c.id='__authCb'; } }");
+        page.evaluate("() => { const c=[...document.querySelectorAll('input[type=checkbox]')].find(x=>x.offsetParent!==null && /^(Birth)?Certificate1?\\.isfinalized$/.test(x.getAttribute('ng-model')||'')); if(c && !c.checked){ c.id='__authCb'; } }");
         try { page.locator("#__authCb").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000)); }
         catch (Exception e) { System.out.println("fillCertificateAndSave: Authenticate checkbox click - " + e.getMessage()); }
         waitForAngular(500);
@@ -294,7 +334,8 @@ public class DischargeSummaryListPage extends BasePage {
         com.microsoft.playwright.Page report = null;
         try {
             report = page.waitForPopup(new Page.WaitForPopupOptions().setTimeout(15000), () -> {
-                page.evaluate("() => { const b=[...document.querySelectorAll('button')].find(x=>/IUDDischargeSummaryDetail/.test(x.getAttribute('ng-click')||'') && x.offsetParent!==null); if(b) b.click(); }");
+                // Save = IUDDischargeSummaryDetail() on add-Certificate; IUDDischaresummary() on the Death screen (add-BirthCertificate)
+                page.evaluate("() => { const b=[...document.querySelectorAll('button')].find(x=>/IUDDischargeSummaryDetail|IUDDischaresummary/.test(x.getAttribute('ng-click')||'') && x.offsetParent!==null); if(b) b.click(); }");
             });
         } catch (Exception e) { System.out.println("fillCertificateAndSave: no report popup (may have downloaded) - " + e.getMessage()); }
         try {
