@@ -93,78 +93,9 @@ public class SelfArrivalPage extends BasePage {
         return r == null ? "" : r.toString();
     }
 
-    // ---- the appointments due today ------------------------------------------
-
-    /** Rows of the appointment list proper ({@code ng-repeat="app in AppointmentList"}). */
-    private static final String DUE_ROWS_JS = "[...document.querySelectorAll(\"tr[ng-repeat*='AppointmentList']\")].filter(x=>x.offsetParent!==null && (x.textContent||'').trim())";
-
-    /** Empty the PR No / Name / Mobile No boxes so the next Search lists every appointment due today. */
-    public void clearFilters() {
-        page.evaluate("() => { for (const ng of ['PatientData.MRNO','PatientData.PatientName','PatientData.MobileNo']) { const e=document.querySelector(\"[ng-model='\"+ng+\"']\"); if(!e) continue;"
-                + " const c=window.angular.element(e).controller('ngModel'); e.value=''; if(c){ c.$setViewValue(''); c.$render(); } e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true})); } }");
-        waitForAngular(300);
-    }
-
-    /**
-     * Confirmed live 2026-11-19 (build .488): Search with PR No / Name / Mobile all EMPTY lists every appointment due today (a PR No filters to that patient's rows; the Mobile No box does not filter).
-     * Returns the number of rows listed (0 = nothing due today). Polls gently - an empty answer is a genuine "none due".
-     */
-    public int searchAllDue() {
-        clearFilters();
-        clickSearch();
-        try {
-            page.waitForFunction("() => " + DUE_ROWS_JS + ".length>0", null, new Page.WaitForFunctionOptions().setTimeout(8000).setPollingInterval(500));
-        } catch (Exception ignore) { /* nothing due */ }
-        return dueRows().size();
-    }
-
-    /** The listed appointments as {appointment id, MRN (blank for a walk-in), patient name, appointment no., date, from time, to time}. */
-    public List<String[]> dueRows() {
-        Object r = page.evaluate("() => " + DUE_ROWS_JS + ".map(tr=>[...tr.querySelectorAll('td')].slice(0,7).map(t=>(t.textContent||'').replace(/\\s+/g,' ').trim()))");
-        List<String[]> out = new java.util.ArrayList<>();
-        if (r instanceof List) {
-            for (Object row : (List<?>) r) {
-                if (!(row instanceof List)) continue;
-                List<?> cells = (List<?>) row;
-                String[] a = new String[7];
-                for (int i = 0; i < 7; i++) a[i] = i < cells.size() && cells.get(i) != null ? cells.get(i).toString() : "";
-                out.add(a);
-            }
-        }
-        return out;
-    }
-
-    /** Distinct non-blank MRNs of the listed appointments, in list order. */
-    public List<String> dueMrns() {
-        List<String> m = new java.util.ArrayList<>();
-        for (String[] row : dueRows()) if (!row[1].isEmpty() && !m.contains(row[1])) m.add(row[1]);
-        return m;
-    }
-
-    /**
-     * Click the {@code idx}-th listed appointment so the screen selects it. Mark Arrival acts on the SELECTED appointment ({@code fnUpdateMarkArrival}: {@code SelectedAppointment.id}) -
-     * every rendered row selects itself ({@code ng-init="fnSelectAppointment(app,$index)"}), so with several rows listed the LAST one is selected unless another is clicked, and after
-     * a search that lists nothing the selection is a stale one from an earlier search. Returns the selected row's text ("" if the row was not found).
-     */
-    public String selectRow(int idx) {
-        Object r = page.evaluate("(i) => { const rows=" + DUE_ROWS_JS + "; const tr=rows[i]; if(!tr) return ''; tr.click(); return (tr.textContent||'').replace(/\\s+/g,' ').trim().slice(0,200); }", idx);
-        waitForAngular(500);
-        return r == null ? "" : r.toString();
-    }
-
-    /** Text of the row the screen has selected (the {@code activeRow} class), "" when none. */
-    public String selectedRowText() {
-        Object r = page.evaluate("() => { const tr=" + DUE_ROWS_JS + ".find(x=>x.classList.contains('activeRow')); return tr ? (tr.textContent||'').replace(/\\s+/g,' ').trim().slice(0,200) : ''; }");
-        return r == null ? "" : r.toString();
-    }
-
-    /** The row Mark Arrival was clicked on (read just before the click). */
-    public String lastMarkedRow = "";
-
     /** Click Mark Arrival and return the toast it shows ("" when none appeared). */
     public String clickMarkArrival() {
         toastPng = null;
-        lastMarkedRow = selectedRowText();
         page.evaluate("() => { window.__saToasts=[]; if(window.__saObs) window.__saObs.disconnect();"
                 + " try{ if(window.toastr && toastr.options){ toastr.options.timeOut=0; toastr.options.extendedTimeOut=0; } }catch(e){}"
                 + " try{ if(window.toastr) toastr.clear(); }catch(e){} document.querySelectorAll('#toast-container .toast').forEach(t=>t.remove());"

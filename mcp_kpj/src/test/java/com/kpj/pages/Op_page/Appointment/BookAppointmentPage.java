@@ -91,7 +91,7 @@ public class BookAppointmentPage extends BasePage {
                     + " const top=[...document.querySelectorAll('a')].find(x=>/^\\s*op\\s*$/i.test(norm(x.textContent)) && vis(x));"
                     + " const root=top ? top.closest('li') : document;"
                     + " const a=[...root.querySelectorAll('a[href]')].filter(vis).find(x=>(x.getAttribute('href')||'').toLowerCase()===h);"
-                    + " if(!a) return false; a.id='__baLink'; return true; }", menuHref());
+                    + " if(!a) return false; a.id='__baLink'; return true; }", "#/new");
             if (Boolean.TRUE.equals(tagged)) {
                 try { page.locator("#__baLink").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000)); }
                 catch (Exception e) { System.out.println("BookAppointment.nav: click failed - " + String.valueOf(e.getMessage()).split("\n")[0]); }
@@ -113,9 +113,6 @@ public class BookAppointmentPage extends BasePage {
         installHelpers();
         return true;
     }
-
-    /** The (lower-case) sidebar href {@link #navigateViaMenu()} clicks inside the OP entry; a sibling screen that shares this form overrides it. */
-    protected String menuHref() { return "#/new"; }
 
     /** On this screen — the route AND its first-name box, so a bounce to the dashboard cannot pass. */
     public boolean onScreen() {
@@ -265,28 +262,19 @@ public class BookAppointmentPage extends BasePage {
      * Set the appointment date to the Next-Schedule day and select a free (enabled, not-booked)
      * slot, filling From/To time to match. Returns the selected From time, or null if none free.
      */
-    public String selectFreeSlot() { return selectFreeSlotIn("Next Schedule"); }
-
-    /**
-     * Same as {@link #selectFreeSlot()} but picks the slot from the <b>Current Schedule</b> table — TODAY's schedule (confirmed live 2026-11-19: "Current Schedule : 19/11/2026",
-     * 54 enabled slots from the current time on) — and sets the Appointment Date to that day. OP &gt; Self Arrival lists only appointments due today, so an appointment made for
-     * Self Arrival has to be booked for today, not for the Next Schedule day.
-     */
-    public String selectFreeSlotToday() { return selectFreeSlotIn("Current Schedule"); }
-
-    private String selectFreeSlotIn(final String caption) {
+    public String selectFreeSlot() {
         // The schedule grid loads asynchronously after department + doctor are set — wait for the
-        // schedule table to have enabled slot checkboxes before selecting.
+        // Next Schedule table to have enabled slot checkboxes before selecting.
         try {
             page.waitForFunction(
-                    "(cap) => { const t=[...document.querySelectorAll('table')].find(x=>(x.caption&&x.caption.textContent||'').indexOf(cap)>=0);"
+                    "() => { const t=[...document.querySelectorAll('table')].find(x=>/Next Schedule/.test(x.caption&&x.caption.textContent||''));"
                             + "return t && [...t.querySelectorAll('tbody tr input[type=checkbox]')].some(c=>!c.disabled); }",
-                    caption, new Page.WaitForFunctionOptions().setTimeout(20000));
+                    null, new Page.WaitForFunctionOptions().setTimeout(20000));
         } catch (Exception e) {
-            System.out.println("selectFreeSlot: " + caption + " slots did not load");
+            System.out.println("selectFreeSlot: Next Schedule slots did not load");
         }
-        Object r = page.evaluate("(capName) => {"
-                + "const nextT=[...document.querySelectorAll('table')].find(t=>(t.caption&&t.caption.textContent||'').indexOf(capName)>=0);"
+        Object r = page.evaluate("() => {"
+                + "const nextT=[...document.querySelectorAll('table')].find(t=>/Next Schedule/.test(t.caption&&t.caption.textContent||''));"
                 + "if(!nextT) return null;"
                 + "const cap=(nextT.caption.textContent||'');"
                 + "const m=cap.match(/(\\d{2}\\/\\d{2}\\/\\d{4})/); if(m) window.__setInp('PatientData.AppointmentDate', m[1]);"
@@ -301,7 +289,7 @@ public class BookAppointmentPage extends BasePage {
                 + "if(free) return pick(free);"
                 + "let any=rows.find(row=>{ const cb=row.querySelector('input[type=checkbox]'); return cb && !cb.disabled; });"  // fallback: first enabled (may prompt already-booked)
                 + "if(any) return pick(any);"
-                + "return null; }", caption);
+                + "return null; }");
         waitForAngular(500);
         return r == null ? null : r.toString();
     }
