@@ -1,0 +1,149 @@
+package com.kpj.tests.ApplicationConfiguration_page.Inventory_page;
+
+import com.kpj.core.DevHisBase;
+import com.kpj.pages.LoginPage;
+
+// The page object is also named Shelf — referenced by its fully-qualified name.
+
+/**
+ * Application Configuration &gt; Inventory &gt; <b>Shelf</b>.
+ *
+ * <ol>
+ *   <li>Login (shared {@link LoginPage}, on an OPD counter so the menu exists).</li>
+ *   <li>Open <b>Application Configuration</b> → <b>Inventory</b> → <b>Shelf</b>.</li>
+ *   <li>Enter the <b>Code</b> and the <b>Remark</b>.</li>
+ *   <li>Click <b>Submit</b> → verify the success toast.</li>
+ * </ol>
+ *
+ * <p>The Code is generated per run, since configuration screens reject a duplicate. Pin one with
+ * {@code -Dcode=}.</p>
+ *
+ * <p>The requested steps do not mention Add; the flow clicks it only if the form is not already on screen
+ * and says which it found.</p>
+ *
+ * <p>&#9888; A successful run CREATES a REAL shelf in the target environment.</p>
+ */
+public class Shelf extends DevHisBase {
+
+    /** DevHIS only builds the nav menu for an outpatient counter. Override with {@code -Dcounter=}. */
+    public static final String COUNTER_FOR_MENU = "OPD-B-01";
+
+    public Shelf() { super("ApplicationConfiguration_Inventory_Shelf"); }
+
+    public static void main(String[] args) {
+        Shelf t = new Shelf();
+        try { t.run(); } finally { t.stop(); }
+    }
+
+    @org.junit.jupiter.api.Test
+    void execute() { try { run(); } finally { stop(); } }
+
+    @Override
+    protected void body() {
+        meta("Application Configuration - Inventory - Shelf", "Application Configuration > Inventory > Shelf",
+                "&#9888; Creates a REAL shelf: enter Code and Remark, then Submit.");
+
+        String counter = System.getProperty("counter", COUNTER_FOR_MENU);
+        // Stamped from the wall clock: System.nanoTime() ticks in 100 ns steps on this machine, so its remainders end in "00" and a
+        // code repeats; the shared QA environment keeps every record ever saved. "SHF" + 12 digits = 15, the Code box's maximum.
+        String stamp = java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("ddMMyyHHmmss"));
+        String code = System.getProperty("code", "SHF" + stamp);
+        String remark = System.getProperty("remark", "Auto shelf " + stamp);
+        // Distinct from the remark on purpose: the form carries two description boxes, and identical
+        // values would hide one being written into the other.
+
+        new LoginPage(page).login(BASE, USER, PASS, counter);
+        step("Login", USER + " login (counter " + counter + ")",
+                "Authenticated; Patient Dashboard with the navigation menu", "Logged in", "PASS");
+
+        com.kpj.pages.ApplicationConfiguration_page.Inventory_page.Shelf tor =
+                new com.kpj.pages.ApplicationConfiguration_page.Inventory_page.Shelf(page);
+
+        // 1) Navigate
+        boolean rendered = tor.navigateViaMenu(BASE);
+        if (!rendered) addSummary("Inventory submenu offered", tor.lastMenu);
+        step(page, "Open Shelf screen",
+                "Click Application Configuration -> Inventory -> Shelf",
+                "The Shelf screen is shown",
+                rendered ? "Opened " + page.url()
+                           + (tor.lastRoute.isEmpty() ? "" : " (menu route " + tor.lastRoute + ")")
+                         : "Did NOT reach the screen (" + page.url() + ") — see the Inventory submenu dump",
+                rendered ? "PASS" : "FAIL");
+        if (!rendered) { addSummary("Result", "FAILED — screen not reached"); return; }
+
+        addSummary("List screen controls", tor.describeControls());
+        addSummary("Add", tor.openFormIfNeeded());
+        String formControls = tor.describeControls();
+        addSummary("Form controls", formControls);
+
+        // The form that actually opened may only carry Code (+ maybe Store) — no Remark, no MIMS
+        // GUID/Description, no MIMS Type. Rather than mechanically fail once per missing field, stop here
+        // and report it as the one real problem it is: the app opens the wrong (an incomplete) page.
+        // Nothing is entered anywhere on a form already known to be wrong.
+        if (!tor.hasExpectedFields()) {
+            step(page, "Form has the expected fields", "Check for Remark / MIMS GUID / MIMS Description before entering anything",
+                    "The form carries Code, Remark, MIMS GUID, MIMS Description and MIMS Type",
+                    "FAILS — opens the WRONG (an incomplete) page: Remark/MIMS fields are missing. "
+                        + "Form controls: " + formControls,
+                    "FAIL");
+            addSummary("Result", "FAILED — wrong/incomplete page (Remark/MIMS fields missing)");
+            return;
+        }
+
+        // 2) Code + Remark
+        String entry = tor.enterDetails(code, remark);
+        boolean entered = tor.detailsEntered(code, remark);
+        step(page, "Enter code and remark",
+                "Enter the Code " + code + " and the Remark " + remark,
+                "Both are entered",
+                (entered
+                    ? "PASSES because each box accepted its own value and read it back: " + entry
+                    : "FAILS because a value did not land in its own field: " + entry),
+                entered ? "PASS" : "FAIL");
+
+        // 3) Submit -> toast
+        String toast = tor.submitAndGetToast();
+        boolean ok = com.kpj.pages.ApplicationConfiguration_page.Inventory_page.Shelf.isSuccess(toast);
+
+        boolean noMessage = !ok && toast != null && toast.toLowerCase().contains("message not found");
+        boolean inList = tor.codeInList(code, remark);
+        addSummary("List check", tor.lastListCheck);
+
+        String actual = toast == null || toast.isEmpty()
+                ? "No message appeared — " + tor.lastSaveDiagnostics
+                  + (inList ? " BUT the record IS in the list, so the save worked silently." : "")
+                : (ok ? toast
+                      : noMessage
+                        ? (inList
+                            ? "DEFECT: the record IS created (it is in the list) but the toast reads \""
+                              + toast + "\" instead of a success message — the screen's result code has no "
+                              + "text in the message master."
+                            : "Submit answered \"" + toast + "\" and the record is NOT in the list. "
+                              + tor.lastListCheck)
+                        : "Submit not confirmed — server returned: \"" + toast + "\"");
+        // A message containing "undefined" FAILS the step, even though the save goes through: the record
+        // identifier is never substituted into the template, so the user is told "undefined" was saved.
+        boolean malformed = toast != null && toast.toLowerCase().contains("undefined");
+        step(page, "Click Submit & success toast", "Click Submit; wait for the success toast",
+                "'... saved successfully' toast",
+                (ok ? "PASSES because the screen answered with a success message: " : "FAILS — ") + actual
+                    + (malformed
+                        ? "  ||  THE MESSAGE IS MALFORMED: it reads \"" + toast + "\", so the screen "
+                          + "cannot name what it saved. The step FAILS on the message: a confirmation "
+                          + "that names no record is not a valid confirmation, even though the record "
+                          + "itself is written."
+                        : ""),
+                (ok && !malformed) ? "PASS" : "FAIL");
+
+        step(page, "Verify the shelf was created", "Look for " + code + " in the list",
+                "The new shelf is listed",
+                (inList
+                    ? "PASSES because the saved record — the code AND its remark — was found in the "
+                      + "list: " + tor.lastListCheck
+                    : "FAILS because the saved record could not be found in the list. " + tor.lastListCheck),
+                inList ? "PASS" : "FAIL");
+
+        addSummary("Code / Remark", code + " / " + remark);
+        addSummary("Result", ok ? toast : "Not confirmed (\"" + toast + "\")");
+    }
+}
