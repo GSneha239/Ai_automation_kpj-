@@ -106,7 +106,9 @@ public class FrequencyRehab extends BasePage {
     public String fillCodeAndRemark(int attempt) {
         String code = "FR" + String.format("%06d", Math.abs((System.nanoTime() + attempt * 7919L) % 1000000));
         lastCode = code;
-        lastRemark = REMARKS[attempt % REMARKS.length] + (attempt >= REMARKS.length ? " " + (attempt / REMARKS.length + 1) : "");
+        // Unique per run: the Description carries the run time (the shared QA environment keeps every record ever saved), so it never repeats.
+        lastRemark = REMARKS[attempt % REMARKS.length] + " "
+                + java.time.LocalDateTime.now().plusSeconds(attempt).format(java.time.format.DateTimeFormatter.ofPattern("yyMMddHHmmss"));
         try {
             page.waitForFunction("() => [...document.querySelectorAll('input[ng-model],textarea[ng-model]')].some(e=>e.offsetParent!==null && /code|commonmaster|frequency|name/i.test(e.getAttribute('ng-model')||''))",
                     null, new Page.WaitForFunctionOptions().setTimeout(10000));

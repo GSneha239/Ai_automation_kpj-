@@ -55,7 +55,7 @@ import java.util.stream.Collectors;
 public class WasteBagTransaction extends DevHisBase {
 
     /** Write gate — T12/T13 create a real record only when this is true. */
-    static final boolean ALLOW_SAVE = Boolean.getBoolean("devhis.allowSave");
+    static final boolean ALLOW_SAVE = !"false".equalsIgnoreCase(System.getProperty("devhis.allowSave"));   // saves by default; -Ddevhis.allowSave=false = read-only
 
     private static final DateTimeFormatter DMY = DateTimeFormatter.ofPattern("dd/MM/yyyy");
 
@@ -181,7 +181,9 @@ public class WasteBagTransaction extends DevHisBase {
         String alerts = wbt.saveForReal();
         boolean saved = alerts.contains(com.kpj.pages.AncillaryServices_page.BiomedicalWaste_page.WasteBagTransaction.MSG_SAVED);
         boolean back = wbt.waitForListScreen(10000);
-        step(page, "Verify the success toast message", "Click Save and read the success toast",
+        // The screenshot is the one taken while the toast was on screen (it fades within seconds).
+        byte[] toastShot = wbt.toastPng != null && wbt.toastPng.length > 0 ? wbt.toastPng : page.screenshot();
+        step(toastShot, "Verify the success toast message", "Click Save and read the success toast",
                 "'" + com.kpj.pages.AncillaryServices_page.BiomedicalWaste_page.WasteBagTransaction.MSG_SAVED + "'",
                 alerts.isEmpty() ? "FAILED - no message appeared" : saved ? alerts + (back ? " (list shown again)" : " (but the list did not come back)") : "FAILED - the screen answered \"" + alerts + "\"",
                 saved ? "PASS" : "FAIL");

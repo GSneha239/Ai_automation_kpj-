@@ -523,7 +523,11 @@ public class WasteBagTransaction extends BasePage {
      * REAL save: click Save and wait for the IUD answer and the message it raises. Creates a record. Call ONLY when the
      * run was explicitly authorised with {@code -Ddevhis.allowSave=true}.
      */
+    /** Screenshot taken while the toast was still on screen (toasts fade within seconds). */
+    public byte[] toastPng;
+
     public String saveForReal() {
+        toastPng = null;
         captureAlerts();
         try {
             Response resp = page.waitForResponse(rs -> rs.url().contains(SAVE_API),
@@ -535,6 +539,7 @@ public class WasteBagTransaction extends BasePage {
             lastSaveApi = "no save call answered within 20s (" + firstLine(e) + ")";
         }
         waitForAlert(8000);
+        try { toastPng = page.screenshot(new Page.ScreenshotOptions().setTimeout(5000)); } catch (Exception ignore) { }
         return String.join(" | ", alerts());
     }
 

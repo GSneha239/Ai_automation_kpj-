@@ -61,8 +61,11 @@ public class Service extends DevHisBase {
 
         // Service Name: the first suitable name the server does not hold yet
         String name = "", checked = "";
-        for (int i = 0; i < NAMES.length + 3; i++) {
-            String candidate = i < NAMES.length ? NAMES[i] : NAMES[0] + " " + (i - NAMES.length + 2);
+        // Stamped with the run time: the shared QA environment keeps every service ever saved, so a fixed name pool is used up for good.
+        final String stamp = java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("ddHHmmss"));
+        final int startAt = (int) (System.currentTimeMillis() / 1000 % NAMES.length);
+        for (int i = 0; i < 4; i++) {
+            String candidate = NAMES[(startAt + i) % NAMES.length] + " " + stamp + (i > 0 ? i : "");
             Boolean taken = sv.nameTaken(candidate);
             checked += (checked.isEmpty() ? "" : "; ") + candidate + (taken == null ? " (could not be checked)" : taken ? " (already exists)" : " (free)");
             if (!Boolean.TRUE.equals(taken)) { name = candidate; break; }

@@ -125,7 +125,10 @@ public class VehicleType extends BasePage {
     public String fillDetails(int attempt) {
         String code = "VT" + String.format("%06d", Math.abs((System.nanoTime() + attempt * 7919L) % 1000000));
         lastCode = code;
-        String remark = REMARKS[attempt % REMARKS.length] + (attempt >= REMARKS.length ? " " + (attempt / REMARKS.length + 1) : "");
+        // Unique per run (a fixed pool is exhausted for good on the shared QA env), kept within 30 characters.
+        String suffix = " " + code.substring(2);
+        String base = REMARKS[attempt % REMARKS.length];
+        String remark = (base.length() + suffix.length() > 30 ? base.substring(0, 30 - suffix.length()).trim() : base) + suffix;
         lastRemark = remark;
         Object r = page.evaluate("(a) => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const A=window.angular; const $=window.jQuery;"
                 + " const vis=e=>e && e.offsetParent!==null;"

@@ -66,12 +66,13 @@ public class BiohazardCategoryMaster extends DevHisBase {
         // Enter details, select Applicability, add the Diagnosis row and Submit — retry with different
         // Code/Remark on "already exists". Applicability is re-asserted and the Diagnosis row only added
         // once (attempt 0) since it already sits in the grid for later attempts.
-        String codeRemark = "", appl = "", diag = "", toast = "";
+        String codeRemark = "", appl = "", diag = "", toast = "", icd = "";
         boolean ok = false, exists = false;
         int used = 0;
         byte[] filledPng = null;
         for (int attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
             codeRemark = bh.fillCodeAndRemark(attempt);
+            if (attempt == 0) icd = bh.selectIcdVersion();   // the Diagnosis Code lookup belongs to this version
             appl = bh.selectApplicability();
             if (attempt == 0) diag = bh.enterDiagnosisAndAdd();
             used++;
@@ -94,6 +95,10 @@ public class BiohazardCategoryMaster extends DevHisBase {
             step(page, "Enter Code and Remark", "Enter Code* (unique) and Remark*",
                     "Code and Remark are entered", crActual, crOk ? "PASS" : "FAIL");
         }
+
+        step(page, "Select ICD Version", "Select the ICD Version (BiohazardCategoryMaster.ICDVersionId)",
+                "An ICD Version is selected", bh.icdVersionSelected() ? "ICD Version = " + icd : "No ICD Version selected: " + icd,
+                bh.icdVersionSelected() ? "PASS" : "FAIL");
 
         boolean applOk = appl.contains("selected=true");
         step(page, "Select Applicability", "Select the Applicability radio (BiohazardCategoryMaster.applicability)",
@@ -118,6 +123,14 @@ public class BiohazardCategoryMaster extends DevHisBase {
             step(page, "Click Submit & success toast",
                     "Click Submit (fnIUDBiohazardCategoryMaster); on 'already exists' change the details and Submit again",
                     "A '... saved successfully' success toast is shown", stepActual, ok ? "PASS" : "FAIL");
+        }
+
+        // Verify the saved record in the list table (back on the list after a successful Submit).
+        if (ok) {
+            String inList = bh.verifyInList(bh.lastCode);
+            step(page, "Verify the record in the list table", "Search the list for the Code just saved (and check every page)",
+                    "The new Biohazard Category (Code " + bh.lastCode + ") is listed in the table",
+                    (bh.listFound ? "PASSES: " : "FAILS: ") + inList, bh.listFound ? "PASS" : "FAIL");
         }
 
         addSummary("Biohazard Code", bh.lastCode);

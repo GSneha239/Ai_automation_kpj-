@@ -329,9 +329,12 @@ public abstract class InventoryReadOnlyCases extends DevHisBase {
 
     // ======================================================================= report
 
+    /** The step name shown in the report: "ID - scenario" by default; a screen can override it (e.g. to drop the ID). */
+    protected String stepLabel(String id, String scenario) { return id + " - " + scenario; }
+
     private void flush(String startedAt) {
         cases.sort(Comparator.comparing(c -> c.id));
-        for (Case c : cases) step(c.png, c.id + " - " + c.scenario, "Steps: " + c.steps, c.expected, c.actual, c.status);
+        for (Case c : cases) step(c.png, stepLabel(c.id, c.scenario), "Steps: " + c.steps, c.expected, c.actual, c.status);
 
         Map<String, Long> counts = cases.stream().collect(Collectors.groupingBy(c -> c.status, TreeMap::new, Collectors.counting()));
         long p = counts.getOrDefault("PASS", 0L), f = counts.getOrDefault("FAIL", 0L), b = counts.getOrDefault("BLOCKED", 0L);

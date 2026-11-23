@@ -40,6 +40,8 @@ public class ReceiveIssueItem extends InventoryReadOnlyCases {
 
     @Override protected InventoryScreen screen() { return ri; }
     @Override protected String idPrefix() { return "RII"; }
+    /** The report shows the scenario only ("Verify page navigation"), without the RII-nn code in front. */
+    @Override protected String stepLabel(String id, String scenario) { return scenario; }
 
     private String toStore = "";
     private List<Map<String, String>> wide = new ArrayList<>();

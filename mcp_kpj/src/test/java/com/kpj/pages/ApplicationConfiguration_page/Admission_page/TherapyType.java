@@ -104,9 +104,13 @@ public class TherapyType extends BasePage {
      *  the discovered ng-models. {@code attempt} shifts BOTH values so a retry after an "already exists" toast
      *  submits genuinely different details. Returns a summary. */
     public String fillCodeAndType(int attempt) {
-        String code = "TT" + String.format("%06d", Math.abs((System.nanoTime() + attempt * 7919L) % 1000000));
+        // Wall-clock digits (nanoTime ticks in 100 ns on Windows, so "% 1000000" repeats far too soon) shared by the Code AND the Description: the shared
+        // environment keeps every saved Therapy Type, so a bare pool name ("Physiotherapy") is used up for good - each run's description is
+        // the pool name + this run's digits and never repeats. A retry shifts the digits, so it submits genuinely different details.
+        String digits = String.format("%06d", ((System.currentTimeMillis() / 1000) + attempt * 7919L) % 1000000);
+        String code = "TT" + digits;
         lastCode = code;
-        lastType = TYPES[attempt % TYPES.length] + (attempt >= TYPES.length ? " " + (attempt / TYPES.length + 1) : "");
+        lastType = TYPES[attempt % TYPES.length] + " " + digits;
         try {
             page.waitForFunction("() => [...document.querySelectorAll('input[ng-model],textarea[ng-model]')].some(e=>e.offsetParent!==null && /code|commonmaster|therapy|name/i.test(e.getAttribute('ng-model')||''))",
                     null, new Page.WaitForFunctionOptions().setTimeout(10000));

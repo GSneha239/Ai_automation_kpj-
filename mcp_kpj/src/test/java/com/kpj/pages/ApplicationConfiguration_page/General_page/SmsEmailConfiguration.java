@@ -42,11 +42,20 @@ public class SmsEmailConfiguration extends BasePage {
                 + "   const cells=[...row.querySelectorAll('.ui-grid-cell')].map(c=>norm(c.textContent)).filter(x=>x);"
                 + "   seen.set(t, cells[0]||''); });"
                 + " if(!vp){ grab(); return resolve([...seen].map(([t,e])=>({t:t,e:e}))); }"
-                + " vp.scrollTop=0; await sleep(300); grab();"
-                + " const step=Math.max(40, Math.floor(vp.clientHeight*0.6));"
-                + " for(let i=0;i<300;i++){ const before=vp.scrollTop; vp.scrollTop=before+step; await sleep(200); grab();"
-                + "   if(vp.scrollTop===before || vp.scrollTop+vp.clientHeight>=vp.scrollHeight-1){ await sleep(250); grab(); break; } }"
-                + " vp.scrollTop=0;"
+                + " const sweep=async()=>{ vp.scrollTop=0; await sleep(300); grab();"
+                + "   const step=Math.max(40, Math.floor(vp.clientHeight*0.6));"
+                + "   for(let i=0;i<300;i++){ const before=vp.scrollTop; vp.scrollTop=before+step; await sleep(200); grab();"
+                + "     if(vp.scrollTop===before || vp.scrollTop+vp.clientHeight>=vp.scrollHeight-1){ await sleep(250); grab(); break; } }"
+                + "   vp.scrollTop=0; };"
+                + " await sweep();"
+                // The list is paged: follow the grid's own Next control until it is disabled, collecting every page.
+                + " const nextBtn=()=>[...document.querySelectorAll('.ui-grid-pager-next,[ng-click*=nextPage],[ng-click*=pageForward],"
+                + "   .pagination li a,.pagination li button,a,button')].filter(vis)"
+                + "   .find(e=>/^(next|>|›|»|&gt;)$/i.test(norm(e.textContent)) || /pager-next|next/i.test(e.className||'') || /nextPage|pageForward/.test(e.getAttribute('ng-click')||''));"
+                + " for(let pg=0;pg<40;pg++){ const nb=nextBtn(); if(!nb) break;"
+                + "   const dis=nb.disabled || /disabled/i.test(nb.className||'') || /disabled/i.test((nb.parentElement||{}).className||'');"
+                + "   if(dis) break; const first=[...seen.keys()].length; nb.click(); await sleep(1200); await sweep();"
+                + "   if([...seen.keys()].length===first) break; }"
                 + " resolve([...seen].map(([t,e])=>({t:t,e:e}))); })");
         return r instanceof java.util.List ? (java.util.List<java.util.Map<String, Object>>) r : new java.util.ArrayList<>();
     }
@@ -317,8 +326,9 @@ public class SmsEmailConfiguration extends BasePage {
                 + "   .filter(x=>x.t && !/^-*\\s*select/i.test(x.t));"
                 + " const taken=x=>a.taken.includes(x.t.toLowerCase());"
                 + " const free=reals.filter(x=>!taken(x));"
-                + " const pool2 = free.length? free : reals;"
-                + " const pick = pool2[Math.min(a.n, pool2.length-1)];"
+                + " const pool2 = free.concat(reals.filter(taken));"
+                + " if(a.n >= pool2.length) return {index:-1, text:'(all events tried)', free:free.length, total:reals.length, rows:a.taken.length, skipped:''};"
+                + " const pick = pool2[a.n];"
                 + " return pick? {index:pick.i, text:pick.t, free:free.length, total:reals.length, rows:a.taken.length,"
                 + "   skipped:reals.filter(taken).map(x=>x.t).slice(0,6).join(', ')} : null; }",
                 java.util.Map.of("p", ADD_PANEL, "n", Math.max(0, nth), "taken", configured));
@@ -330,6 +340,7 @@ public class SmsEmailConfiguration extends BasePage {
                     new com.microsoft.playwright.options.SelectOption()
                             .setIndex(((Number) m.get("index")).intValue()));
         } catch (Exception e) {
+            if (((Number) m.get("index")).intValue() < 0) { lastEvent = "(all events tried)"; return lastEvent; }
             lastEvent = "(select failed: " + e.getMessage().split("\n")[0] + ")";
             return lastEvent;
         }
@@ -483,6 +494,8 @@ public class SmsEmailConfiguration extends BasePage {
      */
     public boolean rowInList(String... values) {
         waitForAngular(2000);
+        // The grid is filled by the search panel's Location: pick it again so the list is reloaded and carries the new row.
+        try { String keep = lastLocation; selectLocation(); lastLocation = keep; waitForAngular(2500); } catch (Exception ignore) { }
         // Match the WHOLE row, not just the event. This screen already holds rows for common events, so an
         // event-only match can find a configuration that was there before the run and call it proof of the
         // save — exactly the false pass a 5-digit postal code produced on the Postal screen.

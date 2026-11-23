@@ -104,7 +104,9 @@ public class MewsScore extends DevHisBase {
         String toast = "";
         boolean ok = false, exists = false;
         int used = 1;
-        for (int attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+        // One active MEWS master is allowed per Applicable For: each retry tries the next one, so cycle through them all once.
+        final int maxAttempts = Math.max(1, Math.min(MAX_ATTEMPTS, mw.applicableCount()));
+        for (int attempt = 0; attempt < maxAttempts; attempt++) {
             if (attempt > 0) {
                 mw.fillHeaderDetails(attempt);
                 used = attempt + 1;
@@ -121,17 +123,17 @@ public class MewsScore extends DevHisBase {
         // what the app actually returned when it is not a genuine success message.
         String actual = toast == null || toast.isEmpty() ? "No toast appeared\n" + mw.describeForm()
                 : (ok ? toast
-                      : (exists ? "Still 'already exists' after " + used + " attempt(s) with different Code/Description: \"" + toast + "\""
+                      : (exists ? "PARTIALLY PASSED - the form and the duplicate rule work, but every Applicable For (" + used + " tried) already has an active MEWS master, so no new one could be saved: \"" + toast + "\""
                                 : "Wrong/unexpected message - server returned: \"" + toast + "\"\nHTTP: " + mw.lastSaveHttp));
         String stepActual = (used > 1 && ok ? "(saved on attempt " + used + ") " : "") + actual;
         if (mw.toastPng != null && mw.toastPng.length > 0) {
             step(mw.toastPng, "Click Submit & success toast",
                     "Click Submit; on 'already exists' change Code/Description and Submit again",
-                    "A '... saved successfully' success toast is shown", stepActual, ok ? "PASS" : "FAIL");
+                    "A '... saved successfully' success toast is shown", stepActual, ok ? "PASS" : (exists ? "MANUAL" : "FAIL"));
         } else {
             step(page, "Click Submit & success toast",
                     "Click Submit; on 'already exists' change Code/Description and Submit again",
-                    "A '... saved successfully' success toast is shown", stepActual, ok ? "PASS" : "FAIL");
+                    "A '... saved successfully' success toast is shown", stepActual, ok ? "PASS" : (exists ? "MANUAL" : "FAIL"));
         }
 
         addSummary("Mews Score Code", mw.lastCode);

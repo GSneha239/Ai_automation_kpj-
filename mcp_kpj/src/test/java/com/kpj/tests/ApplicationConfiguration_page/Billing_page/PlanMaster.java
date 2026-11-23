@@ -85,11 +85,11 @@ public class PlanMaster extends DevHisBase {
                 || lineToast.toLowerCase().contains("detail row") || lineToast.toLowerCase().contains("success"));
         step(page, "Click Add (add the detail line)", "Click Add (fnAddListOfServices) to add the detail line",
                 "The detail line is added to the plan grid",
-                lineToast == null || lineToast.isEmpty() ? "No confirmation after Add" : lineToast, lineOk ? "PASS" : "FAIL");
+                (lineToast == null || lineToast.isEmpty() ? "No confirmation after Add" : lineToast) + (pl.lastAddHttp.isEmpty() ? "" : "  [server: " + pl.lastAddHttp + "]"), lineOk ? "PASS" : "FAIL");
 
         String actual = toast == null || toast.isEmpty() ? "No toast appeared"
                 : (ok ? toast : (exists ? "Still 'already exists' after " + used + " attempt(s) with different details: \"" + toast + "\""
-                                         : "Save not confirmed — server returned: \"" + toast + "\""));
+                                         : "Save not confirmed — server returned: \"" + toast + "\"" + (pl.lastSubmitHttp.isEmpty() ? "" : "  [server: " + pl.lastSubmitHttp + "]")));
         step(page, "Click Submit & success toast", "Click Submit (fnIUDPlanMaster); wait for the success toast",
                 "'... saved successfully.' toast", actual, ok ? "PASS" : "FAIL");
 

@@ -127,8 +127,9 @@ public class District extends DevHisBase {
                             : "Submit answered \"" + toast + "\" and the record is NOT in the list. "
                               + ds.lastListCheck)
                         : "Submit not confirmed — server returned: \"" + toast + "\"");
-        step(page, "Click Submit & success toast", "Click Submit; wait for the success toast",
-                "'... saved successfully' toast", actual, ok ? "PASS" : "FAIL");
+        { String st = ok ? "PASS" : "FAIL"; String ex = "'... saved successfully' toast";
+          if (ds.toastPng != null && ds.toastPng.length > 0) step(ds.toastPng, "Verify the success toast message", "Click Submit; read the success toast", ex, actual, st);
+          else step(page, "Verify the success toast message", "Click Submit; read the success toast", ex, actual, st); }
 
         step(page, "Verify the district was created", "Filter the list for " + code,
                 "The new district is listed", ds.lastListCheck, inList ? "PASS" : "FAIL");

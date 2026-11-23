@@ -111,8 +111,10 @@ public class BiohazardCategoryMaster extends BasePage {
     public String fillCodeAndRemark(int attempt) {
         String code = "BH" + String.format("%05d", Math.abs((System.nanoTime() + attempt * 7919L) % 100000));
         lastCode = code;
-        lastRemark = REMARKS[attempt % REMARKS.length] + (attempt >= REMARKS.length ? " " + (attempt / REMARKS.length + 1) : "");
-        if (attempt >= REMARKS.length) lastRemark = lastRemark + " " + (Math.abs(System.nanoTime()) % 10000);
+        // Unique per run (a fixed pool is exhausted for good on the shared QA env), kept within 30 characters.
+        String suffix = " " + code.substring(2);
+        String base = REMARKS[attempt % REMARKS.length];
+        lastRemark = (base.length() + suffix.length() > 30 ? base.substring(0, 30 - suffix.length()).trim() : base) + suffix;
         Object r = page.evaluate("(a) => { const A=window.angular;"
                 + " const set=(ng,v)=>{ const e=[...document.querySelectorAll(\"input[ng-model='\"+ng+\"'],textarea[ng-model='\"+ng+\"']\")].find(x=>x.offsetParent!==null); if(!e) return '(no)'; const c=A.element(e).controller('ngModel'); e.value=v; if(c){c.$setViewValue(v);c.$render();} e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true})); return v; };"
                 + " const cd=set('BiohazardCategoryMaster.Code', a.code); const rm=set('BiohazardCategoryMaster.description', a.remark);"
@@ -142,6 +144,86 @@ public class BiohazardCategoryMaster extends BasePage {
     }
 
     /** Rows in the "Diagnosis Code · Diagnosis Description · Delete" grid. */
+    public String lastIcdVersion = "";
+
+    /**
+     * Select the <b>ICD Version</b> ({@code BiohazardCategoryMaster.ICDVersionId}) — "ICD10" when offered, else the first real
+     * option. The Diagnosis Code lookup belongs to this version, and Submit answers "Failed!" without it.
+     */
+    public String selectIcdVersion() {
+        Object r = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                + " const e=document.querySelector(\"select[ng-model='BiohazardCategoryMaster.ICDVersionId']\"); if(!e) return '(no ICD Version dropdown)';"
+                + " const reals=[...e.options].map((o,i)=>({o,i})).filter(x=>x.o.value && !/^-*\\s*select/i.test(norm(x.o.textContent)));"
+                + " if(!reals.length) return '(the ICD Version list is empty)';"
+                + " const pick=reals.find(x=>/^icd\\s*-?\\s*10$/i.test(norm(x.o.textContent)))||reals[0];"
+                + " e.selectedIndex=pick.i; e.dispatchEvent(new Event('change',{bubbles:true}));"
+                + " try{ window.angular.element(e).triggerHandler('change'); }catch(x){}"
+                + " return norm(pick.o.textContent); }");
+        waitForAngular(1200);
+        lastIcdVersion = r == null ? "" : r.toString();
+        return lastIcdVersion;
+    }
+
+    public boolean icdVersionSelected() { return !lastIcdVersion.isEmpty() && !lastIcdVersion.startsWith("("); }
+
+    public boolean listFound = false;
+
+    /**
+     * After a successful Submit, look for the new row IN THE LIST TABLE: wait for the grid data to load, search the Code
+     * column filter with real keystrokes, and if the filter does not show it page through every page. Sets {@link #listFound}.
+     */
+    public String verifyInList(String code) {
+        listFound = false;
+        try {
+            if (page.url().toLowerCase().contains("add-")) {
+                page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const b=[...document.querySelectorAll('button,a')]"
+                        + ".filter(x=>x.offsetWidth||x.offsetHeight).find(x=>/closeForm/i.test(x.getAttribute('ng-click')||'')||/^\\s*back\\s*$/i.test(norm(x.textContent))); if(b) b.click(); }");
+                waitForAngular(2000);
+            }
+        } catch (Exception ignore) { }
+        try {
+            page.waitForFunction("() => [...document.querySelectorAll('.ui-grid-row')].filter(r=>r.offsetWidth||r.offsetHeight)"
+                    + ".some(r=>(r.textContent||'').replace(/\\s+/g,' ').trim().length>0)",
+                    null, new Page.WaitForFunctionOptions().setTimeout(20000));
+        } catch (Exception ignore) { }
+        waitForAngular(800);
+        final String gridText = "() => ({rows:[...document.querySelectorAll('.ui-grid-row')].filter(r=>r.offsetWidth||r.offsetHeight).length,"
+                + " text:[...document.querySelectorAll('.ui-grid-row')].filter(r=>r.offsetWidth||r.offsetHeight).map(r=>(r.textContent||'').replace(/\\s+/g,' ').trim()).join(' || ')})";
+        String viaFilter = "no column filter box";
+        try {
+            com.microsoft.playwright.Locator filter = page.locator("input[ng-model='colFilter.term']:visible").first();
+            if (filter.count() > 0) {
+                filter.click();
+                filter.pressSequentially(code, new com.microsoft.playwright.Locator.PressSequentiallyOptions().setDelay(60));
+                waitForAngular(2500);
+                Object g = page.evaluate(gridText);
+                String txt = g instanceof java.util.Map ? String.valueOf(((java.util.Map<?, ?>) g).get("text")) : "";
+                boolean hit = txt.contains(code);
+                viaFilter = "searched the Code filter for \"" + code + "\" -> " + (hit ? "FOUND" : "not shown")
+                        + (g instanceof java.util.Map ? " (" + ((java.util.Map<?, ?>) g).get("rows") + " row(s) shown)" : "");
+                if (hit) { listFound = true; return viaFilter; }
+                filter.fill("");
+                waitForAngular(1500);
+            }
+        } catch (Exception e) { viaFilter = "filter failed: " + e.getMessage().split("\n")[0]; }
+        int pages = 0;
+        String last = null;
+        try { page.evaluate("() => { const b=document.querySelector(\"[ng-click^='pageFirstPageClick']\"); if(b&&!b.disabled) b.click(); }"); waitForAngular(1000); }
+        catch (Exception ignore) { }
+        for (int p = 0; p < 80; p++) {
+            Object g = page.evaluate(gridText);
+            String txt = g instanceof java.util.Map ? String.valueOf(((java.util.Map<?, ?>) g).get("text")) : "";
+            pages++;
+            if (txt.contains(code)) { listFound = true; return viaFilter + "; found on page " + pages + " while paging through the list"; }
+            if (txt.equals(last)) break;
+            last = txt;
+            Object moved = page.evaluate("() => { const b=document.querySelector(\"[ng-click^='pageNextPageClick']\"); if(!b||b.disabled) return false; b.click(); return true; }");
+            if (!Boolean.TRUE.equals(moved)) break;
+            waitForAngular(900);
+        }
+        return viaFilter + "; paged through " + pages + " page(s) of the list without finding \"" + code + "\"";
+    }
+
     public int diagnosisRowCount() {
         Object r = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
                 + " const t=[...document.querySelectorAll('table')].find(x=>/diagnosis code/i.test(((x.querySelector('thead')||{}).innerText)||''));"

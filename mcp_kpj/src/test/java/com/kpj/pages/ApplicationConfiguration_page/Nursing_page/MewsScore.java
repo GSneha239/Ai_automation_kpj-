@@ -171,11 +171,21 @@ public class MewsScore extends BasePage {
                 + " const cd=set(codeEl,a.code); const de=set(descEl,a.description);"
                 + " const appSel=[...document.querySelectorAll('select')].find(e=>e.offsetParent!==null && /applicableto/i.test(e.getAttribute('ng-model')||''));"
                 + " let applicable='(no ApplicableFor select)';"
-                + " if(appSel){ const i=[...appSel.options].findIndex(o=>o.value && !/^-*\\s*select\\s*-*$/i.test(norm(o.textContent))); if(i>=0){ appSel.selectedIndex=i; appSel.dispatchEvent(new Event('change',{bubbles:true})); try{A.element(appSel).triggerHandler('change');}catch(x){} if($){try{$(appSel).trigger('change');}catch(x){}} applicable=norm(appSel.options[i].textContent); } }"
+                // A different "Applicable For" on each retry: the app allows only ONE active MEWS master per Applicable To.
+                + " if(appSel){ const reals=[...appSel.options].map((o,k)=>({o,k})).filter(x=>x.o.value && !/^-*\\s*select\\s*-*$/i.test(norm(x.o.textContent)));"
+                + "   const i=reals.length? reals[a.attempt % reals.length].k : -1; if(i>=0){ appSel.selectedIndex=i; appSel.dispatchEvent(new Event('change',{bubbles:true})); try{A.element(appSel).triggerHandler('change');}catch(x){} if($){try{$(appSel).trigger('change');}catch(x){}} applicable=norm(appSel.options[i].textContent); } }"
                 + " resolve('Code='+cd+' | Description='+de+' | ApplicableFor='+applicable); })",
-                java.util.Map.of("code", code, "description", lastDescription));
+                java.util.Map.of("code", code, "description", lastDescription, "attempt", attempt));
         waitForAngular(500);
         return r == null ? "" : r.toString();
+    }
+
+    /** How many real "Applicable For" options the form offers (0 when the select is not found). */
+    public int applicableCount() {
+        Object r = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                + " const s=[...document.querySelectorAll('select')].find(e=>e.offsetParent!==null && /applicableto/i.test(e.getAttribute('ng-model')||''));"
+                + " return s? [...s.options].filter(o=>o.value && !/^-*\\s*select\\s*-*$/i.test(norm(o.textContent))).length : 0; }");
+        return r instanceof Number ? ((Number) r).intValue() : 0;
     }
 
     // ---- vital / score row --------------------------------------------------

@@ -211,6 +211,15 @@ public class District extends BasePage {
                 .split(",");
         StringBuilder tried = new StringBuilder();
 
+        // The Country list is filled by a server call after the form opens: wait for it (a read at a fixed moment saw an empty
+        // list and reported "no country offered a state" for a screen that was only still loading).
+        for (int i = 0; i < 40 && realOptionCount("country") < 2; i++) page.waitForTimeout(500);
+        if (realOptionCount("country") == 0) {
+            Object d = page.evaluate("() => [...document.querySelectorAll('select')].filter(e=>e.offsetParent!==null)"
+                    + ".map(e=>(e.getAttribute('ng-model')||'?')+' opts='+e.options.length+' disabled='+e.disabled).join(' | ')");
+            System.out.println("District: Country list empty - visible selects: " + d);
+        }
+
         for (String want : preferred) {
             String c = pickCountryByName(want.trim());
             if (c.startsWith("(")) continue;
@@ -397,7 +406,11 @@ public class District extends BasePage {
     }
 
     /** Click <b>Submit</b> and return the toast. Toasts are cleared first so a repeat still reads. */
+    /** Screenshot taken the moment the toast was on screen (toasts fade within seconds). */
+    public byte[] toastPng;
+
     public String submitAndGetToast() {
+        toastPng = null;
         try { page.waitForLoadState(com.microsoft.playwright.options.LoadState.DOMCONTENTLOADED); }
         catch (Exception ignore) { }
         try {
@@ -437,6 +450,7 @@ public class District extends BasePage {
                 }
             } catch (Exception ignore) { }
             if (toast.isEmpty()) page.waitForTimeout(500);
+            else { try { toastPng = page.screenshot(new Page.ScreenshotOptions().setTimeout(5000)); } catch (Exception ignore) { } }
         }
         if (toast.isEmpty()) {
             try {
@@ -446,7 +460,7 @@ public class District extends BasePage {
                         + "|added successfully|updated successfully|message not found|please (enter|select))\\b[^.!]*[.!]?/i);"
                         + " return m? m[0].trim().slice(0,160) : ''; }");
                 String fromPage = banner == null ? "" : banner.toString().trim();
-                if (!fromPage.isEmpty()) toast = fromPage;
+                if (!fromPage.isEmpty()) { toast = fromPage; try { toastPng = page.screenshot(new Page.ScreenshotOptions().setTimeout(5000)); } catch (Exception ignore2) { } }
             } catch (Exception ignore) { }
         }
         lastSaveDiagnostics = (clicked == null ? "" : clicked.toString())
@@ -495,7 +509,13 @@ public class District extends BasePage {
                     + " const rows=[...document.querySelectorAll('tr,.ui-grid-row')].filter(vis)"
                     + "   .map(t=>norm(t.textContent)).filter(t=>t);"
                     + " const m=rows.find(t=>c && t.includes(c));"
-                    + " return m? 'FOUND: '+m.slice(0,120) : 'not in the list ('+rows.length+' rows shown)'; }",
+                    + " if(m) return 'FOUND: '+m.slice(0,120);"
+                    // The grid only draws the rows in view: also search the grid's own data for the code.
+                    + " try { const el=document.querySelector('.ui-grid, [ui-grid]'); const sc=angular.element(el).isolateScope()||angular.element(el).scope();"
+                    + "   const o=(sc.grid&&sc.grid.options)||sc.gridOptions||(sc.$parent&&sc.$parent.gridOptions); const d=(o&&o.data)||[];"
+                    + "   const r=d.find(x=>JSON.stringify(x).toLowerCase().indexOf(String(c).toLowerCase())>=0);"
+                    + "   if(r) return 'FOUND (grid data, row not drawn): '+JSON.stringify(r).slice(0,120); } catch(e){}"
+                    + " return 'not in the list ('+rows.length+' rows shown)'; }",
                     code);
             lastListCheck = "looked for \"" + code + "\" -> " + (hit == null ? "" : hit);
         } catch (Exception e) {

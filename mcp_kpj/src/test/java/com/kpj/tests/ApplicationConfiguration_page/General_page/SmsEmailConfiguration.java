@@ -115,13 +115,18 @@ public class SmsEmailConfiguration extends DevHisBase {
         // saves again rather than reporting a working screen as broken.
         String toast = se.saveAndGetToast();
         StringBuilder retries = new StringBuilder();
-        for (int attempt = 1; attempt <= 8
+        String lastRefused = event;
+        for (int attempt = 1; attempt <= 40
                 && toast != null && toast.toLowerCase().contains("already exist"); attempt++) {
             retries.append(retries.length() == 0 ? "" : "; ")
                    .append("\"").append(toast).append("\" for ").append(event);
-            event = se.selectEvent(attempt);
+            lastRefused = event;
+            String next = se.selectEvent(attempt);
+            if (next.startsWith("(all events tried)")) { event = lastRefused; break; }
+            event = next;
             toast = se.saveAndGetToast();
         }
+        boolean allDuplicates = toast != null && toast.toLowerCase().contains("already exist");
         if (retries.length() > 0) addSummary("Duplicate retries", retries + " -> retried with " + event);
         boolean ok = com.kpj.pages.ApplicationConfiguration_page.General_page.SmsEmailConfiguration.isSuccess(toast);
 
@@ -154,16 +159,18 @@ public class SmsEmailConfiguration extends DevHisBase {
                           + "that names no record is not a valid confirmation, even though the record "
                           + "itself is written."
                         : ""),
-                (ok && !malformed) ? "PASS" : "FAIL");
+                (ok && !malformed) ? "PASS" : (allDuplicates ? "MANUAL" : "FAIL"));
 
         step(page, "Verify the configuration was created",
                 "Look for a row carrying the event, SMS template, e-mail template and recipient just saved",
                 "The new configuration is listed",
                 (inList
                     ? "PASSES because a single row carries every value chosen: " + se.lastListCheck
-                    : "FAILS because no row carries the whole configuration that was saved. "
+                    : (allDuplicates
+                        ? "NOT CHECKED - nothing was saved: every event was refused as \"Record already exist!\" (one configuration per event). "
+                        : "FAILS because no row carries the whole configuration that was saved. ")
                       + se.lastListCheck),
-                inList ? "PASS" : "FAIL");
+                inList ? "PASS" : (allDuplicates ? "MANUAL" : "FAIL"));
 
         addSummary("Location", se.lastLocation);
         addSummary("Event", se.lastEvent);

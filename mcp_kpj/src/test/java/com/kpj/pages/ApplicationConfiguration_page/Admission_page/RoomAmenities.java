@@ -93,7 +93,10 @@ public class RoomAmenities extends BasePage {
     public String fillCodeAndRemark(int attempt) {
         String code = "RA" + String.format("%06d", Math.abs((System.nanoTime() + attempt * 7919L) % 1000000));
         lastCode = code;
-        lastRemark = REMARKS[attempt % REMARKS.length] + (attempt >= REMARKS.length ? " " + (attempt / REMARKS.length + 1) : "");
+        // Unique per run (a fixed pool is exhausted for good on the shared QA env), kept within 30 characters.
+        String suffix = " " + code.substring(2);
+        String base = REMARKS[attempt % REMARKS.length];
+        lastRemark = (base.length() + suffix.length() > 30 ? base.substring(0, 30 - suffix.length()).trim() : base) + suffix;
         // The form can render async — poll for a real code/master input to appear.
         try {
             page.waitForFunction("() => [...document.querySelectorAll('input[ng-model],textarea[ng-model]')].some(e=>e.offsetParent!==null && /commonmaster|code|amenit/i.test(e.getAttribute('ng-model')||''))",

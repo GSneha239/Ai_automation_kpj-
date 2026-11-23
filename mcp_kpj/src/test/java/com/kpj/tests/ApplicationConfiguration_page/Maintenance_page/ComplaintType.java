@@ -3,14 +3,14 @@ package com.kpj.tests.ApplicationConfiguration_page.Maintenance_page;
 import com.kpj.core.DevHisBase;
 import com.kpj.pages.LoginPage;
 
-// The page object is also named MaintenanceComplaintStatus — referenced by its fully-qualified name.
+// The page object is also named ComplaintType — referenced by its fully-qualified name.
 
 /**
- * Application Configuration &gt; Maintenance &gt; <b>Complaint Status</b>.
+ * Application Configuration &gt; Maintenance &gt; <b>Complaint Type</b>.
  *
  * <ol>
  *   <li>Login (shared {@link LoginPage}, on an OPD counter so the menu exists).</li>
- *   <li>Open <b>Application Configuration</b> → <b>Maintenance</b> → <b>Complaint Status</b>.</li>
+ *   <li>Open <b>Application Configuration</b> → <b>Maintenance</b> → <b>Complaint Type</b>.</li>
  *   <li>Enter the <b>Code</b> and the <b>Remark</b>.</li>
  *   <li>Enter the <b>MIMS GUID</b> and <b>MIMS Description</b>.</li>
  *   <li>Select the <b>MIMS Type</b>.</li>
@@ -23,17 +23,17 @@ import com.kpj.pages.LoginPage;
  * <p>The requested steps do not mention Add; the flow clicks it only if the form is not already on screen
  * and says which it found.</p>
  *
- * <p>&#9888; A successful run CREATES a REAL complaint status in the target environment.</p>
+ * <p>&#9888; A successful run CREATES a REAL complaint type in the target environment.</p>
  */
-public class MaintenanceComplaintStatus extends DevHisBase {
+public class ComplaintType extends DevHisBase {
 
     /** DevHIS only builds the nav menu for an outpatient counter. Override with {@code -Dcounter=}. */
     public static final String COUNTER_FOR_MENU = "OPD-B-01";
 
-    public MaintenanceComplaintStatus() { super("ApplicationConfiguration_Maintenance_MaintenanceComplaintStatus"); }
+    public ComplaintType() { super("ApplicationConfiguration_Maintenance_ComplaintType"); }
 
     public static void main(String[] args) {
-        MaintenanceComplaintStatus t = new MaintenanceComplaintStatus();
+        ComplaintType t = new ComplaintType();
         try { t.run(); } finally { t.stop(); }
     }
 
@@ -42,13 +42,15 @@ public class MaintenanceComplaintStatus extends DevHisBase {
 
     @Override
     protected void body() {
-        meta("Application Configuration - Maintenance - Complaint Status", "Application Configuration > Maintenance > Complaint Status",
-                "&#9888; Creates a REAL complaint status: enter Code and Remark, then Submit.");
+        meta("Application Configuration - Maintenance - Complaint Type", "Application Configuration > Maintenance > Complaint Type",
+                "&#9888; Creates a REAL complaint type: enter Code and Remark, then Submit.");
 
         String counter = System.getProperty("counter", COUNTER_FOR_MENU);
-        String stamp = String.format("%05d", Math.abs(System.nanoTime() % 100000));
-        String code = System.getProperty("code", "MCS" + stamp);
-        String remark = System.getProperty("remark", "Auto complaint status " + stamp);
+        // Stamped from the wall clock: System.nanoTime() ticks in 100 ns steps on this machine, so its remainders end in "00" and a code
+        // taken from them came from only ~1,000 values — too few for a master list that keeps every record ever saved.
+        String stamp = String.format("%05d", System.currentTimeMillis() % 100000);
+        String code = System.getProperty("code", "MCT" + stamp);
+        String remark = System.getProperty("remark", "Auto complaint type " + stamp);
         // Distinct from the remark on purpose: the form carries two description boxes, and identical
         // values would hide one being written into the other.
         String mimsGuid = System.getProperty("mimsguid", "GUID-" + stamp);
@@ -58,15 +60,15 @@ public class MaintenanceComplaintStatus extends DevHisBase {
         step("Login", USER + " login (counter " + counter + ")",
                 "Authenticated; Patient Dashboard with the navigation menu", "Logged in", "PASS");
 
-        com.kpj.pages.ApplicationConfiguration_page.Maintenance_page.MaintenanceComplaintStatus tor =
-                new com.kpj.pages.ApplicationConfiguration_page.Maintenance_page.MaintenanceComplaintStatus(page);
+        com.kpj.pages.ApplicationConfiguration_page.Maintenance_page.ComplaintType tor =
+                new com.kpj.pages.ApplicationConfiguration_page.Maintenance_page.ComplaintType(page);
 
         // 1) Navigate
         boolean rendered = tor.navigateViaMenu(BASE);
         if (!rendered) addSummary("Maintenance submenu offered", tor.lastMenu);
-        step(page, "Open Complaint Status screen",
-                "Click Application Configuration -> Maintenance -> Complaint Status",
-                "The Complaint Status screen is shown",
+        step(page, "Open Complaint Type screen",
+                "Click Application Configuration -> Maintenance -> Complaint Type",
+                "The Complaint Type screen is shown",
                 rendered ? "Opened " + page.url()
                            + (tor.lastRoute.isEmpty() ? "" : " (menu route " + tor.lastRoute + ")")
                          : "Did NOT reach the screen (" + page.url() + ") — see the Maintenance submenu dump",
@@ -104,6 +106,8 @@ public class MaintenanceComplaintStatus extends DevHisBase {
                 entered ? "PASS" : "FAIL");
 
         // 3) MIMS GUID + MIMS Description
+        final boolean hasMims = tor.hasMimsFields();   // a step for a field the screen does not have is left out
+        if (hasMims) {
         String mims = tor.enterMims(mimsGuid, mimsDesc);
         boolean mimsOk = tor.mimsEntered(mimsGuid, mimsDesc);
         step(page, "Enter MIMS GUID and MIMS Description",
@@ -123,11 +127,11 @@ public class MaintenanceComplaintStatus extends DevHisBase {
                 (typeOk
                     ? "PASSES because the MIMS Type dropdown holds the choice: " + mimsType
                     : "FAILS because no MIMS type could be selected: " + mimsType),
-                typeOk ? "PASS" : "FAIL");
+                typeOk ? "PASS" : "FAIL");        }
 
         // 5) Submit -> toast
         String toast = tor.submitAndGetToast();
-        boolean ok = com.kpj.pages.ApplicationConfiguration_page.Maintenance_page.MaintenanceComplaintStatus.isSuccess(toast);
+        boolean ok = com.kpj.pages.ApplicationConfiguration_page.Maintenance_page.ComplaintType.isSuccess(toast);
 
         boolean noMessage = !ok && toast != null && toast.toLowerCase().contains("message not found");
         boolean inList = tor.codeInList(code, remark);
@@ -159,8 +163,8 @@ public class MaintenanceComplaintStatus extends DevHisBase {
                         : ""),
                 (ok && !malformed) ? "PASS" : "FAIL");
 
-        step(page, "Verify the complaint status was created", "Look for " + code + " in the list",
-                "The new complaint status is listed",
+        step(page, "Verify the complaint type was created", "Look for " + code + " in the list",
+                "The new complaint type is listed",
                 (inList
                     ? "PASSES because the saved record — the code AND its remark — was found in the "
                       + "list: " + tor.lastListCheck

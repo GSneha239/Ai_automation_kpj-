@@ -225,8 +225,20 @@ public class Payable extends BasePage {
         String designation = selectFirstReal("payable.DesignationID");
         setNg("payable.RegNo", "MMC" + uniqueId());
         setNg("payable.EmailId", randomEmail());
-        return "MaritalStatus=" + marital + " | Nationality=" + nationality + " | Designation=" + designation;
+        // IC Number* (payable.PanNo): Submit answers "Please Enter IC Number!" without it. 12 digits (a valid yymmdd date + 6 clock digits) so it
+        // is different on every run.
+        lastIcNumber = "900202" + String.format("%06d", (System.currentTimeMillis() / 1000) % 1000000);
+        setNg("payable.PanNo", lastIcNumber);
+        // Slot Duration (payable.Slotduration, minutes): a Doctor payable cannot be saved without it ("Please Enter Slot Duration!").
+        setNg("payable.Slotduration", "15");
+        // Acc Ledger Name (payable.AccLedgerName, on this tab): also required by Submit ("Please Enter Acc Ledger Name!").
+        String ledger = "Acc Ledger " + lastIcNumber.substring(6);
+        setNg("payable.AccLedgerName", ledger);
+        return "MaritalStatus=" + marital + " | Nationality=" + nationality + " | Designation=" + designation + " | IC Number=" + lastIcNumber + " | Slot Duration=15 | Acc Ledger Name=" + ledger;
     }
+
+    /** The IC Number the last {@link #fillPersonalInformation()} entered. */
+    public String lastIcNumber = "";
 
     // ---- Location-Department tab --------------------------------------------
 
@@ -325,7 +337,7 @@ public class Payable extends BasePage {
     // ---- Einvoice tab -----------------------------------------------------------
 
     public String fillEinvoice() {
-        switchTab("Einvoice");
+        switchTab("E-?Invoice");   // the tab reads "E-Invoice" (older builds: "Einvoice"); while it is not the open tab its fields stay hidden and Add cannot be clicked
         setNg("Einvoice.tinnumber", "TIN" + uniqueId());
         setNg("Einvoice.identificationno", randomNRIC());
         setNg("Einvoice.tourismtaxregistrationno", "TTX" + uniqueId());

@@ -13,9 +13,9 @@ import com.microsoft.playwright.Page;
  * the box already claimed by the Code, so one value cannot be written over the other — the defect that
  * put the area name into the Code field on Area/Town while the run still reported a pass.</p>
  */
-public class MaintenanceComplaintType extends BasePage {
+public class ComplaintStatus extends BasePage {
 
-    public MaintenanceComplaintType(Page page) { super(page); }
+    public ComplaintStatus(Page page) { super(page); }
 
     public String lastBodyText = "", lastControls = "", lastMenu = "", lastEntry = "", lastToast = "",
             lastSaveDiagnostics = "", lastListCheck = "", lastRoute = "", lastAdd = "";
@@ -45,7 +45,7 @@ public class MaintenanceComplaintType extends BasePage {
     // ---- navigation ------------------------------------------------------
 
     /**
-     * Application Configuration &rarr; Maintenance &rarr; MaintenanceComplaintType.
+     * Application Configuration &rarr; Maintenance &rarr; ComplaintStatus.
      *
      * <p>The route is taken from the menu link and used as the fallback too — guessing routes on this
      * module is a coin flip, and a wrong guess lands the run on the dashboard while still looking like a
@@ -55,11 +55,8 @@ public class MaintenanceComplaintType extends BasePage {
         try { page.waitForFunction("() => window.angular", null,
                 new Page.WaitForFunctionOptions().setTimeout(20000)); } catch (Exception ignore) { }
 
-        // Expand each level only if it is not already open (a second click on an open entry CLOSES it), and look "Maintenance" up INSIDE
-        // Application Configuration — the sidebar is built lazily and has same-named entries.
-        expandMenuEntry(null, "^\\s*application\\s*config(uration)?\\s*$");
-        expandMenuEntry("^\\s*application\\s*config(uration)?\\s*$", "^\\s*maintenance\\s*$");
-        waitForAngular(800);
+        clickMenu("^\\s*application\\s*configuration\\s*$");
+        clickMenu("^\\s*maintenance\\s*$");
         lastMenu = describeMenu();
 
         // Anchored to the whole label. A loose match on "generic" would take the first menu entry that
@@ -67,17 +64,17 @@ public class MaintenanceComplaintType extends BasePage {
         // against Complaint Type and reported PASS against the wrong screen's fields.
         Object href = page.evaluate("() => {" + JS
                     + " const named=[...document.querySelectorAll('a[href]')]"
-                    + "   .filter(x=>/^\\s*complaint\\s*type\\s*$/i.test(norm(x.textContent)));"
+                    + "   .filter(x=>/^\\s*complaint\\s*status\\s*$/i.test(norm(x.textContent)));"
                     // Equipment has a screen of the same name; take the MAINTENANCE one by its route,
                     // then the visible one, and only then fall back to the first.
                     + " const a=named.find(x=>/main/i.test(x.getAttribute('href')||''))"
                     + "   || named.filter(vis)[0] || named[0];"
-                    + " if(!a) return ''; a.id='__mctMenu'; return a.getAttribute('href')||''; }");
+                    + " if(!a) return ''; a.id='__mcsMenu'; return a.getAttribute('href')||''; }");
         lastRoute = href == null ? "" : href.toString();
         if (!lastRoute.isEmpty()) {
-            try { page.locator("#__mctMenu").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000)); }
-            catch (Exception e) { System.out.println("MaintenanceComplaintType.nav: " + e.getMessage().split("\n")[0]); }
-            page.evaluate("() => { const e=document.getElementById('__mctMenu'); if(e) e.removeAttribute('id'); }");
+            try { page.locator("#__mcsMenu").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000)); }
+            catch (Exception e) { System.out.println("ComplaintStatus.nav: " + e.getMessage().split("\n")[0]); }
+            page.evaluate("() => { const e=document.getElementById('__mcsMenu'); if(e) e.removeAttribute('id'); }");
             waitForAngular(3000);
         }
         if (!onScreen() && !lastRoute.isEmpty()) {
@@ -115,7 +112,7 @@ public class MaintenanceComplaintType extends BasePage {
                     null, new Page.WaitForFunctionOptions().setTimeout(timeoutMs));
             return true;
         } catch (Exception e) {
-            System.out.println("MaintenanceComplaintType.waitForScreenControls: no Code box or grid within "
+            System.out.println("ComplaintStatus.waitForScreenControls: no Code box or grid within "
                     + timeoutMs + "ms — the screen may not have rendered");
             return false;
         }
@@ -140,7 +137,7 @@ public class MaintenanceComplaintType extends BasePage {
     }
 
     /**
-     * On the MaintenanceComplaintType screen — matched on the hash route, never on page text.
+     * On the ComplaintStatus screen — matched on the hash route, never on page text.
      *
      * <p>The route bears no resemblance to the label: this screen is served from <b>{@code #/GENMST}</b>.
      * Requiring the route to contain "generic" rejected the very page the menu had just opened, the run
@@ -152,7 +149,7 @@ public class MaintenanceComplaintType extends BasePage {
         int h = u.indexOf('#');
         String route = h < 0 ? "" : u.substring(h);
         if (route.contains("patientdashboard") || route.equals("#") || route.isEmpty()) return false;
-        if (route.contains("maincomplainttype") || route.contains("maincomplaint")
+        if (route.contains("maincomplaintstatus") || route.contains("maincomplaint")
                 || route.contains("genmst")) return true;
         String menuRoute = lastRoute == null ? "" : lastRoute.toLowerCase().replace("#", "").trim();
         return !menuRoute.isEmpty() && route.contains(menuRoute);
@@ -177,7 +174,7 @@ public class MaintenanceComplaintType extends BasePage {
                 + "     +(ng||'?')+'] type='+(e.type||'')+' label=\"'+labelOf(e).slice(0,45)+'\"'); }"
                 + " return [...new Set(out)].join('\\n'); }");
         lastControls = r == null ? "" : r.toString();
-        System.out.println("=== MaintenanceComplaintType CONTROLS ===\n" + lastControls);
+        System.out.println("=== ComplaintStatus CONTROLS ===\n" + lastControls);
         return lastControls;
     }
 
@@ -204,15 +201,15 @@ public class MaintenanceComplaintType extends BasePage {
         page.evaluate("() => {" + JS
                 + " const b=[...document.querySelectorAll('button,a,input[type=button]')].filter(vis)"
                 + "   .find(x=>/^\\s*add\\s*$/i.test(norm(x.textContent)||x.value||'')"
-                + "        || /add-?complaint|AddMaintenanceComplaintType|MAINCOMPLAINT/i.test((x.getAttribute('href')||'')"
+                + "        || /add-?complaint|AddComplaintStatus|MAINCOMPLAINT/i.test((x.getAttribute('href')||'')"
                 + "             +' '+(x.getAttribute('ng-click')||'')));"
-                + " if(b) b.id='__mctAdd'; }");
+                + " if(b) b.id='__mcsAdd'; }");
         try {
-            page.locator("#__mctAdd").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000));
+            page.locator("#__mcsAdd").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000));
         } catch (Exception e) {
-            System.out.println("MaintenanceComplaintType.openFormIfNeeded: " + e.getMessage().split("\n")[0]);
+            System.out.println("ComplaintStatus.openFormIfNeeded: " + e.getMessage().split("\n")[0]);
         }
-        page.evaluate("() => { const e=document.getElementById('__mctAdd'); if(e) e.removeAttribute('id'); }");
+        page.evaluate("() => { const e=document.getElementById('__mcsAdd'); if(e) e.removeAttribute('id'); }");
         waitForAngular(1500);
         lastAdd = formOpen() ? "The form needed Add; it is now open." : "Add did not open a form.";
         return lastAdd;
@@ -226,6 +223,14 @@ public class MaintenanceComplaintType extends BasePage {
      * <p>Checked WITHOUT writing anything: probing by typing into whichever field is present would corrupt
      * a genuinely different (wrong) screen's own data.</p>
      */
+    /** True when the open form carries MIMS GUID / MIMS Description boxes (this screen's form may not). */
+    public boolean hasMimsFields() {
+        Object r = page.evaluate("() => {" + JS
+                + " return [...document.querySelectorAll('input,textarea,select')].filter(vis)"
+                + "   .some(e=>/mims/i.test(ngOf(e)+' '+(e.placeholder||''))); }");
+        return Boolean.TRUE.equals(r);
+    }
+
     public boolean hasExpectedFields() {
         Object r = page.evaluate("() => {" + JS
                 + " const boxes=[...document.querySelectorAll('input,textarea')].filter(vis)"
@@ -270,7 +275,7 @@ public class MaintenanceComplaintType extends BasePage {
                 java.util.List.of(code, remark));
         lastEntry = r == null ? "" : r.toString();
         waitForAngular(500);
-        System.out.println("MaintenanceComplaintType: " + lastEntry);
+        System.out.println("ComplaintStatus: " + lastEntry);
         return lastEntry;
     }
 
@@ -307,7 +312,7 @@ public class MaintenanceComplaintType extends BasePage {
                 java.util.List.of(guid, description));
         lastMims = r == null ? "" : r.toString();
         waitForAngular(500);
-        System.out.println("MaintenanceComplaintType: " + lastMims);
+        System.out.println("ComplaintStatus: " + lastMims);
         return lastMims;
     }
 
@@ -338,10 +343,10 @@ public class MaintenanceComplaintType extends BasePage {
         }
 
         Object info = page.evaluate("() => {" + JS
-                + " document.querySelectorAll('#__mctMims').forEach(e=>e.removeAttribute('id'));"
+                + " document.querySelectorAll('#__mcsMims').forEach(e=>e.removeAttribute('id'));"
                 + " const e=[...document.querySelectorAll('select')].filter(vis)"
                 + "   .find(s=>/mimstype/i.test(tail(s)));"
-                + " if(!e) return null; e.id='__mctMims';"
+                + " if(!e) return null; e.id='__mcsMims';"
                 + " const reals=[...e.options].map((o,i)=>({o,i}))"
                 + "   .filter(x=>x.o.value && !/^-*\\s*select/i.test(norm(x.o.text)));"
                 + " return {index: reals.length? reals[0].i : -1, ng:(ngOf(e)||'?'), count:reals.length}; }");
@@ -351,17 +356,17 @@ public class MaintenanceComplaintType extends BasePage {
         int index = ((Number) m.get("index")).intValue();
         if (index < 0) { lastMimsType = "(no-option) [" + m.get("ng") + "]"; return lastMimsType; }
         try {
-            page.locator("#__mctMims").selectOption(
+            page.locator("#__mcsMims").selectOption(
                     new com.microsoft.playwright.options.SelectOption().setIndex(index));
         } catch (Exception e) {
             lastMimsType = "(select failed: " + e.getMessage().split("\n")[0] + ")";
             return lastMimsType;
         }
         waitForAngular(900);
-        Object t = page.evaluate("() => { const e=document.getElementById('__mctMims');"
+        Object t = page.evaluate("() => { const e=document.getElementById('__mcsMims');"
                 + " return e? ((e.options[e.selectedIndex]||{}).text||'').trim() : ''; }");
         lastMimsType = (t == null ? "" : t.toString()) + " [" + m.get("ng") + ", " + m.get("count") + " options]";
-        System.out.println("MaintenanceComplaintType: MIMS Type = " + lastMimsType);
+        System.out.println("ComplaintStatus: MIMS Type = " + lastMimsType);
         return lastMimsType;
     }
 
@@ -446,7 +451,7 @@ public class MaintenanceComplaintType extends BasePage {
         lastSaveDiagnostics = (clicked == null ? "" : clicked.toString())
                 + (toast.isEmpty() ? "; no message within 20s" : "");
         lastToast = toast;
-        System.out.println("MaintenanceComplaintType: submit -> " + lastSaveDiagnostics + " toast=\"" + toast + "\"");
+        System.out.println("ComplaintStatus: submit -> " + lastSaveDiagnostics + " toast=\"" + toast + "\"");
         return toast;
     }
 
@@ -530,7 +535,7 @@ public class MaintenanceComplaintType extends BasePage {
         } catch (Exception e) {
             lastListCheck += "could not read the list: " + e.getMessage().split("\n")[0];
         }
-        System.out.println("MaintenanceComplaintType: list check -> " + lastListCheck);
+        System.out.println("ComplaintStatus: list check -> " + lastListCheck);
         return lastListCheck.contains("FOUND:");
     }
 }

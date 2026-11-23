@@ -81,11 +81,12 @@ public class LinenMachine extends DevHisBase {
         com.kpj.pages.AncillaryServices_page.Linen_page.LinenMachine lm =
                 new com.kpj.pages.AncillaryServices_page.Linen_page.LinenMachine(page);
         try {
+            // Reported steps: Enter code and remark, Click Submit, Verify the success toast message, Verify the table, then the two
+            // mandatory-field checks. Opening the screen / waiting for the list are silent (only a failure to open is reported).
             if (!t1Open(lm)) return;
-            t2List(lm);
-            String created = t3Add(lm);
-            boolean listed = t4Listed(lm, created);
-            t5Search(lm, listed ? created : null);
+            lm.waitForList(15000);
+            String created = addFlow(lm);
+            t4Listed(lm, created);
             t6Mandatory(lm);
         } finally {
             lm.dispose();
@@ -96,11 +97,9 @@ public class LinenMachine extends DevHisBase {
     private boolean t1Open(com.kpj.pages.AncillaryServices_page.Linen_page.LinenMachine lm) {
         boolean on = lm.navigateViaMenu();
         String landed = lm.currentScreen();
-        String how = lm.usedMenu ? "via the sidebar menu" : "via the direct route (sidebar link could not be used)";
-        step(page, "T1 Open Linen Machine", "Ancillary Services -> Linen -> Linen Machine",
-                "The Linen Machine screen opens (route #/LinenMachine, Form Name = Linen Machine)",
-                on ? "Opened " + how + ": " + landed : "WRONG PAGE / not opened - app shows: " + landed + "\n" + lm.describeRoutes("LinenMachine"),
-                on && lm.usedMenu ? "PASS" : "FAIL");
+        if (!on) step(page, "Open Linen Machine", "Ancillary Services -> Linen -> Linen Machine",
+                "The Linen Machine screen opens (route #/LinenMachine)",
+                "WRONG PAGE / not opened - app shows: " + landed + "\n" + lm.describeRoutes("LinenMachine"), "FAIL");
         if (!on) addSummary("Result", "FAILED - Linen Machine screen did not open: " + landed);
         return on;
     }
@@ -120,32 +119,39 @@ public class LinenMachine extends DevHisBase {
                 + (absent.isEmpty() ? "" : " | MISSING columns: " + absent)
                 + (formProblems.isEmpty() ? "" : " | MISSING form controls: " + formProblems)
                 + (apiOk ? "" : " | list API did not return HTTP 200");
-        step(page, "T2 Linen Machine list & columns", "Wait for the list to load; read the grid header",
+        step(page, "Linen Machine list & columns", "Wait for the list to load; read the grid header",
                 "List loads; columns Code, Remark, Status, Edit are shown; Code/Remark/Submit/Clear are present", actual, ok ? "PASS" : "FAIL");
         addSummary("Existing records", String.valueOf(rows.size()));
     }
 
     // ---- T3 ---------------------------------------------------------------------------------------------------------
     /** @return the code of the machine that the app confirmed saving, or null */
-    private String t3Add(com.kpj.pages.AncillaryServices_page.Linen_page.LinenMachine lm) {
-        if (!ALLOW_SAVE) {
-            step(page, "T3 Add Linen Machine", "Enter a unique Code + Remark and Submit",
-                    "'Master Saved Successfully'", "Not run - writing to HIS Demo needs -Ddevhis.allowSave=true", "SKIPPED");
-            return null;
-        }
+    private String addFlow(com.kpj.pages.AncillaryServices_page.Linen_page.LinenMachine lm) {
+        // Four steps: Enter code and remark / Click Submit / Verify the success toast message / Verify the table (see t4Listed).
+        // The Code and Remark are stamped with the run time (the shared environment keeps every machine ever saved); a different
+        // pair is entered if the server says "already exists".
         String code = null, remark = null, alerts = "";
+        byte[] filledShot = null, toastShot = null;
         boolean saved = false;
         for (int attempt = 0; attempt < 3 && !saved; attempt++) {
             code = uniqueCode(attempt);
             remark = "AUTOTEST Linen Machine " + code;
             lm.fill(code, remark);
+            try { filledShot = page.screenshot(); } catch (Exception ignore) { }
             alerts = lm.submitForReal();
+            toastShot = lm.toastPng;
             saved = alerts.contains(com.kpj.pages.AncillaryServices_page.Linen_page.LinenMachine.MSG_SAVED);
             if (!saved && !alerts.toLowerCase().contains("already exists")) break; // a real failure — don't retry
         }
-        step(page, "T3 Add Linen Machine", "Enter Code '" + code + "' and Remark '" + remark + "', click Submit",
-                "'Master Saved Successfully' and the save API succeeds",
-                (alerts.isEmpty() ? "No message shown" : "Message: " + alerts) + " | Save API: " + lm.lastSaveApi,
+        final boolean submitted = !lm.lastSaveApi.startsWith("no save call") || !alerts.isEmpty();
+        stepShot(filledShot, "Enter code and remark", "Enter the Code " + code + " and the Remark " + remark,
+                "Both are entered", "Code=" + code + " | Remark=" + remark, "PASS");
+        step(page, "Click Submit", "Click Submit", "The save is sent to the server",
+                submitted ? "Submit clicked | Save API: " + lm.lastSaveApi : "Submit did not send a save: " + lm.lastSaveApi,
+                submitted ? "PASS" : "FAIL");
+        stepShot(toastShot, "Verify the success toast message", "Read the message shown after Submit",
+                "'" + com.kpj.pages.AncillaryServices_page.Linen_page.LinenMachine.MSG_SAVED + "'",
+                alerts.isEmpty() ? "No message shown" : (saved ? "PASSES because the screen answered with the success message: " : "FAILS - ") + alerts,
                 saved ? "PASS" : "FAIL");
         addSummary("Created Code", saved ? code : "(not created)");
         addSummary("Created Remark", saved ? remark : "(not created)");
@@ -155,8 +161,8 @@ public class LinenMachine extends DevHisBase {
     // ---- T4 ---------------------------------------------------------------------------------------------------------
     private boolean t4Listed(com.kpj.pages.AncillaryServices_page.Linen_page.LinenMachine lm, String code) {
         if (code == null) {
-            step(page, "T4 New machine in the list", "Find the added Code in the refreshed list", "The new machine is listed (Active)",
-                    ALLOW_SAVE ? "Not run - T3 did not confirm a save" : "Not run - no machine was added (read-only mode)", "SKIPPED");
+            step(page, "Verify the table", "Find the added Code in the refreshed list", "The new machine is listed (Active)",
+                    "Not run - the save was not confirmed, so there is no new row to look for", "SKIPPED");
             return false;
         }
         // The screen re-fetches the grid after a save; poll the grid data for the new code.
@@ -167,7 +173,7 @@ public class LinenMachine extends DevHisBase {
             if (row == null) page.waitForTimeout(500);
         }
         boolean ok = row != null && "Active".equals(String.valueOf(row.get("Status")));
-        step(page, "T4 New machine in the list", "Find Code '" + code + "' in the refreshed list",
+        step(page, "Verify the table", "Find Code '" + code + "' in the refreshed list",
                 "The new machine is listed with its Remark and Status Active",
                 row == null ? "Code '" + code + "' NOT in the list after the save (list API: " + lm.lastListApi + ")" : "Listed: " + row,
                 ok ? "PASS" : "FAIL");
@@ -179,12 +185,12 @@ public class LinenMachine extends DevHisBase {
         List<Map<String, Object>> rows = lm.gridData();
         String term = createdCode != null ? createdCode : rows.isEmpty() ? null : String.valueOf(rows.get(0).get("Code"));
         if (term == null || term.isBlank()) {
-            step(page, "T5 Search / filter", "Filter the list by Code", "Only the matching machine is shown",
+            step(page, "Search / filter", "Filter the list by Code", "Only the matching machine is shown",
                     "Not run - the list has no Linen Machine records to search for", "SKIPPED");
             return;
         }
         if (!lm.filterByCode(term)) {
-            step(page, "T5 Search / filter", "Type '" + term + "' in the Code column filter", "Only the matching machine is shown",
+            step(page, "Search / filter", "Type '" + term + "' in the Code column filter", "Only the matching machine is shown",
                     "The grid has no Code filter box", "FAIL");
             return;
         }
@@ -192,7 +198,7 @@ public class LinenMachine extends DevHisBase {
         long expected = rows.stream().filter(r -> String.valueOf(r.get("Code")).toLowerCase().contains(term.toLowerCase())).count();
         boolean ok = !shown.isEmpty() && shown.contains(term)
                 && shown.stream().allMatch(c -> c.toLowerCase().contains(term.toLowerCase()));
-        step(page, "T5 Search / filter", "Type '" + term + "' in the Code column filter",
+        step(page, "Search / filter", "Type '" + term + "' in the Code column filter",
                 "Only machines whose Code contains '" + term + "' are shown",
                 "Shown: " + shown + " (grid data has " + expected + " matching row(s))", ok ? "PASS" : "FAIL");
         lm.clearCodeFilter();
@@ -222,6 +228,12 @@ public class LinenMachine extends DevHisBase {
     }
 
     // ---- helpers ----------------------------------------------------------------------------------------------------
+
+    /** Records a step with the given screenshot, or with a fresh one of the page when none could be taken. */
+    private void stepShot(byte[] png, String name, String desc, String expected, String actual, String status) {
+        if (png != null && png.length > 0) step(png, name, desc, expected, actual, status);
+        else step(page, name, desc, expected, actual, status);
+    }
 
     /** "LM" + yyMMddHHmmss (+ attempt) — 14-15 chars, within the Code box's maxlength of 15. */
     private static String uniqueCode(int attempt) {

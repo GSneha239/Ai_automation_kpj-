@@ -68,6 +68,7 @@ public class BedClass extends DevHisBase {
         String location = "", policy = "";
         boolean ok = false, exists = false;
         int used = 0;
+        final int policyStart = 1 + (int) (System.currentTimeMillis() / 1000 % 300);   // skip the long-taken first policies
         for (int attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
             fill = bc.fillBedClassDetails(attempt);
             used++;
@@ -75,9 +76,10 @@ public class BedClass extends DevHisBase {
             if (attempt == 0) {
                 location = bc.selectLocation();
                 locOk = location != null && !location.isEmpty();
-                policy = bc.selectPricingPolicy();
-                policyOk = policy != null && !policy.isEmpty();
             }
+            // A different Pricing Policy each attempt: one already mapped to this Location is refused as "BedClass already exist!".
+            policy = bc.selectPricingPolicy(policyStart + attempt);
+            policyOk = policy != null && !policy.isEmpty();
             toast = bc.submitAndGetToast();
             String tl = toast == null ? "" : toast.toLowerCase();
             ok = tl.contains("saved") || tl.contains("success") || tl.contains("added") || tl.contains("updated");

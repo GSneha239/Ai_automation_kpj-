@@ -271,7 +271,11 @@ public class LinenMachine extends BasePage {
      * REAL save: click Submit and wait for the save API answer and the JAlert it raises. Only call this when
      * the test has been explicitly authorised to write (-Ddevhis.allowSave=true).
      */
+    /** Screenshot taken while the toast was still on screen (toasts fade within seconds). */
+    public byte[] toastPng;
+
     public String submitForReal() {
+        toastPng = null;
         captureAlerts();
         try {
             Response resp = page.waitForResponse(rs -> rs.url().contains(SAVE_API),
@@ -284,6 +288,7 @@ public class LinenMachine extends BasePage {
             lastSaveApi = "no save call answered within 20s (" + String.valueOf(e.getMessage()).split("\n")[0] + ")";
         }
         waitForAlert(8000);
+        try { toastPng = page.screenshot(new Page.ScreenshotOptions().setTimeout(5000)); } catch (Exception ignore) { }
         return String.join(" | ", alerts());
     }
 

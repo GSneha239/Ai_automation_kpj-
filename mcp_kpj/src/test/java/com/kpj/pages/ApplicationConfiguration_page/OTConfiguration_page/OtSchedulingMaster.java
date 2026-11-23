@@ -314,6 +314,11 @@ public class OtSchedulingMaster extends BasePage {
             tried.append(tried.length() == 0 ? "" : ", ").append(name).append(" -> ").append(now)
                  .append(" table(s)");
             if (now > 0) {
+                // Skip a theatre whose tables the screen has already refused (kept between runs).
+                java.util.List<Integer> tbl = realIndexes("deptScheduleInfo.ottableid");
+                if (freeTablePositions(name, tbl).isEmpty()) { tried.append(" (all refused before)"); continue; }
+            }
+            if (now > 0) {
                 lastTheatre = name + " [deptScheduleInfo.otid, " + theatres.size() + " theatres]"
                         + " — its OT Table list holds " + now + " option(s). Tried: " + tried;
                 System.out.println("OtSchedulingMaster: theatre -> " + lastTheatre);
@@ -327,12 +332,78 @@ public class OtSchedulingMaster extends BasePage {
 
     public boolean theatreSelected() { return chosen(lastTheatre); }
 
-    /** Select the <b>OT Table</b> ({@code deptScheduleInfo.ottableid}). */
+    // ---- theatre/table pairs the screen has already refused (kept between runs, so they are never tried again) ----
+
+    /** Where the refused pairs are kept (next to the test output, so they survive a rebuild). */
+    private static java.nio.file.Path refusedFile() {
+        String out = System.getenv("OUTDIR");
+        if (out == null || out.isBlank()) out = System.getProperty("user.dir") + "/test-output";
+        return java.nio.file.Paths.get(out, "state", "ot-scheduling-refused.txt");
+    }
+
+    private final java.util.Set<String> refused = loadRefused();
+    /** Table names seen per theatre during this run, so a theatre with no free table is not re-selected. */
+    private final java.util.Map<String, java.util.List<String>> theatreTables = new java.util.HashMap<>();
+
+    private static java.util.Set<String> loadRefused() {
+        java.util.Set<String> s = new java.util.HashSet<>();
+        try {
+            java.nio.file.Path f = refusedFile();
+            if (java.nio.file.Files.exists(f)) for (String l : java.nio.file.Files.readAllLines(f)) if (!l.isBlank()) s.add(l.trim());
+        } catch (Exception ignore) { }
+        return s;
+    }
+
+    private static String bare(String s) {
+        if (s == null) return "";
+        int i = s.indexOf(" [");
+        return (i >= 0 ? s.substring(0, i) : s).replaceAll("\\s+", " ").trim();
+    }
+
+    private static String pairKey(String theatre, String table) { return bare(theatre) + " | " + bare(table); }
+
+    /** The visible text of every option of a select (index aligned with the select's options). */
+    private java.util.List<String> optionTexts(String ng) {
+        Object r = page.evaluate("(m) => { const s=document.querySelector(\"select[ng-model='\"+m+\"']\"); if(!s) return [];"
+                + " return [...s.options].map(o=>(o.textContent||'').replace(/\\s+/g,' ').trim()); }", ng);
+        java.util.List<String> out = new java.util.ArrayList<>();
+        if (r instanceof java.util.List) for (Object o : (java.util.List<?>) r) out.add(o == null ? "" : o.toString());
+        return out;
+    }
+
+    /** Remember the current theatre/table pair as refused ("OT already has scheduled!"), in memory and on disk. */
+    public void markRefused() {
+        String key = pairKey(lastTheatre, lastTable);
+        if (key.startsWith(" |") || key.endsWith("| ") || !refused.add(key)) return;
+        try {
+            java.nio.file.Path f = refusedFile();
+            java.nio.file.Files.createDirectories(f.getParent());
+            java.nio.file.Files.writeString(f, key + System.lineSeparator(), java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND);
+        } catch (Exception e) { System.out.println("OtSchedulingMaster: could not save the refused pair - " + e.getMessage()); }
+    }
+
+    /** Positions (into {@code realIndexes}) of the OT Table options that are NOT a refused pair with the given theatre. */
+    private java.util.List<Integer> freeTablePositions(String theatre, java.util.List<Integer> tables) {
+        java.util.List<String> texts = optionTexts("deptScheduleInfo.ottableid");
+        java.util.List<Integer> free = new java.util.ArrayList<>();
+        for (int p = 0; p < tables.size(); p++) {
+            int idx = tables.get(p);
+            String name = idx < texts.size() ? texts.get(idx) : "";
+            if (!refused.contains(pairKey(theatre, name))) free.add(p);
+        }
+        return free;
+    }
+
+    /** Select the <b>OT Table</b> ({@code deptScheduleInfo.ottableid}) — the first one not already refused for this theatre. */
     public String selectTable() {
         java.util.List<Integer> tables = realIndexes("deptScheduleInfo.ottableid");
         if (tables.isEmpty()) { lastTable = "(the OT Table list is empty)"; return lastTable; }
-        lastTable = selectIndex("deptScheduleInfo.ottableid", "__otsTable", tables.get(0))
-                + " [deptScheduleInfo.ottableid, " + tables.size() + " options]";
+        java.util.List<Integer> free = freeTablePositions(lastTheatre, tables);
+        int pos = free.isEmpty() ? 0 : free.get(0);
+        tableCursor = pos;
+        lastTable = selectIndex("deptScheduleInfo.ottableid", "__otsTable", tables.get(pos))
+                + " [deptScheduleInfo.ottableid, " + tables.size() + " options"
+                + (free.isEmpty() ? ", all already refused" : ", " + free.size() + " not yet refused") + "]";
         System.out.println("OtSchedulingMaster: table -> " + lastTable);
         return lastTable;
     }
@@ -350,6 +421,7 @@ public class OtSchedulingMaster extends BasePage {
      * moves on to a free combination rather than reporting a defect.</p>
      */
     public String nextCombination() {
+        markRefused();   // the pair just submitted was refused: never try it again (this run or a later one)
         // A refused Submit leaves the form holding state (Clear does not reset it: the next Add then adds no row and Submit
         // has nothing to save), so go Back to the list and open a FRESH Add form instead.
         page.evaluate("() => {" + JS
@@ -375,12 +447,13 @@ public class OtSchedulingMaster extends BasePage {
             }
         }
         java.util.List<Integer> tables = realIndexes("deptScheduleInfo.ottableid");
-        if (tableCursor + 1 < tables.size()) {
-            tableCursor++;
+        java.util.List<Integer> free = freeTablePositions(lastTheatre, tables);
+        if (!free.isEmpty()) {
+            tableCursor = free.get(0);
             lastTable = selectIndex("deptScheduleInfo.ottableid", "__otsTable", tables.get(tableCursor))
                     + " [deptScheduleInfo.ottableid, table " + (tableCursor + 1) + " of " + tables.size() + "]";
             System.out.println("OtSchedulingMaster: next combination -> same theatre, " + lastTable);
-            return "moved to the next table under the same theatre: " + lastTable;
+            return "moved to the next not-yet-refused table under the same theatre: " + lastTable;
         }
 
         // No table left under this theatre — move to the next theatre that offers one.
@@ -402,6 +475,10 @@ public class OtSchedulingMaster extends BasePage {
                 now = optionCount("deptScheduleInfo.ottableid");
                 if (now != before) break;
                 page.waitForTimeout(300);
+            }
+            if (now > 0) {
+                // A theatre whose every table was refused before is passed over (and remembered for this run).
+                if (freeTablePositions(name, realIndexes("deptScheduleInfo.ottableid")).isEmpty()) { triedTheatres.add(name); continue; }
             }
             if (now > 0) {
                 tableCursor = 0;

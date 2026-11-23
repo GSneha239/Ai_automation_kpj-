@@ -96,7 +96,8 @@ public class PlanMaster extends BasePage {
     public String fillDetails(int attempt) {
         String code = "PL" + String.format("%06d", Math.abs((System.nanoTime() + attempt * 7919L) % 1000000));
         lastCode = code;
-        lastName = PLAN_NAMES[attempt % PLAN_NAMES.length] + (attempt >= PLAN_NAMES.length ? " " + (attempt / PLAN_NAMES.length + 1) : "");
+        // Stamped with the run time: the shared QA environment keeps every plan ever saved, so a fixed name pool is used up for good.
+        lastName = PLAN_NAMES[attempt % PLAN_NAMES.length] + " " + java.time.LocalDateTime.now().plusSeconds(attempt).format(java.time.format.DateTimeFormatter.ofPattern("yyMMddHHmmss"));
         // Text fields.
         page.evaluate("(a) => { const A=window.angular; const set=(ng,v)=>{ const e=[...document.querySelectorAll(\"[ng-model='\"+ng+\"']\")].find(x=>x.offsetParent!==null); if(!e) return; const c=A.element(e).controller('ngModel'); e.value=v; if(c){c.$setViewValue(v);c.$render();} e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true})); };"
                 + " set('PlanMaster.Code',a.code); set('PlanMaster.Description',a.name); }",
@@ -184,7 +185,20 @@ public class PlanMaster extends BasePage {
 
     /** Click <b>Add</b> ({@code fnAddListOfServices}) to add the detail line. Returns the toast, or "(detail row
      *  added)" if a grid row appeared, else "". */
+    /** Failed (HTTP &gt;= 400) server calls seen while the detail line was added, e.g. "POST /api/x 403". */
+    public String lastAddHttp = "";
+
     public String addDetailLine() {
+        lastAddHttp = "";
+        final java.util.function.Consumer<com.microsoft.playwright.Response> httpListener = r -> {
+            try { if (!r.url().matches("(?i).*\\.(js|css|png|jpg|gif|svg|woff2?|ttf|ico|html)(\\?.*)?$")) { String body = ""; try { body = r.text(); } catch (Exception ign) { } lastAddHttp += (lastAddHttp.isEmpty() ? "" : " ;; ") + r.request().method() + " " + r.url().replaceFirst("^https?://[^/]+", "") + " " + r.status() + " -> " + (body.length() > 160 ? body.substring(0, 160) : body); } }
+            catch (Exception ignore) { }
+        };
+        page.onResponse(httpListener);
+        try { return addDetailLineInner(); } finally { try { page.offResponse(httpListener); } catch (Exception ignore) { } }
+    }
+
+    private String addDetailLineInner() {
         setCopayDiscount();
         int before = ((Number) page.evaluate("() => document.querySelectorAll('.ui-grid-row, table tbody tr').length")).intValue();
         page.evaluate("() => { window.__plToasts=[]; if(window.__plObs) window.__plObs.disconnect();"
@@ -224,7 +238,24 @@ public class PlanMaster extends BasePage {
     }
 
     /** Click <b>Submit</b> ({@code fnIUDPlanMaster}) and return the success toast (toastr cleared first). */
+    /** Calls the server answered while Submit was clicked, e.g. "POST /api/PlanMaster/IUD 500 -&gt; ...". */
+    public String lastSubmitHttp = "";
+
     public String submitAndGetToast() {
+        lastSubmitHttp = "";
+        final java.util.function.Consumer<com.microsoft.playwright.Response> httpListener = r -> {
+            try {
+                if (r.request().method().equals("GET") || r.url().matches("(?i).*\\.(js|css|png|jpg|gif|svg|woff2?|ttf|ico|html)(\\?.*)?$")) return;
+                String body = ""; try { body = r.text(); } catch (Exception ign) { }
+                lastSubmitHttp += (lastSubmitHttp.isEmpty() ? "" : " ;; ") + r.request().method() + " " + r.url().replaceFirst("^https?://[^/]+", "")
+                        + " " + r.status() + " -> " + (body.length() > 200 ? body.substring(0, 200) : body);
+            } catch (Exception ignore) { }
+        };
+        page.onResponse(httpListener);
+        try { return submitAndGetToastInner(); } finally { try { page.offResponse(httpListener); } catch (Exception ignore) { } }
+    }
+
+    private String submitAndGetToastInner() {
         reassertHeader();
         Object tagged = page.evaluate("() => { window.__plToasts=[]; if(window.__plObs) window.__plObs.disconnect();"
                 + " try{ if(window.toastr) toastr.clear(); }catch(e){} document.querySelectorAll('#toast-container .toast, .toast-message').forEach(t=>t.remove());"

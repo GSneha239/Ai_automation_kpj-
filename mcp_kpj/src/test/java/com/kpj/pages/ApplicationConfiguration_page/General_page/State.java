@@ -249,8 +249,13 @@ public class State extends BasePage {
                 + " if(!e) return null; e.id='__stCountry';"
                 + " const reals=[...e.options].map((o,i)=>({o,i}))"
                 + "   .filter(x=>x.o.value && !/^-*\\s*select/i.test(norm(x.o.text)));"
-                // Malaysia where the deployment has it, so the record lands somewhere meaningful.
-                + " const pick=reals.find(x=>/^malaysia$/i.test(norm(x.o.text))) || reals[0];"
+                // Any country in the list, a different one each run; -Dcountry=<name> pins one.
+                + " const want='" + System.getProperty("country", "").replace("\\", "\\\\").replace("'", "\\'") + "';"
+                + " const last='" + lastCountryUsed().replace("\\", "\\\\").replace("'", "\\'") + "'.toLowerCase();"
+                + " const others=reals.filter(x=>norm(x.o.text).toLowerCase()!==last);"   // never the country the previous run used
+                + " const pool=others.length? others : reals;"
+                + " const pick=(want && reals.find(x=>norm(x.o.text).toLowerCase()===want.toLowerCase()))"
+                + "   || pool[Math.floor(Math.random()*pool.length)];"
                 + " return pick? {index:pick.i, ng:(ngOf(e)||'?'), count:reals.length} : null; }");
         if (info == null) { lastCountry = "(no country dropdown)"; return lastCountry; }
         @SuppressWarnings("unchecked")
@@ -268,8 +273,26 @@ public class State extends BasePage {
         Object t = page.evaluate("() => { const e=document.getElementById('__stCountry');"
                 + " return e? ((e.options[e.selectedIndex]||{}).text||'').trim() : ''; }");
         lastCountry = (t == null ? "" : t.toString()) + " [" + m.get("ng") + ", " + m.get("count") + " options]";
+        rememberCountry(t == null ? "" : t.toString().trim());
         System.out.println("State: Country = " + lastCountry);
         return lastCountry;
+    }
+
+    /** The country the previous run used, kept in {@code <OUTDIR>\state\state-master-last-country.txt} so it is not picked twice in a row. */
+    private static java.nio.file.Path countryStateFile() {
+        String out = System.getenv("OUTDIR");
+        if (out == null || out.isBlank()) out = System.getProperty("user.dir") + "/test-output";
+        return java.nio.file.Paths.get(out, "state", "state-master-last-country.txt");
+    }
+
+    private static String lastCountryUsed() {
+        try { java.nio.file.Path f = countryStateFile(); return java.nio.file.Files.exists(f) ? java.nio.file.Files.readString(f).trim() : ""; }
+        catch (Exception e) { return ""; }
+    }
+
+    private static void rememberCountry(String name) {
+        try { java.nio.file.Path f = countryStateFile(); java.nio.file.Files.createDirectories(f.getParent()); java.nio.file.Files.writeString(f, name); }
+        catch (Exception ignore) { }
     }
 
     public boolean countrySelected() {

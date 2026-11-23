@@ -262,7 +262,30 @@ public class Department extends BasePage {
         waitForAngular(400);
         boolean checked = Boolean.TRUE.equals(page.evaluate("() => { const c=document.querySelector('#__deptLocCb'); return !!(c && c.checked); }"));
         page.evaluate("() => { const c=document.querySelector('#__deptLocCb'); if(c) c.removeAttribute('id'); }");
-        return checked ? row : "";
+        // Save refuses a ticked location row without its numbers ("Please Enter Time Slot(Min) - <location>!"), so they go in with the tick.
+        return checked ? row + " | " + fillLocationRowNumbers() : "";
+    }
+
+    /** What the ticked location row's Time Slot(Min) holds, and its No. of Patient (also reported as the Patient Count). */
+    public String lastTimeSlot = "";
+
+    /**
+     * Fill the ticked Department Location Details row's <b>Time Slot(Min)</b> ({@code dept.timeslot}) and <b>No. of Patient</b>
+     * ({@code dept.noofpatient}). The app answers "Please Enter Time Slot(Min) - KPJ DAMANSARA SPECIALIST HOSPITAL!" to Save without them.
+     */
+    public String fillLocationRowNumbers() {
+        lastTimeSlot = "15";
+        if (lastPatientCount.isEmpty()) lastPatientCount = String.valueOf(5 + (int) (Math.abs(System.nanoTime() / 17) % 20));
+        Object r = page.evaluate("([slot,cnt]) => { const A=window.angular;"
+                + " const cb=[...document.querySelectorAll('input[type=checkbox]')].find(c=>c.offsetParent!==null && /isdefault/i.test(c.getAttribute('ng-model')||'') && c.checked);"
+                + " const row=cb?cb.closest('tr'):null; if(!row) return '(no ticked location row)';"
+                + " const set=(ng,v)=>{ const e=row.querySelector(\"input[ng-model='\"+ng+\"']\"); if(!e) return '(no field)';"
+                + "   const c=A.element(e).controller('ngModel'); e.value=v; if(c){ c.$setViewValue(v); c.$render(); }"
+                + "   e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true})); return e.value; };"
+                + " return 'Time Slot(Min)='+set('dept.timeslot',slot)+' | No. of Patient='+set('dept.noofpatient',cnt); }",
+                java.util.Arrays.asList(lastTimeSlot, lastPatientCount));
+        waitForAngular(300);
+        return r == null ? "" : r.toString();
     }
 
     /**
@@ -356,8 +379,10 @@ public class Department extends BasePage {
      * never overwritten with test text.
      */
     public String fillPatientCountAndRemark() {
-        lastPatientCount = String.valueOf(5 + (int) (Math.abs(System.nanoTime() / 17) % 20));
+        if (lastPatientCount.isEmpty()) lastPatientCount = String.valueOf(5 + (int) (Math.abs(System.nanoTime() / 17) % 20));
         String pc = setNg("Diagnosis.PatientCount", lastPatientCount);
+        // The diagnosis line has no Patient Count box any more: the count now lives in the location row's "No. of Patient" (filled when the row was ticked).
+        if (pc.startsWith("(")) pc = lastPatientCount + " (in the location row's No. of Patient; the diagnosis line has no Patient Count box any more)";
         String rm = valueOf("Diagnosis.DiagnosisDescription");
         if (rm.isEmpty()) rm = setNg("Diagnosis.DiagnosisDescription", "Routine follow up review");
         lastDiagnosisDescription = rm;

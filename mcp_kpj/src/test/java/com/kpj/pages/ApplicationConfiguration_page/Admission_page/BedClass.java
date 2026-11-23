@@ -135,7 +135,9 @@ public class BedClass extends BasePage {
     public String fillBedClassDetails(int attempt) {
         String code = "BC" + String.format("%06d", Math.abs((System.nanoTime() + attempt * 7919L) % 1000000));
         lastCode = code;
-        lastRoomType = ROOM_TYPES[attempt % ROOM_TYPES.length] + (attempt >= ROOM_TYPES.length ? " " + (attempt / ROOM_TYPES.length + 1) : "");
+        // Stamped with the run time: the shared QA environment keeps every Room Type ever saved, so a fixed pool is used up for good.
+        lastRoomType = ROOM_TYPES[attempt % ROOM_TYPES.length] + " "
+                + java.time.LocalDateTime.now().plusSeconds(attempt).format(java.time.format.DateTimeFormatter.ofPattern("ddHHmmss"));
         Object r = page.evaluate("(a) => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const A=window.angular;"
                 + " const setNg=(ng,v)=>{ const e=document.querySelector(\"input[ng-model='\"+ng+\"'],textarea[ng-model='\"+ng+\"'],select[ng-model='\"+ng+\"']\"); if(!e) return '(no)'; const c=A.element(e).controller('ngModel'); e.value=v; if(c){c.$setViewValue(v);c.$render();} e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true})); return v; };"
                 // Bed Class Code = unique code; Room Type (ng-model BedClassMaster.BedClass) is a free-text name.
@@ -175,15 +177,25 @@ public class BedClass extends BasePage {
      * Also fills that row's Standard Deposit, which the save expects alongside the tick.
      * Returns the ticked pricing-policy name, or "" if none.
      */
-    public String selectPricingPolicy() {
-        Object r = page.evaluate("async () => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const sleep=ms=>new Promise(r=>setTimeout(r,ms));"
+    public String selectPricingPolicy() { return selectPricingPolicy(0); }
+
+    /**
+     * Same, but ticks the {@code ordinal}-th policy row (0-based, wrapping) after un-ticking any other. The server refuses a Pricing Policy that
+     * is already mapped to this Location under another Bed Class ("BedClass already exist!"), and the first rows (SELFPAY ...) are long taken,
+     * so the test moves on to another policy instead of re-sending the same one.
+     */
+    public String selectPricingPolicy(int ordinal) {
+        page.evaluate("() => { document.querySelectorAll(\"input[type=checkbox][ng-model='cont.isselected']\").forEach(c=>{ if(c.checked) c.click(); }); }");
+        waitForAngular(300);
+        Object r = page.evaluate("async (ord) => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const sleep=ms=>new Promise(r=>setTimeout(r,ms));"
                 // The Pricing Policy table's Select checkbox is ng-model='cont.isselected'.
                 + " let cbs=[];"
                 + " for(let w=0;w<30;w++){ cbs=[...document.querySelectorAll(\"input[type=checkbox][ng-model='cont.isselected']\")].filter(c=>c.offsetParent!==null); if(cbs.length) break; await sleep(500); }"
                 + " if(!cbs.length) return 'none';"
-                + " const cb=cbs.find(c=>!c.checked)||cbs[0]; cb.id='__bcPricingCb';"
+                + " document.querySelectorAll('#__bcPricingCb').forEach(e=>e.removeAttribute('id'));"
+                + " const cb=cbs[((ord%cbs.length)+cbs.length)%cbs.length]; cb.id='__bcPricingCb';"
                 + " const row=cb.closest('tr,li,div'); const name=row?(([...row.querySelectorAll('td')].map(td=>norm(td.textContent)).find(x=>x && !/^\\d+$/.test(x))) || norm(row.textContent).slice(0,40)):'policy';"
-                + " return name; }");
+                + " return name; }", ordinal);
         String name = String.valueOf(r);
         if ("none".equals(name)) { System.out.println("selectPricingPolicy: no pricing checkbox (cont.isselected) found"); return ""; }
         try { page.locator("#__bcPricingCb").click(new com.microsoft.playwright.Locator.ClickOptions().setForce(true).setTimeout(5000)); }
