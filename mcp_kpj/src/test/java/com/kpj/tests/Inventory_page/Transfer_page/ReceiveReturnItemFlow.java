@@ -65,23 +65,23 @@ public class ReceiveReturnItemFlow extends DevHisBase {
         com.kpj.pages.Inventory_page.Transfer_page.ReceiveReturnItemFlow rr = new com.kpj.pages.Inventory_page.Transfer_page.ReceiveReturnItemFlow(page);
 
         boolean list = rr.navigateViaMenu();
-        step("Open Inventory - Receive Return Item", "Click Inventory -> Receive Return Item", "The Receive Return Item list is shown",
+        stepL("Open Inventory - Receive Return Item", "Click Inventory -> Receive Return Item", "The Receive Return Item list is shown",
                 list ? "Opened " + page.url() : "Did NOT reach the screen (" + page.url() + ") — " + rr.navigationProblem, list ? "PASS" : "FAIL");
         if (!list) { addSummary("Result", "FAILED — Receive Return Item not reached: " + rr.navigationProblem); return; }
 
         boolean form = rr.clickNew();
-        step("Click New", "Click New (not in the script, but the form is behind it)", "The Receive Return Item form is shown",
+        stepL("Click New", "Click New (not in the script, but the form is behind it)", "The Receive Return Item form is shown",
                 form ? "The form opened (" + page.url() + ")" : "Problem — " + rr.problems, form ? "PASS" : "FAIL");
         if (!form) { addSummary("Result", "FAILED — the form did not open: " + rr.problems); return; }
 
         // 1) the two stores
         String f = rr.selectReceivedFrom(from);
-        step("Select Received From", "Select Received From \"" + from + "\"", "The store is selected",
+        stepL("Select Received From", "Select Received From \"" + from + "\"", "The store is selected",
                 !f.isEmpty() ? "Received From \"" + f + "\" selected (of " + rr.options("ReceiveReturnItem.FromStore").size() + " stores); the screen's model holds it (store id " + rr.storeId("from") + ")" : "Problem — " + rr.problems,
                 !f.isEmpty() ? "PASS" : "FAIL");
         if (f.isEmpty()) { addSummary("Result", "FAILED — Received From: " + rr.problems); return; }
         String t = rr.selectReceivedTo(to);
-        step("Select Received To", "Select Received To \"" + to + "\"", "The store is selected",
+        stepL("Select Received To", "Select Received To \"" + to + "\"", "The store is selected",
                 !t.isEmpty() ? "Received To \"" + t + "\" selected (of " + rr.options("ReceiveReturnItem.ToStore").size() + " stores); the screen's model holds it (store id " + rr.storeId("to") + ") and it searched by itself" : "Problem — " + rr.problems,
                 !t.isEmpty() ? "PASS" : "FAIL");
         if (t.isEmpty()) { addSummary("Result", "FAILED — Received To: " + rr.problems); return; }

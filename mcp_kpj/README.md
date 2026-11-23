@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # mcp_kpj — DevHIS Playwright Java Framework (prompt-driven)
 
 A standalone, prompt-driven test framework for **DevHIS (KPJ nHIS)**. It ships:
@@ -100,3 +101,6 @@ the report, and refresh the Java script. See `prompts/README.md` for conventions
 1. Add a `prompts/TCxx_*.md` (copy an existing one; swap steps + deliverables).
 2. Add a step block + a `TestCases`/`Steps`/`Prompts` row to `TestPromptPackage.xlsx`.
 3. Add `src/test/java/com/kpj/tests/XxxTest.java` extending `DevHisBase` (reuse the helpers).
+=======
+# Ai_automation_kpj-
+>>>>>>> b1a4da11f5879c131da9b4ff7e8429c204f7f72a
