@@ -148,13 +148,58 @@ public class Investigation_Reports extends BasePage {
     /** Choose a filter in the Filter dropdown (e.g. "From Date_To Date"). */
     public String selectFilter(String name) { return select("RptColsole.Parameter", "Filter", name); }
 
+    /** What {@link #selectFilter(String, int)} picked: "option 2 of 2 named "Test Name" (value number:783)". */
+    public String lastFilterPick = "";
+
+    /**
+     * Choose the {@code occurrence}-th (1-based) entry of the Filter dropdown that is named {@code name}: some reports offer two filters with the same name
+     * (Laboratory Census: "Test Name" twice, values 611 and 783). When fewer entries are offered the last one is taken. Returns the name shown ("" on failure).
+     */
+    public String selectFilter(String name, int occurrence) {
+        problems.clear();
+        lastFilterPick = "";
+        Object r = page.evaluate("(a) => {" + JS + " const s=document.querySelector(\"select[ng-model='RptColsole.Parameter']\"); if(!s) return ''; const idx=[]; [...s.options].forEach((o,i)=>{ if(norm(o.textContent)===a[0]) idx.push(i); });"
+                + " if(!idx.length) return ''; const k=Math.min(a[1], idx.length)-1; return idx[k]+'|'+(k+1)+'|'+idx.length+'|'+s.options[idx[k]].value; }", Arrays.asList(name, occurrence));
+        String[] p = r == null ? new String[0] : r.toString().split("\\|", -1);
+        if (p.length < 4 || p[0].isEmpty()) { problems.add("\"" + name + "\" is not offered by Filter (" + filterOptions() + ")"); return ""; }
+        final int index = Integer.parseInt(p[0]);
+        try { page.locator("select[ng-model='RptColsole.Parameter']").first().selectOption(new com.microsoft.playwright.options.SelectOption().setIndex(index), new Locator.SelectOptionOptions().setTimeout(4000)); }
+        catch (Exception notActionable) {
+            Object js = page.evaluate("(i) => { const s=document.querySelector(\"select[ng-model='RptColsole.Parameter']\"); if(!s) return false; s.selectedIndex=i; s.dispatchEvent(new Event('change',{bubbles:true})); return true; }", index);
+            if (!Boolean.TRUE.equals(js)) { problems.add("\"" + name + "\" could not be selected in Filter: " + firstLine(notActionable)); return ""; }
+        }
+        waitForAngular(1500);
+        String s = shown("RptColsole.Parameter");
+        Object si = page.evaluate("() => { const s=document.querySelector(\"select[ng-model='RptColsole.Parameter']\"); return s? s.selectedIndex : -1; }");
+        if (!name.equals(s) || si == null || ((Number) si).intValue() != index) { problems.add("Filter shows \"" + s + "\" (entry " + si + ") instead of entry " + index + " \"" + name + "\""); return ""; }
+        lastFilterPick = "entry " + p[1] + " of " + p[2] + " named \"" + name + "\" (value " + p[3] + ")";
+        return s;
+    }
+
+    /** How many rows of the filter table carry this name (a report can list a filter twice). */
+    public int filterCount(String name) {
+        int n = 0;
+        for (String[] r : filterRows()) if (r[0].equals(name)) n++;
+        return n;
+    }
+
+    /** Close the open popup with its Close / x button (a popup that refused OK stays open). */
+    public boolean closePopup() {
+        problems.clear();
+        page.evaluate("() => {" + JS + " const m=modal(); if(!m) return false; const b=m.querySelector('button.close, [data-dismiss=\"modal\"]') || [...m.querySelectorAll('button')].find(x=>/^(close|cancel)$/i.test(norm(x.textContent))); if(b) b.click(); return !!b; }");
+        for (int i = 0; i < 20 && modalOpen(); i++) page.waitForTimeout(250);
+        waitForAngular(600);
+        if (modalOpen()) problems.add("the popup could not be closed");
+        return problems.isEmpty();
+    }
+
     /** Click <b>Add</b> ({@code AddFilter()}) and wait for the filter's row in the table. */
     public boolean clickAdd(String filterName) {
         problems.clear();
         int before = filterRows().size();
         try { page.locator("button[ng-click='AddFilter()']").first().click(new Locator.ClickOptions().setTimeout(6000)); }
         catch (Exception e) { problems.add("Add: " + firstLine(e)); return false; }
-        for (int i = 0; i < 24 && !hasFilter(filterName) && filterRows().size() <= before; i++) page.waitForTimeout(250);
+        for (int i = 0; i < 24 && filterRows().size() <= before; i++) page.waitForTimeout(250);   // a new ROW (the filter may be listed twice, so its name alone says nothing)
         waitForAngular(800);
         return problems.isEmpty();
     }
@@ -166,6 +211,20 @@ public class Investigation_Reports extends BasePage {
         List<String[]> out = new ArrayList<>();
         if (r instanceof List) for (Object row : (List<?>) r) { List<?> c = (List<?>) row; out.add(new String[]{String.valueOf(c.get(0)), String.valueOf(c.get(1))}); }
         return out;
+    }
+
+    /** Click <b>Add</b> WITHOUT a report chosen and return the warning toast the screen shows ("Please select the Report!"), "" when none appeared in ~4 s. */
+    public String clickAddWithoutReport() {
+        problems.clear();
+        page.evaluate("() => { try{ if(window.toastr) toastr.clear(); }catch(e){} document.querySelectorAll('#toast-container .toast').forEach(t=>t.remove()); }");
+        try { page.locator("button[ng-click='AddFilter()']").first().click(new Locator.ClickOptions().setTimeout(6000)); }
+        catch (Exception e) { problems.add("Add: " + firstLine(e)); return ""; }
+        for (int i = 0; i < 16; i++) {
+            String t = toast();
+            if (!t.isEmpty()) return t;
+            page.waitForTimeout(250);
+        }
+        return "";
     }
 
     /** Click the console's <b>Clear</b> ({@code ClearParameters()}): empties the filter table so the next report starts clean. */
@@ -188,17 +247,32 @@ public class Investigation_Reports extends BasePage {
         return "";
     }
 
+    /** The Filter Value cell of the {@code occurrence}-th (1-based) table row named {@code name} ("" when there is none). */
+    public String filterValue(String name, int occurrence) {
+        int n = 0;
+        for (String[] r : filterRows()) if (r[0].equals(name) && ++n == occurrence) return r[1];
+        return "";
+    }
+
     // ---- the popups -----------------------------------------------------------------------------------------------------------------------------
 
     public boolean modalOpen() { return Boolean.TRUE.equals(page.evaluate("() => {" + JS + " return !!modal(); }")); }
 
     /** Click <b>Add Value</b> on the row of the filter and wait for its popup. */
-    public boolean clickAddValue(String filterName) {
+    public boolean clickAddValue(String filterName) { return clickAddValue(filterName, 0); }
+
+    /** Same for the {@code occurrence}-th (1-based) row named {@code filterName}; 0 = the last such row (the one added most recently). */
+    public boolean clickAddValue(String filterName, int occurrence) {
         problems.clear();
-        int idx = -1;
+        int idx = -1, seen = 0;
         List<String[]> rows = filterRows();
-        for (int i = 0; i < rows.size(); i++) if (rows.get(i)[0].equals(filterName)) idx = i;
-        if (idx < 0) { problems.add("no row for the filter \"" + filterName + "\" (" + rows.size() + " row(s))"); return false; }
+        for (int i = 0; i < rows.size(); i++) {
+            if (!rows.get(i)[0].equals(filterName)) continue;
+            seen++;
+            if (occurrence == 0 || seen == occurrence) idx = i;
+            if (occurrence > 0 && seen == occurrence) break;
+        }
+        if (idx < 0) { problems.add("no row for the filter \"" + filterName + "\"" + (occurrence > 0 ? " (occurrence " + occurrence + ")" : "") + " (" + rows.size() + " row(s))"); return false; }
         try { page.locator("[ng-model='RptColsole.AddValue[$index]']").nth(idx).click(new Locator.ClickOptions().setTimeout(6000)); }
         catch (Exception e) { problems.add("Add Value: " + firstLine(e)); return false; }
         for (int i = 0; i < 40 && !modalOpen(); i++) page.waitForTimeout(250);
@@ -329,6 +403,83 @@ public class Investigation_Reports extends BasePage {
 
     public String tickDiagnosis(int idx) { return tickIn("G.IsSelected", idx); }
 
+    // -- generic popup helpers: a plain select of the popup (Year, Month ...) and checkbox tables with any ng-model ({@code G.IsSelected}, {@code loc.IsSelected}, {@code DL.IsSelected})
+
+    /** Choose an option of a plain select inside the open popup (e.g. {@code RptColsole.Year} = "2026", {@code RptColsole.Month} = "May"); returns the option shown ("" on failure). */
+    public String selectInPopup(String ngModel, String what, String label) { return select(ngModel, what, label); }
+
+    /** The rows (names) of the popup's checkbox table whose checkboxes use this ng-model, in order. */
+    public List<String> rowsOf(String ngModel) {
+        Object r = page.evaluate("(m) => {" + JS + " const d=modal(); if(!d) return []; return [...d.querySelectorAll(\"input[ng-model='\"+m+\"']\")].map(c=>norm((c.closest('tr')||{}).textContent)); }", ngModel);
+        return strings(r);
+    }
+
+    /** The checkbox ids (the records' ids) of the popup's table, in row order. */
+    public List<String> rowIdsOf(String ngModel) {
+        Object r = page.evaluate("(m) => {" + JS + " const d=modal(); if(!d) return []; return [...d.querySelectorAll(\"input[ng-model='\"+m+\"']\")].map(c=>c.id||''); }", ngModel);
+        return strings(r);
+    }
+
+    /** Untick the row of the popup's table with this ng-model and record id; returns its name ("" when the id is not listed or it stayed ticked). */
+    public String untickRowById(String ngModel, String id) {
+        problems.clear();
+        Object name = page.evaluate("([m,i]) => {" + JS + " const d=modal(); const c=d? [...d.querySelectorAll(\"input[ng-model='\"+m+\"']\")].find(x=>x.id===i) : null; if(!c) return ''; c.id='__rcUntick'; c.scrollIntoView({block:'center'}); return norm((c.closest('tr')||{}).textContent); }", Arrays.asList(ngModel, id));
+        if (name == null || name.toString().isEmpty()) { problems.add("no row with id " + id); return ""; }
+        try { page.locator("#__rcUntick").uncheck(new Locator.UncheckOptions().setTimeout(6000)); }
+        catch (Exception e) { problems.add("the checkbox could not be unticked: " + firstLine(e)); }
+        waitForAngular(500);
+        Object st = page.evaluate("() => { const e=document.getElementById('__rcUntick'); if(!e) return 'gone'; const r=String(e.checked); e.id='" + id + "'; return r; }");
+        if (!"false".equals(String.valueOf(st))) problems.add("the row is still ticked (" + st + ")");
+        return problems.isEmpty() ? name.toString() : "";
+    }
+
+    /** Click the popup's OK ({@code fnAdd('<kind>')}) and return the toast the screen shows ("" when none within ~3 s); the popup may stay open (a refused choice). */
+    public String clickOkAndToast(String kind) {
+        problems.clear();
+        page.evaluate("() => { try{ if(window.toastr) toastr.clear(); }catch(e){} document.querySelectorAll('#toast-container .toast').forEach(t=>t.remove()); }");
+        try { page.locator(".modal.in button[ng-click=\"fnAdd('" + kind + "')\"]").first().click(new Locator.ClickOptions().setTimeout(6000)); }
+        catch (Exception e) { problems.add("OK (" + kind + "): " + firstLine(e)); return ""; }
+        for (int i = 0; i < 12; i++) {
+            String t = toast();
+            if (!t.isEmpty()) return t;
+            page.waitForTimeout(250);
+        }
+        return "";
+    }
+
+    /** Choose the radio whose label reads {@code label} in the open popup (e.g. "All Services" of {@code RptColsole.ServiceType}); returns the radio's value ("" on failure). */
+    public String chooseRadioByLabel(String ngModel, String label) {
+        problems.clear();
+        try { page.locator(".modal.in label").filter(new Locator.FilterOptions().setHasText(java.util.regex.Pattern.compile("^\\s*" + java.util.regex.Pattern.quote(label) + "\\s*$"))).first().click(new Locator.ClickOptions().setTimeout(3000)); }
+        catch (Exception notActionable) {
+            // the popup's radio labels are not "actionable" for Playwright although they work: click the label the way the page does
+            Object js = page.evaluate("(t) => {" + JS + " const d=modal(); const l=d? [...d.querySelectorAll('label')].find(x=>norm(x.textContent)===t) : null; if(!l) return false; l.click(); return true; }", label);
+            if (!Boolean.TRUE.equals(js)) { problems.add("the option \"" + label + "\" could not be clicked: " + firstLine(notActionable)); return ""; }
+        }
+        waitForAngular(500);
+        Object v = page.evaluate("(m) => {" + JS + " const d=modal(); const r=d? [...d.querySelectorAll(\"input[type=radio][ng-model='\"+m+\"']\")].find(x=>x.checked) : null; return r? r.value : ''; }", ngModel);
+        String val = v == null ? "" : v.toString();
+        if (val.isEmpty()) problems.add("no option is checked after clicking \"" + label + "\"");
+        return val;
+    }
+
+    /** The labels of the radio options of the open popup for this ng-model. */
+    public List<String> radioLabelsOf(String ngModel) {
+        Object r = page.evaluate("(m) => {" + JS + " const d=modal(); return d? [...d.querySelectorAll(\"input[type=radio][ng-model='\"+m+\"']\")].map(x=>norm((x.closest('label')||x.parentElement||{}).textContent)) : []; }", ngModel);
+        return strings(r);
+    }
+
+    /** Tick the row of the popup's table with this ng-model and record id; returns its name ("" when the id is not listed or the tick did not hold). */
+    public String tickRowById(String ngModel, String id) {
+        List<String> ids = rowIdsOf(ngModel);
+        int idx = ids.indexOf(id);
+        if (idx < 0) { problems.clear(); problems.add("no row with id " + id + " (" + ids.size() + " row(s))"); return ""; }
+        return tickIn(ngModel, idx);
+    }
+
+    /** Tick the idx-th row of the popup's table with this ng-model; returns its name ("" on failure). */
+    public String tickRowOf(String ngModel, int idx) { return tickIn(ngModel, idx); }
+
     // -- "Select ..." popups made of a table of checkboxes ({@code G.IsSelected}): Department, SubGroup (after its Group), Diagnosis ...
 
     /** The rows (names) of the popup's checkbox table, in order. */
@@ -399,15 +550,43 @@ public class Investigation_Reports extends BasePage {
         return box < boxes.size() ? boxes.get(box) : "";
     }
 
+    /**
+     * Time popup, the way a recording used it: open the picker of one box (0 = From Time, 1 = To Time), click its "increment hour" arrow {@code times} times - the picker starts at the CURRENT time, so
+     * the box ends up {@code times} hour(s) after now - and close the picker. Returns the box's text afterwards ("" on failure, see {@link #problems}).
+     */
+    public String incrementTimeHours(int box, int times) {
+        problems.clear();
+        final String m = ".modal.in:has(input[ng-model='inputTime'])";
+        try {
+            // a picker still open from the other box covers this box: close it with its own toggle first
+            if (page.locator(m + " a[ng-click='incrementHours()']:visible").count() > 0) {
+                page.locator(m + " button[ng-click='toggle()']").nth(box == 0 ? 1 : 0).click(new Locator.ClickOptions().setTimeout(5000));
+                page.waitForTimeout(500);
+            }
+            page.locator(m + " input[ng-model='inputTime']").nth(box).click(new Locator.ClickOptions().setTimeout(6000));
+            page.waitForTimeout(700);
+            for (int i = 0; i < times; i++) {
+                page.locator(m + " a[ng-click='incrementHours()']:visible").first().click(new Locator.ClickOptions().setTimeout(6000));
+                page.waitForTimeout(400);
+            }
+            page.locator(m + " button[ng-click='toggle()']").nth(box).click(new Locator.ClickOptions().setTimeout(6000));   // close this picker (the box then shows the time)
+            page.waitForTimeout(600);
+        } catch (Exception e) { problems.add("time box " + (box + 1) + ": " + firstLine(e)); }
+        List<String> boxes = timeBoxes();
+        String v = box < boxes.size() ? boxes.get(box) : "";
+        if (v.isEmpty() && problems.isEmpty()) problems.add("time box " + (box + 1) + " is still empty after " + times + " click(s)");
+        return v;
+    }
+
     /** Tick the idx-th checkbox of the popup's table (a real click) and check it is ticked and the row's data holds it. Returns the row text, "" on failure. */
     private String tickIn(String ngModel, int idx) {
         problems.clear();
-        Object name = page.evaluate("([m,i]) => {" + JS + " const dlg=modal(); const c=dlg? [...dlg.querySelectorAll(\"input[ng-model='\"+m+\"']\")][i] : null; if(!c) return ''; c.id='__rcTick'; c.scrollIntoView({block:'center'}); return norm((c.closest('tr')||{}).textContent); }", Arrays.asList(ngModel, idx));
+        Object name = page.evaluate("([m,i]) => {" + JS + " const dlg=modal(); const c=dlg? [...dlg.querySelectorAll(\"input[ng-model='\"+m+\"']\")][i] : null; if(!c) return ''; c.setAttribute('data-rcid', c.id||''); c.id='__rcTick'; c.scrollIntoView({block:'center'}); return norm((c.closest('tr')||{}).textContent); }", Arrays.asList(ngModel, idx));
         if (name == null || name.toString().isEmpty()) { problems.add("row " + (idx + 1) + " of the popup's table is not on screen"); return ""; }
         try { page.locator("#__rcTick").check(new Locator.CheckOptions().setTimeout(6000)); }
         catch (Exception e) { problems.add("the checkbox could not be ticked: " + firstLine(e)); }
         waitForAngular(500);
-        Object held = page.evaluate("(m) => { const e=document.getElementById('__rcTick'); if(!e) return ''; let v=''; try{ v=String(angular.element(e).scope()[m.split('.')[0]].IsSelected); }catch(x){} const r=e.checked+'/'+v; e.removeAttribute('id'); return r; }", ngModel);
+        Object held = page.evaluate("(m) => { const e=document.getElementById('__rcTick'); if(!e) return ''; let v=''; try{ v=String(angular.element(e).scope()[m.split('.')[0]].IsSelected); }catch(x){} const r=e.checked+'/'+v; const o=e.getAttribute('data-rcid')||''; if(o) e.id=o; else e.removeAttribute('id'); e.removeAttribute('data-rcid'); return r; }", ngModel);
         if (held == null || !"true/true".equals(held.toString())) problems.add("the tick is not held (checked/model " + held + ")");
         return problems.isEmpty() ? name.toString() : "";
     }
@@ -423,13 +602,29 @@ public class Investigation_Reports extends BasePage {
         public String text = "";
         public byte[] png;
         public String diagnostics = "";
+        /** HTTP status of the report's address (500 = the report failed). */
+        public int status;
+        /** When the tab is not a PDF: the page's title and visible text (the error the report shows). */
+        public String errorText = "";
     }
 
     /** Number of tabs open right now (take it just before Show Report). */
     public int tabCount() { return page.context().pages().size(); }
 
+    /** Every toast the screen showed since Show Report was clicked (the console says e.g. "No Data Available!" instead of opening a report). */
+    public String seenToasts() {
+        try {
+            Object r = page.evaluate("() => (window.__rcShowT||[]).join(' | ')");
+            return r == null ? "" : r.toString();
+        } catch (Exception e) { return ""; }
+    }
+
     public boolean clickShowReport() {
         problems.clear();
+        page.evaluate("() => { try{ if(window.toastr) toastr.clear(); }catch(e){} document.querySelectorAll('#toast-container .toast').forEach(t=>t.remove());"
+                + " window.__rcShowT=[]; if(window.__rcShowObs) window.__rcShowObs.disconnect();"
+                + " const grab=()=>document.querySelectorAll('.toast-message').forEach(el=>{ const t=(el.textContent||'').replace(/\\s+/g,' ').trim(); if(t && !window.__rcShowT.includes(t)) window.__rcShowT.push(t); });"
+                + " window.__rcShowObs=new MutationObserver(grab); window.__rcShowObs.observe(document.body,{childList:true,subtree:true,characterData:true}); grab(); }");
         try { page.locator("button[ng-click='ShowReport($event)']").first().click(new Locator.ClickOptions().setTimeout(6000)); }
         catch (Exception e) { problems.add("Show Report: " + firstLine(e)); return false; }
         return true;
@@ -453,9 +648,15 @@ public class Investigation_Reports extends BasePage {
                     }
                 } catch (Exception ignore) { }
             }
+            // the console refuses a report with no data by a warning toast ("No Data Available!") and opens nothing: give a tab 3 s after that, then stop waiting
+            if (tab == null && seenToasts().toLowerCase().contains("no data")) {
+                page.waitForTimeout(3000);
+                List<Page> late = page.context().pages();
+                if (late.size() <= tabsBefore) break;
+            }
             page.waitForTimeout(500);
         }
-        if (tab == null) { r.diagnostics = "no report tab opened at all"; return r; }
+        if (tab == null) { String seen = seenToasts(); r.diagnostics = "no report tab opened at all" + (seen.isEmpty() ? "" : " - the screen said: \"" + seen + "\""); r.errorText = seen; return r; }
         try {
             Object o = tab.evaluate("async () => { const res = await fetch(location.href, {credentials:'include'}); const buf = await res.arrayBuffer(); const u8 = new Uint8Array(buf);"
                     + " let head=''; for(let i=0;i<Math.min(8,u8.length);i++) head += String.fromCharCode(u8[i]);"
@@ -465,6 +666,14 @@ public class Investigation_Reports extends BasePage {
             java.util.Map<String, Object> m = (java.util.Map<String, Object>) o;
             r.bytes = ((Number) m.get("len")).intValue();
             r.isPdf = String.valueOf(m.get("head")).startsWith("%PDF");
+            r.status = m.get("status") instanceof Number ? ((Number) m.get("status")).intValue() : 0;
+            if (!r.isPdf) {
+                try {
+                    Object et = tab.evaluate("() => { const t=(document.title||'').replace(/\\s+/g,' ').trim(); const b=((document.body&&document.body.innerText)||'').replace(/\\s+/g,' ').trim(); return (t? 'Title: '+t : '') + (b? ' | Page text: '+b.slice(0,500) : ''); }");
+                    r.errorText = et == null ? "" : et.toString();
+                } catch (Exception ignore) { }
+                try { r.png = tab.screenshot(new Page.ScreenshotOptions().setTimeout(8000)); } catch (Exception ignore) { }   // the error page itself is the picture
+            }
             if (r.isPdf) {
                 byte[] pdf = java.util.Base64.getDecoder().decode(String.valueOf(m.get("b64")));
                 try { r.png = PdfUtil.firstPageToPng(pdf); } catch (Exception e) { System.out.println("Investigation_Reports: could not render the PDF - " + firstLine(e)); }
