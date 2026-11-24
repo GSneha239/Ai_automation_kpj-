@@ -18,9 +18,10 @@ import java.util.List;
  * <ol>
  *   <li>Report → Report Console → click the category button.</li>
  *   <li>Read ALL reports from the Reports dropdown at run time (new reports are picked up automatically).</li>
- *   <li>For each report = ONE test step: select it; for EVERY filter in the Filter dropdown: select it → <b>Add</b> →
- *       <b>AddValue</b> → pick values (a tick list: several random entries; a dropdown: a random one; dates: two months before
- *       today → today) → Add.</li>
+ *   <li>For each report = a SECTION of steps named "&lt;report&gt; - &lt;action&gt;" (like the Investigation Reports test): open the
+ *       category tab, select the report, then for EVERY filter in the Filter dropdown: select it → <b>Add</b> → verify it is in the
+ *       table → <b>Add Value</b> → choose values (a tick list: several random entries; a dropdown: a random one; dates: two months
+ *       before today → today) → <b>OK</b>.</li>
  *   <li><b>Show Report</b> → the report opens in a new tab. Evidence = the console with the filled filter table, then EVERY page of
  *       the report, joined into one image. The title on the report is checked against the selected name — the same meaning is a
  *       match ("Date Wise" = "Date-wise"; "IPD New &amp; Follow Up Report" = "IPD New &amp; Follow Up Patient Count Report").</li>
@@ -35,7 +36,7 @@ public abstract class ReportCategoryFlow extends DevHisBase {
     private static final int MAX_PAGES = 50;
 
     private int pass, fail;
-    private final List<String> failed = new ArrayList<>(), noData = new ArrayList<>(), issues = new ArrayList<>(), notes = new ArrayList<>();
+    private final List<String> failed = new ArrayList<>(), noData = new ArrayList<>(), issues = new ArrayList<>(), notes = new ArrayList<>(), wider = new ArrayList<>();
 
     protected ReportCategoryFlow(String reportId) { super(reportId); }
 
@@ -90,102 +91,175 @@ public abstract class ReportCategoryFlow extends DevHisBase {
         addSummary("Titles worded differently (PASS)", notes.isEmpty() ? "none" : String.join(" ; ", notes));
         addSummary("Reports with \"No Data Available\" (FAIL)", noData.isEmpty() ? "none" : String.join(" ; ", noData));
         addSummary("Date range used", java.time.LocalDate.now().minusMonths(2).format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"))
-                + " - " + java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy")));
+                + " - " + java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"))
+                + (retryFrom() == null ? "" : "; on \"No Data Available\" a second try " + retryFrom().format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy")) + " - today"));
+        if (retryFrom() != null) addSummary("Passed only on the second (wider) try", wider.isEmpty() ? "none" : String.join(" ; ", wider));
         addSummary("Evidence folder", evidence().toString());
     }
 
-    /** One report of the category = one test step. */
+    /** A step with a screenshot of the console (40 s limit — the console is a heavy screen). */
+    private void shotStep(String name, String desc, String expected, String actual, boolean ok) {
+        byte[] png = null;
+        try { png = page.screenshot(new Page.ScreenshotOptions().setTimeout(40000)); } catch (Exception ignore) { }
+        if (png != null) step(png, name, desc, expected, actual, ok ? "PASS" : "FAIL");
+        else step(name, desc, expected, actual, ok ? "PASS" : "FAIL");
+    }
+
+    /**
+     * Start date of a second try when the report says "No Data Available" (new random values, dates from this day to today);
+     * null = no second try (the default). A category may override it, e.g. Patient Report → 01/01/2020.
+     */
+    protected java.time.LocalDate retryFrom() { return null; }
+
+    /**
+     * One report of the category = a section of steps, "&lt;report&gt; - &lt;action&gt;" (the same layout as the Investigation Reports test):
+     * open the category tab, select the report, then for every filter: select it, Add, verify it is in the table, Add Value,
+     * choose the value(s), OK; then Show Report, verify the report is generated in another tab (every page captured), verify the
+     * report is the selected report (its title). The first failing step ends the section. When the report says "No Data
+     * Available" and {@link #retryFrom()} gives a date, the section is run once more with that wider date range.
+     */
     private void testReport(ReportConsole rc, String report, String id) {
         StringBuilder filters = new StringBuilder();
-        List<String> problems = new ArrayList<>();
-        Page tab = null;
-        byte[] shot = null;
-        String actual, status;
+        String result = "";
+        Page[] tab = {null};
+        boolean[] nd = {false};
+        System.out.println("  " + id + " " + report);
+        java.time.LocalDate wide = retryFrom();
         try {
-            // fresh start for every report: Clear, then pick the report
-            rc.clear();
-            String why = rc.selectReport(report);
-            if (!why.isEmpty()) problems.add("could not select the report: " + why);
-            List<String> fl = why.isEmpty() ? rc.filterNames() : new ArrayList<>();
-            for (String f : fl) {
-                String add = rc.addFilter(f);
-                if (!add.isEmpty()) { problems.add(f + ": not added (" + add + ")"); filters.append(f).append(" = NOT ADDED; "); continue; }
-                ReportConsole.ValueResult v = rc.addValue(f);
-                filters.append(f).append(" = ").append(v.value.isEmpty() ? "(none)" : v.value).append("; ");
-                if (!v.ok()) problems.add(f + ": " + v.problem + (v.popup.isEmpty() ? "" : " [" + v.popup + "]"));
+            rc.fromDate = null;
+            result = runOnce(rc, report, "", filters, tab, nd, id);
+            if (nd[0] && wide != null) {
+                rc.closeTab(tab[0]);
+                tab[0] = null;
+                rc.fromDate = wide;
+                String tag = " (try 2: " + wide.format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy")) + " - today)";
+                filters.append("| try 2: ");
+                result = runOnce(rc, report, tag, filters, tab, nd, id);
+                if (result.startsWith("PASS")) wider.add(report + tag);
             }
-            if (fl.isEmpty() && why.isEmpty()) filters.append("(the report has no filters) ");
-
-            if (!problems.isEmpty()) {
-                shot = page.screenshot();
-                actual = "Filters: " + filters + "| NOT RUN - " + String.join("; ", problems);
-                status = "FAIL";
-            } else {
-                byte[] filled = page.screenshot();   // evidence: the filter table with every filter and its values, before Show Report
-                tab = rc.showReport(90000);
-                if (tab == null) {
-                    String msg = rc.messages();
-                    shot = page.screenshot();
-                    if (msg.toLowerCase().contains("no data")) {
-                        actual = "Filters: " + filters + "| Show Report did NOT open the report - the screen says \"" + msg + "\"";
-                        status = "FAIL";   // team rule: "No Data Available" instead of a report is a failure
-                        noData.add(report);
-                    } else if (!rc.downloaded.isEmpty()) {
-                        actual = "Filters: " + filters + "| Show Report downloaded a file (" + rc.downloaded + ") instead of opening the report";
-                        status = "FAIL";
-                    } else {
-                        actual = "Filters: " + filters + "| Show Report did not open a report" + (msg.isEmpty() ? "" : " - screen says: " + msg);
-                        status = "FAIL";
-                    }
-                } else if (!rc.serverError(tab).isEmpty() || (!rc.waitForViewer(tab, 90000) && !rc.serverError(tab).isEmpty())) {
-                    String err = rc.serverError(tab);   // the report crashed on the server
-                    try { tab.setViewportSize(1920, 1075); } catch (Exception ignore) { }
-                    shot = ReportConsole.stitch(java.util.Arrays.asList(filled, tab.screenshot()));
-                    actual = "Filters: " + filters + "| Show Report opened a SERVER ERROR page instead of the report: \"" + err + "\"";
-                    status = "FAIL";
-                    issues.add(report + ": server error - " + err);
-                } else {
-                    boolean drawn = rc.waitForViewer(tab, 1000) || rc.waitForViewer(tab, 90000);
-                    String box = rc.pageBox(tab);
-                    String text = rc.reportText(tab);   // read on page 1 — the title is printed on the first page only
-                    List<byte[]> pages = drawn ? rc.capturePages(tab, MAX_PAGES) : java.util.Collections.singletonList(tab.screenshot());
-                    List<byte[]> evidenceShots = new ArrayList<>();
-                    evidenceShots.add(filled);          // 1st: the console with all filters added
-                    evidenceShots.addAll(pages);        // then every page of the report
-                    shot = ReportConsole.stitch(evidenceShots);
-                    String title = titleFound(text, report);
-                    String printed = printedTitle(text);
-                    // same meaning = a match: the printed title may be shorter or worded slightly differently — only a report with NO
-                    // title, or an unrelated one, fails
-                    boolean sameMeaning = title == null && !printed.isEmpty() && sameReport(printed, report);
-                    boolean titleOk = title != null || sameMeaning;
-                    actual = "Filters: " + filters + "| Report opened (" + (drawn ? "page box \"" + box + "\", " + pages.size() + " page(s) captured" : "viewer did not finish drawing") + ")"
-                            + " | title on the report: " + (title != null ? "\"" + title + "\" - matches"
-                                : sameMeaning ? "\"" + printed + "\" - same report (worded slightly differently from \"" + report + "\")"
-                                : printed.isEmpty() ? "NO TITLE printed on the report" : "\"" + printed + "\" - a DIFFERENT report title (selected \"" + report + "\")");
-                    status = drawn && titleOk ? "PASS" : "FAIL";
-                    if (!titleOk) issues.add(report + ": " + (printed.isEmpty() ? "no title printed" : "printed title \"" + printed + "\""));
-                    if (sameMeaning) notes.add(report + ": printed as \"" + printed + "\"");
-                }
-            }
+            if (nd[0]) noData.add(report);
         } catch (Exception e) {
             String em = String.valueOf(e.getMessage()).replaceAll("\\s+", " ");
-            actual = "Filters: " + filters + "| ERROR - " + em.substring(0, Math.min(250, em.length()));
-            status = "FAIL";
-            try { shot = page.screenshot(); } catch (Exception ignore) { }
+            step(page.screenshot(), report + " - Unexpected error", "-", "The report is tested", em.substring(0, Math.min(250, em.length())), "FAIL");
+            result = "FAILED - error: " + em.substring(0, Math.min(120, em.length()));
         } finally {
-            rc.closeTab(tab);
+            rc.fromDate = null;
+            rc.closeTab(tab[0]);
+            if (result.startsWith("PASS")) pass++; else { fail++; failed.add(report); }
+            addSummary(report + " - Filters", filters.length() == 0 ? "-" : filters.toString());
+            addSummary(report + " - Result", result.isEmpty() ? "FAILED" : result);
+            if (!rc.onScreen()) { rc.navigateViaMenu(); }   // keep the console usable for the next report
+        }
+    }
+
+    /** One try of a report (see {@link #testReport}). {@code tag} is added to every step name; nd[0] = the app said "No Data Available". */
+    private String runOnce(ReportConsole rc, String report, String tag, StringBuilder filters, Page[] tabOut, boolean[] nd, String id) {
+        final String sec = report;
+        final String cat = category();
+        nd[0] = false;
+        String dates = (rc.fromDate != null ? rc.fromDate : java.time.LocalDate.now().minusMonths(2)).format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy")) + " - today";
+
+        // fresh start: Clear, open the category tab again
+        rc.clear();
+        boolean opened = rc.openCategory(cat);
+        List<String> listed = rc.reportNames();
+        shotStep(sec + " - Open the " + cat + " tab" + tag, "Click the \"" + cat + "\" button of the Report Console", "The Reports dropdown lists the " + cat + " reports",
+                opened ? "Reports offered (" + listed.size() + "): " + listed : "Problem - the " + cat + " reports were not listed", opened);
+        if (!opened) return "FAILED - " + cat + " tab";
+
+        String why = rc.selectReport(report);
+        List<String> fl = why.isEmpty() ? rc.filterNames() : new ArrayList<>();
+        shotStep(sec + " - Select the report" + tag, "In the Reports dropdown select \"" + report + "\"", "The report is selected and its filters are offered",
+                why.isEmpty() ? "Reports = \"" + report + "\"; Filter dropdown offers " + fl : "Problem - " + why, why.isEmpty());
+        if (!why.isEmpty()) return "FAILED - report: " + why;
+
+        for (String f : fl) {
+            String sel = rc.selectFilter(f);
+            shotStep(sec + " - Select the filter " + f + tag, "In the Filter dropdown select \"" + f + "\"", "The filter is selected",
+                    sel.isEmpty() ? "Filter = \"" + rc.filterShown() + "\"" : "Problem - " + sel, sel.isEmpty());
+            if (!sel.isEmpty()) return "FAILED - filter " + f + ": " + sel;
+
+            String add = rc.clickAdd();
+            shotStep(sec + " - Click Add (" + f + ")" + tag, "Click Add (AddFilter())", "The filter is added to the table",
+                    add.isEmpty() ? "Add clicked" : "Problem - " + add, add.isEmpty());
+            List<String> inTable = rc.filtersInTable();
+            boolean in = inTable.contains(f);
+            shotStep(sec + " - Verify the filter appears in the table (" + f + ")" + tag, "In the Filter Name | Filter Value table look for \"" + f + "\"", "The added filter appears",
+                    in ? "The table lists " + inTable : "\"" + f + "\" is not in the table (" + inTable + ")", in);
+            if (!in) return "FAILED - the " + f + " filter was not added" + (add.isEmpty() ? "" : " (" + add + ")");
+
+            ReportConsole.ValueResult v = rc.openAddValue(f);
+            shotStep(sec + " - Click Add Value (" + f + ")" + tag, "Click Add Value on the filter's row", "The " + f + " popup opens",
+                    v.problem.isEmpty() ? "The popup opened (" + v.popup + ")" : "Problem - " + v.problem, v.problem.isEmpty());
+            if (!v.problem.isEmpty()) { issues.add(report + ": " + f + " - " + v.problem); return "FAILED - popup of " + f + ": " + v.problem; }
+
+            rc.chooseValue(v);
+            shotStep(sec + " - Choose the value (" + f + ")" + tag, "In the popup choose the value(s) (lists: several at random; dates: " + dates + ")",
+                    "The value(s) are chosen", v.problem.isEmpty() ? "Chosen \"" + v.chosen + "\"" : "Problem - " + v.problem, v.problem.isEmpty());
+            if (!v.problem.isEmpty()) { issues.add(report + ": " + f + " - " + v.problem); return "FAILED - value of " + f + ": " + v.problem; }
+
+            rc.clickOk(v, f);
+            boolean good = v.ok();
+            shotStep(sec + " - Click OK (" + f + ")" + tag, "Click OK / Add in the popup", "The popup closes and the filter's value shows the chosen value(s)",
+                    good ? "Filter Value = \"" + v.value + "\"" : "Problem - " + v.problem + " Filter Value = \"" + v.value + "\"", good);
+            if (!good) { issues.add(report + ": " + f + " - " + v.problem); return "FAILED - OK of " + f + ": " + v.problem; }
+            filters.append(f).append(" = ").append(v.value).append("; ");
         }
 
-        if ("PASS".equals(status)) pass++; else { fail++; failed.add(report); }
-        saveEvidence(id, report, shot);
-        step(shot != null ? shot : page.screenshot(), id + " " + report,
-                category() + " -> select \"" + report + "\"; add every filter with values (random; dates = last two months); Show Report; capture every page",
-                "The report opens with the title \"" + report + "\"",
-                actual, status);
+        // Show Report -> another tab
+        byte[] filled = page.screenshot();   // the console with every filter and its value(s)
+        Page tab = rc.showReport(90000);
+        tabOut[0] = tab;
+        String msg = rc.messages();
+        step(filled, sec + " - Click Show Report" + tag, "Click Show Report (ShowReport($event))", "The report is requested",
+                "Show Report clicked (" + fl.size() + " filter(s) set)", "PASS");
 
-        // keep the console usable for the next report
-        if (!rc.onScreen()) { rc.navigateViaMenu(); rc.openCategory(category()); }
+        if (tab == null) {
+            nd[0] = msg.toLowerCase().contains("no data");
+            String why2 = nd[0] ? "the screen says \"" + msg + "\" - the report did NOT open"
+                    : !rc.downloaded.isEmpty() ? "a file was downloaded (" + rc.downloaded + ") instead of opening the report"
+                    : "no report tab opened" + (msg.isEmpty() ? "" : " - the screen says \"" + msg + "\"");
+            step(page.screenshot(), sec + " - Verify the report is generated in another tab" + tag, "Check a report opened in another tab", "A non-blank report is generated",
+                    why2, "FAIL");
+            saveEvidence(id, report + tag, page.screenshot());
+            return "FAILED - " + why2;
+        }
+        String err = rc.serverError(tab);
+        boolean drawn = err.isEmpty() && rc.waitForViewer(tab, 90000);
+        if (err.isEmpty() && !drawn) err = rc.serverError(tab);
+        if (!err.isEmpty()) {
+            try { tab.setViewportSize(1920, 1075); } catch (Exception ignore) { }
+            byte[] errShot = tab.screenshot();
+            issues.add(report + ": server error - " + err);
+            step(errShot, sec + " - Verify the report is generated in another tab" + tag, "Check a report opened in another tab", "A non-blank report is generated",
+                    "A SERVER ERROR page opened instead of the report: \"" + err + "\"", "FAIL");
+            saveEvidence(id, report + tag, ReportConsole.stitch(java.util.Arrays.asList(filled, errShot)));
+            return "FAILED - server error (" + err + ")";
+        }
+        String box = rc.pageBox(tab);
+        String text = rc.reportText(tab);   // page 1 — the title is printed on the first page only
+        List<byte[]> pages = drawn ? rc.capturePages(tab, MAX_PAGES) : java.util.Collections.singletonList(tab.screenshot());
+        byte[] allPages = ReportConsole.stitch(pages);
+        step(allPages, sec + " - Verify the report is generated in another tab" + tag, "Check a report opened in another tab; capture every page", "A non-blank report is generated",
+                drawn ? "The report opened in the viewer (page box \"" + box + "\"); " + pages.size() + " page(s) captured - the screenshot shows every page"
+                      : "The report tab opened but the viewer did not finish drawing", drawn ? "PASS" : "FAIL");
+        saveEvidence(id, report + tag, ReportConsole.stitch(java.util.Arrays.asList(filled, allPages)));
+        if (!drawn) return "FAILED - the viewer did not finish drawing";
+
+        String title = titleFound(text, report);
+        String printed = printedTitle(text);
+        // same meaning = a match: the printed title may be shorter or worded slightly differently — only NO title, or an unrelated one, fails
+        boolean sameMeaning = title == null && !printed.isEmpty() && sameReport(printed, report);
+        boolean titleOk = title != null || sameMeaning;
+        step(pages.get(0), sec + " - Verify the report is the " + report + " report" + tag, "Read the report's title", "The report is the \"" + report + "\" report",
+                title != null ? "The report says \"" + title + "\" - matches"
+                        : sameMeaning ? "The report says \"" + printed + "\" - the same report, worded slightly differently"
+                        : printed.isEmpty() ? "NO TITLE is printed on the report" : "The report says \"" + printed + "\" - a DIFFERENT report",
+                titleOk ? "PASS" : "FAIL");
+        if (!titleOk) issues.add(report + ": " + (printed.isEmpty() ? "no title printed" : "printed title \"" + printed + "\""));
+        if (sameMeaning) notes.add(report + ": printed as \"" + printed + "\"");
+        return titleOk ? "PASS - report generated (" + pages.size() + " page(s)), title \"" + (title != null ? title : printed) + "\"" + tag
+                       : "FAILED - " + (printed.isEmpty() ? "no title" : "title \"" + printed + "\"");
     }
 
     /**

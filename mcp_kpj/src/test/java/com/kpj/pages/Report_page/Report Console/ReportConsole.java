@@ -127,8 +127,21 @@ public class ReportConsole extends BasePage {
 
     /** Choose a filter and click Add (real clicks). Returns the message shown, "" when the filter row was added. */
     public String addFilter(String name) {
-        String why = chooseSelect2(FILTER, name);
-        if (!why.isEmpty()) return why;
+        String why = selectFilter(name);
+        return why.isEmpty() ? clickAdd() : why;
+    }
+
+    /** Choose a filter in the Filter dropdown (real select2 clicks). "" when the dropdown shows it, else why not. */
+    public String selectFilter(String name) { return chooseSelect2(FILTER, name); }
+
+    /** The filter the Filter dropdown shows. */
+    public String filterShown() {
+        Object shown = page.evaluate("(s) => { const e=document.querySelector(s); return e && e.selectedIndex>=0 ? e.options[e.selectedIndex].text.replace(/\\s+/g,' ').trim() : ''; }", FILTER);
+        return shown == null ? "" : shown.toString();
+    }
+
+    /** Click Add (real click). "" when a new filter row appeared, else the screen's message. */
+    public String clickAdd() {
         resetMessages();
         int before = filterRowCount();
         page.locator("button[ng-click='AddFilter()']:visible").first().click(new Locator.ClickOptions().setTimeout(6000));
@@ -136,6 +149,13 @@ public class ReportConsole extends BasePage {
                 new Page.WaitForFunctionOptions().setTimeout(8000)); } catch (Exception ignore) { }
         waitForAngular(600);
         return filterRowCount() > before ? "" : (messages().isEmpty() ? "the filter row was not added" : messages());
+    }
+
+    /** The Filter Name column of the filter table. */
+    @SuppressWarnings("unchecked")
+    public List<String> filtersInTable() {
+        Object r = page.evaluate("() => [...document.querySelectorAll(\"button[ng-click*='AddValue(tt']\")].map(b=>{ const tr=b.closest('tr'); return tr && tr.children[1] ? tr.children[1].textContent.replace(/\\s+/g,' ').trim() : ''; })");
+        return r instanceof List ? (List<String>) r : new ArrayList<>();
     }
 
     public int filterRowCount() {
@@ -186,6 +206,15 @@ public class ReportConsole extends BasePage {
      * RANDOM entry. Then the popup's Add button. The value the table now shows is returned in {@code value}.
      */
     public ValueResult addValue(String filterName) {
+        ValueResult res = openAddValue(filterName);
+        if (!res.problem.isEmpty()) return res;
+        chooseValue(res);
+        if (!res.problem.isEmpty()) return res;
+        return clickOk(res, filterName);
+    }
+
+    /** Click the filter row's AddValue (real click). {@code popup} = the popup that opened, or {@code problem} says why none did. */
+    public ValueResult openAddValue(String filterName) {
         ValueResult res = new ValueResult();
         Object tagged = page.evaluate("(f) => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); document.querySelectorAll('#__rcAv').forEach(e=>e.removeAttribute('id'));"
                 + " const b=[...document.querySelectorAll(\"button[ng-click*='AddValue(tt']\")].find(x=>{ const tr=x.closest('tr'); return tr && norm(tr.children[1] && tr.children[1].textContent)===f; });"
@@ -199,7 +228,12 @@ public class ReportConsole extends BasePage {
         Object id = page.evaluate("() => { const m=[...document.querySelectorAll('.modal')].filter(m=>m.classList.contains('in') && getComputedStyle(m).display!=='none').pop(); if(!m) return '';"
                 + " document.querySelectorAll('[data-rcmodal]').forEach(e=>e.removeAttribute('data-rcmodal')); m.setAttribute('data-rcmodal','1'); return m.id || '(no id)'; }");
         res.popup = id == null ? "" : id.toString();
-        if (res.popup.isEmpty()) { res.problem = "no popup opened" + (messages().isEmpty() ? "" : " (" + messages() + ")"); return res; }
+        if (res.popup.isEmpty()) res.problem = "no popup opened" + (messages().isEmpty() ? "" : " (" + messages() + ")");
+        return res;
+    }
+
+    /** In the open popup: choose the value(s) — see {@link #addValue}. {@code chosen} = what was picked, or {@code problem}. */
+    public ValueResult chooseValue(ValueResult res) {
         Locator m = page.locator("[data-rcmodal='1']");
         try { waitForPopupData(m); fill(m, res); }
         catch (Exception e) {
@@ -207,19 +241,25 @@ public class ReportConsole extends BasePage {
             java.util.regex.Matcher mm = java.util.regex.Pattern.compile("message='([^']*)").matcher(em);
             res.problem = "could not fill the popup: " + (mm.find() ? mm.group(1) : em).trim();
             if (res.problem.length() > 300) res.problem = res.problem.substring(0, 300);
-            System.out.println("ReportConsole.fill: " + em.substring(0, Math.min(1200, em.length())));
         }
-        if (!res.problem.isEmpty()) { closePopup(m); return res; }
-        // confirm with the popup's own Add button
+        if (!res.problem.isEmpty()) closePopup(m);
+        return res;
+    }
+
+    /** Click the popup's own Add / OK (real click). {@code value} = what the filter table now shows for the filter. */
+    public ValueResult clickOk(ValueResult res, String filterName) {
+        Locator m = page.locator("[data-rcmodal='1']");
         Locator add = m.locator("button[ng-click^='fnAdd']:visible");
-        if (add.count() == 0) add = m.locator(".modal-footer button:visible").filter(new Locator.FilterOptions().setHasText(java.util.regex.Pattern.compile("^\\s*(add|ok|save)\\s*$", java.util.regex.Pattern.CASE_INSENSITIVE)));
-        if (add.count() == 0) { res.problem = "the popup has no Add button"; closePopup(m); return res; }
+        if (add.count() == 0) add = m.locator(".modal-footer button:visible").filter(new Locator.FilterOptions().setHasText(java.util.regex.Pattern.compile("^\\s*(add|ok|save|select)\\s*$", java.util.regex.Pattern.CASE_INSENSITIVE)));
+        if (add.count() == 0) { res.problem = "the popup has no Add / OK button"; closePopup(m); return res; }
         add.first().click(new Locator.ClickOptions().setTimeout(6000));
         waitForAngular(1500);
         res.message = messages();
         if (m.isVisible()) { res.problem = "the popup stayed open" + (res.message.isEmpty() ? "" : " (" + res.message + ")"); closePopup(m); }
         res.value = filterValue(filterName);
         if (res.problem.isEmpty() && res.value.isEmpty()) res.problem = "the table shows no value for the filter" + (res.message.isEmpty() ? "" : " (" + res.message + ")");
+        if (res.problem.isEmpty() && res.value.toLowerCase().contains("undefined"))   // e.g. City/District saves "undefined,Chaah"
+            res.problem = "the popup saved a broken value (\"" + res.value + "\") for the chosen \"" + res.chosen + "\"";
         return res;
     }
 
@@ -265,8 +305,23 @@ public class ReportConsole extends BasePage {
         return true;
     }
 
+    /** Start of the date ranges typed in the popups; null = two months before today (a wider retry sets e.g. 01/01/2020). */
+    public LocalDate fromDate = null;
+
     private void fill(Locator m, ValueResult res) {
-        LocalDate to = LocalDate.now(), from = to.minusMonths(2);
+        LocalDate to = LocalDate.now(), from = fromDate != null ? fromDate : to.minusMonths(2);
+        // "Date of …" ranges (Date of Birth: yyyy-MM-dd from 1940; Date of Discharge: the console's format) — ng-model From/ToDateof…
+        Locator fromOf = m.locator("input:visible[ng-model*='.FromDateof']"), toOf = m.locator("input:visible[ng-model*='.ToDateof']");
+        if (fromOf.count() > 0 || toOf.count() > 0) {
+            boolean dob = String.valueOf((fromOf.count() > 0 ? fromOf : toOf).first().getAttribute("ng-model")).contains("Birth");
+            Object f = (fromOf.count() > 0 ? fromOf : toOf).first().evaluate("i => { const d=i.closest('.datepicker'); return d ? d.getAttribute('date-format')||'' : ''; }");
+            DateTimeFormatter fmt = String.valueOf(f).startsWith("yyyy") ? DateTimeFormatter.ISO_LOCAL_DATE : DMY;
+            LocalDate start = dob ? LocalDate.of(1940, 1, 1) : from;
+            if (fromOf.count() > 0) typeDate(m, fromOf.first(), start.format(fmt));
+            if (toOf.count() > 0) typeDate(m, toOf.first(), to.format(fmt));
+            res.chosen = start.format(fmt) + " - " + to.format(fmt);
+            return;
+        }
         Locator fromTxt = m.locator("input[type=text][ng-model$='FromDate']:visible, input:not([type])[ng-model$='FromDate']:visible");
         Locator toTxt = m.locator("input[type=text][ng-model$='ToDate']:visible, input:not([type])[ng-model$='ToDate']:visible");
         Locator fromMon = m.locator("input[type=month][ng-model$='FromDate']:visible");
@@ -312,6 +367,8 @@ public class ReportConsole extends BasePage {
             }
             if (real.isEmpty()) continue;
             int k = real.get(rnd.nextInt(real.size()));
+            // Payable Type (Doctor popup): only "Doctor" loads the doctor list — prefer it when the dropdown offers it
+            for (int r : real) if ("Doctor".equalsIgnoreCase(String.valueOf(sel.evaluate("(e,k) => e.options[k].text.trim()", r)))) { k = r; break; }
             pick(sel, k);
             Object t = sel.evaluate("(e,k) => e.options[k].text.trim()", k);
             res.chosen = (res.chosen.isEmpty() ? "" : res.chosen + ", ") + t;
@@ -400,8 +457,22 @@ public class ReportConsole extends BasePage {
             if (res.chosen.replace("-", "").trim().isEmpty()) res.problem = "the time pickers did not take a time";
             return;
         }
+        // a number box (Discharge, Occupancy Rate, Vacant / Occupied / Available Beds): type a small count
+        Locator num = m.locator("input[type=number]:visible");
+        if (num.count() > 0) {
+            for (int i = 0; i < num.count(); i++) num.nth(i).fill(NUMBER_VALUE);
+            res.chosen = NUMBER_VALUE;
+            return;
+        }
+        // Record Status: a free-text box
+        Locator status = m.locator("input:visible[ng-model$='RecordStatus']");
+        if (status.count() > 0) {
+            status.first().fill(RECORD_STATUS);
+            res.chosen = RECORD_STATUS;
+            return;
+        }
         Locator text = m.locator("input[type=text]:visible, input[type=number]:visible, input:not([type]):visible");
-        res.problem = text.count() > 0 ? "the popup needs a typed value (" + text.first().getAttribute("placeholder") + ") - no list to pick from"
+        res.problem =text.count() > 0 ? "the popup needs a typed value (" + text.first().getAttribute("placeholder") + ") - no list to pick from"
                                        : "the popup has no values to pick";
     }
 
@@ -409,6 +480,10 @@ public class ReportConsole extends BasePage {
     private static final String DEFAULT_MRN = "1100339288";
     /** Words tried in search-first popups (e.g. Diagnosis) until the list shows entries. */
     private static final String[] SEARCH_TERMS = {"fever", "pain", "diabetes", "a"};
+    /** Typed in number popups (Discharge, Occupancy Rate, beds); override with -Dreport.number. */
+    private static final String NUMBER_VALUE = System.getProperty("report.number", "1");
+    /** Typed in the Record Status popup; override with -Dreport.recordStatus. */
+    private static final String RECORD_STATUS = System.getProperty("report.recordStatus", "Completed");
 
     /**
      * Choose option {@code k} so that the screen reacts. Some popups share their dropdown with another popup (e.g. Location in
@@ -498,7 +573,8 @@ public class ReportConsole extends BasePage {
     /** When the report tab shows the server's error page ("Server Error in '/' Application"), its message; else "". */
     public String serverError(Page tab) {
         try {
-            Object r = tab.evaluate("() => { const t=document.body ? document.body.innerText : ''; if(!/Server Error in/i.test(t)) return '';"
+            Object r = tab.evaluate("() => { const t=document.body ? document.body.innerText : ''; if(/504 Gateway Time-?out|Gateway Time-?out/i.test(t)) return '504 Gateway Time-out';"
+                    + " if(!/Server Error in/i.test(t)) return '';"
                     + " const i=document.querySelector('h2 i, h2'); return (i ? i.innerText : t).replace(/\\s+/g,' ').trim().slice(0,300); }");
             return r == null ? "" : r.toString();
         } catch (Exception e) { return ""; }
