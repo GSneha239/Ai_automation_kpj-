@@ -149,6 +149,43 @@ public class FallRiskAssessment extends BasePage {
         return s;
     }
 
+    /** The Assessment Parameter line the last {@link #addAssessmentParameter()} added. */
+    public String lastParameterLine = "";
+
+    /** Rows listed in the form's Assessment Parameter | Value table. */
+    public int detailRowCount() {
+        Object n = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                + " const t=[...document.querySelectorAll('table')].find(x=>x.offsetParent!==null && /assessment\\s*parameter/i.test(norm((x.querySelector('thead')||x).textContent)));"
+                + " if(!t) return 0; return [...t.querySelectorAll('tbody tr')].filter(r=>norm(r.textContent) && !/no\\s*(data|record)/i.test(norm(r.textContent))).length; }");
+        return n instanceof Number ? ((Number) n).intValue() : 0;
+    }
+
+    /**
+     * The form's detail table needs at least one line: Submit answers "Please Add at least one record!" otherwise (the class note above that
+     * called this Add "not needed for the save" is out of date). Enter <b>Assessment Parameter</b> ({@code fallrisk.Historys}) and <b>Value</b>
+     * ({@code fallrisk.Values}) and click <b>Add</b> ({@code AddFRADetails}); the table must gain a row. Nothing is added when a line is already listed.
+     */
+    public String addAssessmentParameter() {
+        int before = detailRowCount();
+        if (before > 0) { lastParameterLine = "(already listed)"; return "Assessment Parameter line already listed (" + before + " row(s))"; }
+        String param = "History of falling", value = "25";
+        page.evaluate("(a) => { const A=window.angular;"
+                + " const set=(ng,v)=>{ const e=[...document.querySelectorAll(\"input[ng-model='\"+ng+\"']\")].find(x=>x.offsetParent!==null); if(!e) return '(no)'; const c=A.element(e).controller('ngModel'); e.value=v; if(c){c.$setViewValue(v);c.$render();} e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true})); return v; };"
+                + " set('fallrisk.Historys', a[0]); set('fallrisk.Values', a[1]); }", java.util.Arrays.asList(param, value));
+        waitForAngular(300);
+        boolean tagged = Boolean.TRUE.equals(page.evaluate("() => { const b=[...document.querySelectorAll('[ng-click]')].find(x=>/AddFRADetails\\s*\\(/.test(x.getAttribute('ng-click')||'') && x.offsetParent!==null); if(!b) return false; b.id='__fraAddLine'; return true; }"));
+        if (tagged) {
+            try { page.locator("#__fraAddLine").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000)); }
+            catch (Exception e) { try { page.evaluate("() => { const b=document.getElementById('__fraAddLine'); if(b) b.click(); }"); } catch (Exception ignore) { } }
+            try { page.evaluate("() => { const b=document.getElementById('__fraAddLine'); if(b) b.removeAttribute('id'); }"); } catch (Exception ignore) { }
+        }
+        waitForAngular(800);
+        int after = detailRowCount();
+        lastParameterLine = after > before ? param + " = " + value : "";
+        return after > before ? "Assessment Parameter=" + param + " | Value=" + value + " | Add -> rows " + before + " -> " + after
+                : "Parameter line NOT added (Add " + (tagged ? "clicked" : "button not found") + ", rows " + before + " -> " + after + ")";
+    }
+
     /**
      * Click <b>Submit</b> ({@code fnIUD()}) and return the toast. Code/Remark are re-applied to the
      * {@code fallrisk} model on every scope first (the form can re-render and blank the Code), and the whole thing

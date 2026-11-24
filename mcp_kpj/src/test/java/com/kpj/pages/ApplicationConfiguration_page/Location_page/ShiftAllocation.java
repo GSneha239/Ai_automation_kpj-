@@ -302,11 +302,39 @@ public class ShiftAllocation extends BasePage {
         return true;
     }
 
+    public String lastFromDate = "", lastToDate = "";
+
+    /**
+     * Enter <b>From Date</b> (today) and <b>To Date</b> (one month on) — both are mandatory ("Please Select To Date!").
+     * dd/MM/yyyy is the format the date boxes bind; an ISO value leaves the model empty.
+     */
+    public String fillDates() {
+        java.time.format.DateTimeFormatter f = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy");
+        java.time.LocalDate today = java.time.LocalDate.now();
+        lastFromDate = setModelBox("addShiftAllocation.fromdate", today.format(f));
+        lastToDate = setModelBox("addShiftAllocation.todate", today.plusMonths(1).format(f));
+        return "From Date=" + lastFromDate + " | To Date=" + lastToDate;
+    }
+
+    /** Type into the input bound to {@code model}, commit it to Angular, and return what the box holds. */
+    private String setModelBox(String model, String value) {
+        Object r = page.evaluate("([m, v]) => { const e=[...document.querySelectorAll('input')]"
+                + " .find(x=>(x.getAttribute('ng-model')||'')===m); if(!e) return '';"
+                + " e.scrollIntoView({block:'center'}); e.focus(); e.value=v;"
+                + " try { const c=angular.element(e).controller('ngModel'); if(c){ c.$setViewValue(v); c.$render(); } } catch(x){}"
+                + " e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true}));"
+                + " e.dispatchEvent(new Event('blur',{bubbles:true})); return e.value||''; }",
+                java.util.Arrays.asList(model, value));
+        waitForAngular(300);
+        return r == null ? "" : r.toString();
+    }
+
     /** Fill the whole form on a fresh Add — used by the retry, which must re-enter every field. */
     public String fillAll(int shiftIndex, String openingBalance, String day) {
         String loc = selectLocation();
         String shift = selectShift(shiftIndex);
         String ob = fillOpeningBalance(openingBalance);
+        fillDates();
         String d = tickDay(day);
         return "Location=" + loc + " | Shift=" + shift + " | Opening Balance=" + ob + " | Day=" + d;
     }

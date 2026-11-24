@@ -23,14 +23,26 @@ public class DeathMarkingMortuary extends BasePage {
 
     public boolean navigateTo(String baseUrl) {
         try { page.waitForFunction("() => window.angular", null, new Page.WaitForFunctionOptions().setTimeout(15000)); } catch (Exception ignore) { }
-        page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const b=[...document.querySelectorAll('a,li>a')].find(x=>/^\\s*nursing\\s*station\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null); if(b) b.click(); }");
-        waitForAngular(1000);
-        // "Death Marking / Mortuary" — NOT "Death Certificate".
-        Object href = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const a=[...document.querySelectorAll('a[href]')].find(x=>{ const t=norm(x.textContent); return (/death\\s*mark|mortuary/i.test(t) || /deathmarking|mortuary/i.test(x.getAttribute('href')||'')) && !/certificate/i.test(t); }); if(!a) return ''; a.id='__dmMenu'; return a.getAttribute('href')||'link'; }");
-        if (href != null && !href.toString().isEmpty()) {
-            route = href.toString();
-            try { page.locator("#__dmMenu").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000)); } catch (Exception e) { System.out.println("DeathMarking.nav: click failed - " + e.getMessage()); }
-            waitForAngular(2000);
+        // Nursing Station is opened once (idempotent) and the link is looked up INSIDE its own li by its exact href: the first "death mark|mortuary"
+        // anchor of the whole DOM can be "Mortuary" (#/MortuaryList) or a hidden same-named entry elsewhere, whose click never lands here
+        // (the run then ends on the Patient Dashboard, and the hash fallback below is bounced there too). "Death Marking/Mortuary" - NOT "Death Certificate".
+        for (int attempt = 0; attempt < 3 && !onScreen(); attempt++) {
+            expandMenuEntry(null, "^\\s*nursing\\s*station\\s*$");
+            waitForAngular(800);
+            Object href = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const vis=e=>!!(e.offsetWidth||e.offsetHeight||e.getClientRects().length);"
+                    + " const top=[...document.querySelectorAll('a')].find(x=>/^\\s*nursing\\s*station\\s*$/i.test(norm(x.textContent)) && vis(x)); const li=top&&top.closest('li'); if(!li) return '';"
+                    + " const all=[...li.querySelectorAll('a[href]')].filter(x=>(x.getAttribute('href')||'').toLowerCase()==='#/deathmarkinglist');"
+                    + " const a=all.find(vis)||all[0]; if(!a) return ''; a.id='__dmMenu'; return a.getAttribute('href')||'link'; }");
+            if (href != null && !href.toString().isEmpty()) {
+                route = href.toString();
+                try { page.locator("#__dmMenu").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000)); }
+                catch (Exception e) {
+                    System.out.println("DeathMarking.nav: click failed - " + e.getMessage().split("\n")[0]);
+                    page.evaluate("() => { const e=document.getElementById('__dmMenu'); if(e) e.click(); }");
+                }
+                page.evaluate("() => { const e=document.getElementById('__dmMenu'); if(e) e.removeAttribute('id'); }");
+                waitForAngular(2500);
+            }
         }
         if (!page.url().toLowerCase().contains("deathmarking")) {
             try { page.evaluate("() => { window.location.hash = '#/DeathMarkingList'; }"); } catch (Exception ignore) { }

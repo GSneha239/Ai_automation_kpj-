@@ -175,6 +175,11 @@ public class CurrencyMaster extends BasePage {
         Object r = page.evaluate("(code) => { const up=s=>(s||'').replace(/\\s+/g,' ').trim().toUpperCase(); const cc=up(code);"
                 + " const rows=[...document.querySelectorAll('.ui-grid-row')].length ? [...document.querySelectorAll('.ui-grid-row')] : [...document.querySelectorAll('table tr')];"
                 + " for(const row of rows){ const cells=[...row.querySelectorAll('.ui-grid-cell-contents, td')].map(c=>up(c.textContent)); if(cells.some(c=>c===cc || c.includes(cc))) return (row.textContent||'').replace(/\\s+/g,' ').trim().slice(0,160); }"
+                // The grid draws only the rows in view (and one page at a time): also search the grid's own data for the code.
+                + " try { const el=document.querySelector('.ui-grid, [ui-grid]'); const sc=angular.element(el).isolateScope()||angular.element(el).scope();"
+                + "   const o=(sc.grid&&sc.grid.options)||sc.gridOptions||(sc.$parent&&sc.$parent.gridOptions); const d=(o&&o.data)||[];"
+                + "   const x=d.find(z=>JSON.stringify(z).toUpperCase().indexOf(cc)>=0);"
+                + "   if(x) return 'grid data (row not drawn): '+JSON.stringify(x).slice(0,160); } catch(e){}"
                 + " return ''; }", lastCode);
         return r == null ? "" : r.toString().trim();
     }

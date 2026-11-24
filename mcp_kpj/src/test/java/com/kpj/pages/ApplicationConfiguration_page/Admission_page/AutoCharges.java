@@ -245,12 +245,22 @@ public class AutoCharges extends BasePage {
             com.microsoft.playwright.Locator filter = page.locator("input[ng-model='colFilter.term']:visible").first();
             if (!code.isEmpty() && filter.count() > 0) { filter.fill(code); waitForAngular(1500); }
         } catch (Exception ignore) { }
+        // The filtered grid draws its row first and the cell text a moment later: wait (up to 12 s) until a row shows the code
+        // (or the service name) before judging, otherwise a saved record is read as "absent" while its text is still blank.
+        try {
+            page.waitForFunction("(c) => { const vis=e=>e.offsetWidth||e.offsetHeight||e.getClientRects().length;"
+                    + " const t=[...document.querySelectorAll('.ui-grid-row')].filter(vis).map(r=>(r.textContent||'').replace(/\\s+/g,' ').toLowerCase()).join(' ');"
+                    + " const a=c.split('|'); return t.includes(a[0].toLowerCase()) || (!!a[1] && t.includes(a[1].toLowerCase())); }",
+                    needle, new Page.WaitForFunctionOptions().setTimeout(12000));
+        } catch (Exception ignore) { System.out.println("AutoCharges.verifyRecordInList: no grid row showed \"" + code + "\" within 12 s"); }
+        waitForAngular(500);
         Object r = page.evaluate("(c) => { const vis=e=>e.offsetWidth||e.offsetHeight||e.getClientRects().length;"
                 + " const g=[...document.querySelectorAll(\"[id$='-grid-container']\")].find(vis);"
                 + " if(!g) return JSON.stringify({grid:false,rows:0,found:false,text:''});"
                 + " const rows=[...g.querySelectorAll('.ui-grid-row')].filter(vis);"
-                + " const text=(g.textContent||'').replace(/\\s+/g,' ').trim();"
-                + " return JSON.stringify({grid:true,id:g.id,rows:rows.length,found:text.toLowerCase().includes(c.split('|')[0].toLowerCase())||(!!c.split('|')[1]&&text.toLowerCase().includes(c.split('|')[1].toLowerCase())),text:text.slice(0,200)}); }", needle);
+                + " const allRows=[...document.querySelectorAll('.ui-grid-row')].filter(vis);"
+                + " const text=((g.textContent||'')+' '+allRows.map(x=>x.textContent||'').join(' ')).replace(/\\s+/g,' ').trim();"
+                + " return JSON.stringify({grid:true,id:g.id,rows:Math.max(rows.length,allRows.length),found:text.toLowerCase().includes(c.split('|')[0].toLowerCase())||(!!c.split('|')[1]&&text.toLowerCase().includes(c.split('|')[1].toLowerCase())),text:text.slice(0,200)}); }", needle);
         String s = r == null ? "" : r.toString();
         recordInList = (s.contains("\"found\":true") || preState.endsWith("|found")) && !code.isEmpty();
         return "Location = " + (loc.isEmpty() ? "(none)" : loc) + "; looked for \"" + code + "\" in the list grid -> after Search (rows|result): "

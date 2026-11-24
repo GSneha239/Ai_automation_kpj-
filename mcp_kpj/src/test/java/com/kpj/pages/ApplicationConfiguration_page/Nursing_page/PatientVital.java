@@ -135,9 +135,13 @@ public class PatientVital extends BasePage {
      * so a retry after an "already exists" toast submits genuinely different details.
      */
     public String fillDetails(int attempt) {
-        String code = "PV" + String.format("%05d", Math.abs((System.nanoTime() + attempt * 7919L) % 100000));
+        // Wall-clock digits shared by the Code and the Remark (nanoTime ticks in 100 ns on Windows, so "% 100000" repeats far too soon): the shared
+        // environment keeps every saved Patient Vital, so a bare vital name ("Pulse Rate") is used up for good. Remark = vital name + this run's
+        // digits - at most 29 characters, because longer remarks have been refused by the master save. A retry shifts the digits.
+        String digits = String.format("%05d", ((System.currentTimeMillis() / 1000) + attempt * 7919L) % 100000);
+        String code = "PV" + digits;
         lastCode = code;
-        lastRemark = REMARKS[attempt % REMARKS.length] + (attempt >= REMARKS.length ? " " + (attempt / REMARKS.length + 1) : "");
+        lastRemark = REMARKS[attempt % REMARKS.length] + " " + digits;
         // min < default < max, so a range check can't fail the save for an unrelated reason.
         int min = 10 + (int) (Math.abs(System.nanoTime() / 7) % 20);
         lastMin = String.valueOf(min);

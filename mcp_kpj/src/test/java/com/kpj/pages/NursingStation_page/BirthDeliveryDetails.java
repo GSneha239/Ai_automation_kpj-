@@ -22,13 +22,26 @@ public class BirthDeliveryDetails extends BasePage {
 
     public boolean navigateTo(String baseUrl) {
         try { page.waitForFunction("() => window.angular", null, new Page.WaitForFunctionOptions().setTimeout(15000)); } catch (Exception ignore) { }
-        page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const b=[...document.querySelectorAll('a,li>a')].find(x=>/^\\s*nursing\\s*station\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null); if(b) b.click(); }");
-        waitForAngular(1000);
-        Object href = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const a=[...document.querySelectorAll('a[href]')].find(x=>/birth\\s*delivery|delivery\\s*detail/i.test(norm(x.textContent)) || /birthdelivery/i.test(x.getAttribute('href')||'')); if(!a) return ''; a.id='__bdMenu'; return a.getAttribute('href')||'link'; }");
-        if (href != null && !href.toString().isEmpty()) {
-            route = href.toString();
-            try { page.locator("#__bdMenu").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000)); } catch (Exception e) { System.out.println("BirthDelivery.nav: click failed - " + e.getMessage()); }
-            waitForAngular(2000);
+        // The sidebar is built lazily and an UNSCOPED lookup of "birth delivery" can hit a hidden same-named entry elsewhere in the DOM
+        // (its click never navigates and the hash fallback below is bounced to #/PatientDashboard). So: open Nursing Station once
+        // (idempotent), then look the link up INSIDE that group's own li by its href and real-click it.
+        for (int attempt = 0; attempt < 3 && !onScreen(); attempt++) {
+            expandMenuEntry(null, "^\\s*nursing\\s*station\\s*$");
+            waitForAngular(800);
+            Object href = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const vis=e=>!!(e.offsetWidth||e.offsetHeight||e.getClientRects().length);"
+                    + " const top=[...document.querySelectorAll('a')].find(x=>/^\\s*nursing\\s*station\\s*$/i.test(norm(x.textContent)) && vis(x)); const li=top&&top.closest('li'); if(!li) return '';"
+                    + " const all=[...li.querySelectorAll('a[href]')].filter(x=>(x.getAttribute('href')||'').toLowerCase()==='#/birthdeliverydetails');"
+                    + " const a=all.find(vis)||all[0]; if(!a) return ''; a.id='__bdMenu'; return a.getAttribute('href')||'link'; }");
+            if (href != null && !href.toString().isEmpty()) {
+                route = href.toString();
+                try { page.locator("#__bdMenu").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000)); }
+                catch (Exception e) {
+                    System.out.println("BirthDelivery.nav: click failed - " + e.getMessage().split("\n")[0]);
+                    page.evaluate("() => { const e=document.getElementById('__bdMenu'); if(e) e.click(); }");
+                }
+                page.evaluate("() => { const e=document.getElementById('__bdMenu'); if(e) e.removeAttribute('id'); }");
+                waitForAngular(2500);
+            }
         }
         if (!page.url().toLowerCase().contains("birthdelivery")) {
             try { page.evaluate("() => { window.location.hash = '#/BirthDeliveryDetails'; }"); } catch (Exception ignore) { }

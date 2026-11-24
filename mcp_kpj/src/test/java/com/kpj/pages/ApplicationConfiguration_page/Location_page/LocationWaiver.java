@@ -90,21 +90,19 @@ public class LocationWaiver extends BasePage {
             page.waitForFunction("() => [...document.querySelectorAll('a')].some(a=>/application\\s*config/i.test((a.textContent||'')) && a.offsetParent!==null)",
                     null, new Page.WaitForFunctionOptions().setTimeout(15000));
         } catch (Exception ignore) { }
-        try {
-            page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                    + " const a=[...document.querySelectorAll('a')].find(x=>/application\\s*config/i.test(norm(x.textContent)) && x.offsetParent!==null); if(a) a.click(); }");
-            waitForAngular(1200);
-            page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                    + " const a=[...document.querySelectorAll('a')].find(x=>/^\\s*locations?\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null && (x.getAttribute('href')||'')==='#'); if(a) a.click(); }");
-            waitForAngular(1500);
-        } catch (Exception e) {
-            System.out.println("LocationWaiver.nav: menu entry raced the SPA route change - " + e.getMessage());
-        }
+        // Each level is opened only if it is closed (a second click on an open entry CLOSES it) and the link is looked up INSIDE the Application
+        // Configuration entry: the blind first-match clicks collapsed the menu and the run stayed on the Patient Dashboard.
+        final String appCfg = "application\\s*config";
+        boolean appOpen = expandMenuEntry(null, appCfg);
+        boolean locOpen = appOpen && expandMenuEntry(appCfg, "^\\s*locations?\\s*$");
+        if (!locOpen) System.out.println("LocationWaiver.nav: Application Configuration open=" + appOpen + ", Location open=" + locOpen);
         Object href = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+                + " const top=[...document.querySelectorAll('a')].find(x=>/application\\s*config/i.test(norm(x.textContent)) && x.offsetParent!==null);"
+                + " const scope=(top&&top.closest('li'))||document;"
                 + " const want=x=>/^\\s*location\\s*waiver\\s*$/i.test(norm(x.textContent));"
-                + " const a=[...document.querySelectorAll('a[href]')].find(x=>want(x) && x.offsetParent!==null)"
-                + "   || [...document.querySelectorAll('a[href]')].find(want)"
-                + "   || [...document.querySelectorAll('a[href]')].find(x=>/locationwaiverlist/i.test(x.getAttribute('href')||''));"
+                + " const a=[...scope.querySelectorAll('a[href]')].find(x=>want(x) && x.offsetParent!==null)"
+                + "   || [...scope.querySelectorAll('a[href]')].find(want)"
+                + "   || [...scope.querySelectorAll('a[href]')].find(x=>/locationwaiverlist/i.test(x.getAttribute('href')||''));"
                 + " if(!a) return ''; a.id='__lwMenu'; return a.getAttribute('href')||'link'; }");
         if (href != null && !href.toString().isEmpty()) {
             if (href.toString().contains("#/")) ROUTE = href.toString().substring(href.toString().indexOf("#/"));
@@ -128,8 +126,14 @@ public class LocationWaiver extends BasePage {
     }
 
     public boolean onScreen() {
-        if (!ROUTE.isEmpty() && page.url().toLowerCase().contains(ROUTE.replace("#/", "").toLowerCase())) return true;
-        return Boolean.TRUE.equals(page.evaluate("() => /location\\s*waiver/i.test(document.body.innerText||'')"));
+        // The route AND the screen's own title in the top bar. The URL alone is not enough (the app can change the hash while the Patient
+        // Dashboard stays on screen), and the page text is not either: the sidebar carries a "Location Waiver" menu item on EVERY screen, which
+        // made the dashboard look like this one ("Open Location Waiver screen" passed, then Add was not found). Only the top bar is read.
+        if (ROUTE.isEmpty() || !page.url().toLowerCase().contains(ROUTE.replace("#/", "").toLowerCase())) return false;
+        try {
+            Object t = page.evaluate("() => { const h=document.querySelector('header,.navbar'); return h? (h.textContent||'').replace(/\\s+/g,' ').trim().slice(0,80) : ''; }");
+            return t != null && t.toString().toLowerCase().contains("location waiver");
+        } catch (Exception e) { return false; }
     }
 
     // ---- actions ---------------------------------------------------------

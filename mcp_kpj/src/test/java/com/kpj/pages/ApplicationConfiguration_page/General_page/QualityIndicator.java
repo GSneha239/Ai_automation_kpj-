@@ -34,7 +34,18 @@ public class QualityIndicator extends BasePage {
      * @param tag           the name used in console lines
      */
     protected QualityIndicator(Page page, String leafRegex, String routeFragment, String codePrefix, String remarkPrefix, String tag) {
+        this(page, "general", leafRegex, routeFragment, codePrefix, remarkPrefix, tag);
+    }
+
+    /**
+     * Same, for a generic common-master screen that sits under another Application Configuration group (for example
+     * <b>Nursing</b> &gt; Allergen Type).
+     *
+     * @param groupRegex the Application Configuration sub-menu the entry lives in (regex, matched whole, case-insensitive)
+     */
+    protected QualityIndicator(Page page, String groupRegex, String leafRegex, String routeFragment, String codePrefix, String remarkPrefix, String tag) {
         super(page);
+        this.groupRegex = groupRegex;
         this.leafRegex = leafRegex;
         this.routeFragment = routeFragment;
         this.codePrefix = codePrefix;
@@ -42,7 +53,7 @@ public class QualityIndicator extends BasePage {
         this.tag = tag;
     }
 
-    private final String leafRegex, routeFragment, codePrefix, remarkPrefix, tag;
+    private final String groupRegex, leafRegex, routeFragment, codePrefix, remarkPrefix, tag;
 
     /** Diagnostics dumped into the report when a step fails. */
     public String lastMenu = "", lastRoute = "", lastControls = "", lastEntry = "", lastToast = "", lastSaveDiagnostics = "",
@@ -77,17 +88,19 @@ public class QualityIndicator extends BasePage {
         try { page.waitForFunction("() => window.angular", null,
                 new Page.WaitForFunctionOptions().setTimeout(20000)); } catch (Exception ignore) { }
         expandMenuEntry(null, "^\\s*application\\s*config(uration)?\\s*$");
-        expandMenuEntry("^\\s*application\\s*config(uration)?\\s*$", "^\\s*general\\s*$");
+        final String groupRe = "^\\s*" + groupRegex + "\\s*$";
+        expandMenuEntry("^\\s*application\\s*config(uration)?\\s*$", groupRe);
         waitForAngular(800);
         lastMenu = describeMenu();
 
-        Object href = page.evaluate("(re) => {" + JS
+        Object href = page.evaluate("(res) => {" + JS
+                + " const re=res[0], grp=new RegExp(res[1],'i');"
                 + " const top=[...document.querySelectorAll('a')].find(x=>/^\\s*application\\s*config(uration)?\\s*$/i.test(norm(x.textContent)) && vis(x));"
                 + " const topLi=(top&&top.closest('li'))||document;"
-                + " const gen=[...topLi.querySelectorAll('a')].find(x=>/^\\s*general\\s*$/i.test(norm(x.textContent)) && vis(x));"
+                + " const gen=[...topLi.querySelectorAll('a')].find(x=>grp.test(norm(x.textContent)) && vis(x));"
                 + " const scope=(gen&&gen.closest('li'))||topLi;"
                 + " const a=[...scope.querySelectorAll('a[href]')].find(x=>new RegExp('^\\\\s*'+re+'\\\\s*$','i').test(norm(x.textContent)));"
-                + " if(!a) return ''; a.id='__qiMenu'; return a.getAttribute('href')||'link'; }", leafRegex);
+                + " if(!a) return ''; a.id='__qiMenu'; return a.getAttribute('href')||'link'; }", new String[]{leafRegex, groupRe});
         lastRoute = href == null ? "" : href.toString();
         if (!lastRoute.isEmpty()) {
             try { page.locator("#__qiMenu").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000)); }

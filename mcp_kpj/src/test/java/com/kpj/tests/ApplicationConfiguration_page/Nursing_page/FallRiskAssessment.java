@@ -66,7 +66,7 @@ public class FallRiskAssessment extends DevHisBase {
         boolean ok = false, exists = false;
         int used = 0;
         for (int attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-            details = fra.fillDetails(attempt);
+            details = fra.fillDetails(attempt) + " | " + fra.addAssessmentParameter();
             used++;
             toast = fra.submitAndGetToast();
             String tl = toast == null ? "" : toast.toLowerCase();
@@ -77,11 +77,11 @@ public class FallRiskAssessment extends DevHisBase {
         }
 
         boolean detOk = details.contains("Code=FR") && !details.contains("Remark=(no)")
-                && !details.contains("FRAType=(no-opt)") && !details.contains("model=?");
+                && !details.contains("FRAType=(no-opt)") && !details.contains("model=?") && !details.contains("NOT added");
         String detActual = details + (used > 1 ? "  [details changed " + (used - 1) + "x after 'already exists']" : "");
-        step(page, "Enter Code, Remark and FRAType",
-                "Enter Code* (unique), Remark* and select FRAType* (the Fall Risk Assessment Type master)",
-                "Code, Remark and FRAType are entered", detActual, detOk ? "PASS" : "FAIL");
+        step(page, "Enter Code, Remark, FRAType and an Assessment Parameter line",
+                "Enter Code* (unique), Remark*, select FRAType* and Add an Assessment Parameter + Value line (Submit needs at least one)",
+                "Code, Remark, FRAType and one Assessment Parameter line are entered", detActual, detOk ? "PASS" : "FAIL");
 
         String actual = toast == null || toast.isEmpty() ? "No toast appeared"
                 : (ok ? toast

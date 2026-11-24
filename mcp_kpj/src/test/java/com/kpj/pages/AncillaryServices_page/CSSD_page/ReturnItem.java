@@ -264,7 +264,16 @@ public class ReturnItem extends BasePage {
 
     /** The rows of Selected Item: Item Code, Item Name, Batch Code, Expiry Date, Available Stock, Conversion, Company Code, Selling Price, Purchase Rate. */
     public List<String[]> selectedItems() {
-        Object r = page.evaluate("() => {" + JS + " return JSON.stringify(selRows().map(r=>{ const c=[...r.querySelectorAll('td')].map(x=>norm(x.textContent)); return [c[1]||'', c[2]||'', c[3]||'', c[4]||'', c[5]||'', c[6]||'', c[7]||'', c[8]||'', c[9]||'']; })); }");
+        // Columns are found by their HEADER, not by position: the table gained Issue Number, UOM, Transfer Quantity, WAC and Total Amount columns, and the old
+        // fixed positions then read the Expiry Date as "Available Stock" ("no stock to return" for every issue). The output keeps the order documented above;
+        // Selling Price is the WAC column when the table has no Selling Price column any more.
+        Object r = page.evaluate("() => {" + JS
+                + " const t=selTbl(); const heads=t? [...t.querySelectorAll('thead th, thead td')].map(h=>norm(h.textContent).toLowerCase()) : [];"
+                + " const idx=(re,def)=>{ const i=heads.findIndex(h=>re.test(h)); return i>=0? i : def; };"
+                + " const ic=idx(/^item\\s*code/,1), inn=idx(/^item\\s*name/,2), bc=idx(/batch/,3), ex=idx(/expiry/,4), av=idx(/available\\s*stock/,5), cv=idx(/conversion/,6),"
+                + "   cc=idx(/company\\s*code/,7), sp=idx(/selling|^wac/,8), pr=idx(/purchase/,-1);"
+                + " return JSON.stringify(selRows().map(r=>{ const c=[...r.querySelectorAll('td')].map(x=>norm(x.textContent));"
+                + "   return [c[ic]||'', c[inn]||'', c[bc]||'', c[ex]||'', c[av]||'', c[cv]||'', c[cc]||'', c[sp]||'', pr>=0? (c[pr]||'') : '']; })); }");
         List<String[]> out = new ArrayList<>();
         try { for (JsonElement e : JsonParser.parseString(String.valueOf(r)).getAsJsonArray()) { JsonArray c = e.getAsJsonArray(); String[] v = new String[c.size()]; for (int i = 0; i < v.length; i++) v[i] = c.get(i).getAsString(); out.add(v); } }
         catch (Exception ignore) { }

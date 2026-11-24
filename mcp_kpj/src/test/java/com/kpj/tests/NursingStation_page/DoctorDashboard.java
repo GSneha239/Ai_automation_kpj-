@@ -351,6 +351,17 @@ public class DoctorDashboard extends DevHisBase {
 
         // 1) Navigate — FAIL and stop if the app serves a different screen.
         boolean on = dd.navigateViaMenu();
+        // The screen is role-based: a login that is served the tab-less "Forms List" layout DID reach the Doctor Dashboard - say so instead of
+        // "did not reach the screen", and stop (every later step drives the OP List / IP List tabs).
+        if (!on && dd.onRouteWithHeader()) {
+            step(page, "Open Doctor Dashboard screen", "Click Nursing Station -> Doctor Dashboard",
+                    "The Doctor Dashboard is shown (OP List, IP List, Bed Availability ... tabs)",
+                    "The Doctor Dashboard OPENED (" + dd.currentScreen() + ") but " + USER + " is served a different layout without the OP List / IP List / Bed Availability tabs ("
+                            + dd.formsLayoutSummary() + "). The tab-based steps need a doctor login such as SANCY4696 - run with -Ddevhis.user=SANCY4696 -Ddevhis.pass=User@123.",
+                    "MANUAL");
+            addSummary("Result", "MANUAL - the Doctor Dashboard opened, but " + USER + " has no OP List / IP List tabs (role-based layout); use a doctor login such as SANCY4696");
+            return;
+        }
         step(page, "Open Doctor Dashboard screen", "Click Nursing Station -> Doctor Dashboard",
                 "The Doctor Dashboard is shown (OP List, IP List, Bed Availability ... tabs)",
                 on ? "Opened " + dd.currentScreen() + " - tabs: " + dd.tabNames() : "Did NOT reach the screen (" + dd.currentScreen() + ")",

@@ -138,6 +138,31 @@ public class DoctorDashboard extends BasePage {
         return false;
     }
 
+    /**
+     * The Doctor Dashboard route is open AND the top bar names it - whatever layout the screen has. The screen is role-based: a doctor login
+     * (SANCY4696, Employee 1255) gets the OP List / IP List / Bed Availability tabs, other logins (Sarannya, Employee 1207) get a
+     * "Medical Report / Search &amp; Filter / Forms List" layout with no tabs.
+     */
+    public boolean onRouteWithHeader() {
+        Object r = page.evaluate("() => {" + JS
+                + " const h=document.querySelector('header,.navbar');"
+                + " return location.hash.toLowerCase().indexOf('doctordashboard')>=0 && /doctor\\s*dashboard/i.test(norm(h?h.textContent:'')); }");
+        return Boolean.TRUE.equals(r);
+    }
+
+    /** The OP List tab is on screen (the tab layout of a doctor login). */
+    public boolean hasTabs() {
+        return Boolean.TRUE.equals(page.evaluate("() => {" + JS + " return byClick('OPList').some(vis); }"));
+    }
+
+    /** What the tab-less layout offers (buttons / headings), for the report. */
+    public String formsLayoutSummary() {
+        Object r = page.evaluate("() => {" + JS
+                + " const bits=[...document.querySelectorAll('button,a.btn,.panel-heading,.panel-title,h3,h4')].filter(vis).map(e=>norm(e.textContent)).filter(t=>t&&t.length<40);"
+                + " return [...new Set(bits)].slice(0,8).join(' | '); }");
+        return r == null ? "" : r.toString();
+    }
+
     /** Nursing Station -&gt; Doctor Dashboard through the sidebar, the leaf looked up by its exact href inside the Nursing Station entry. */
     public boolean navigateViaMenu() {
         for (int attempt = 0; attempt < 3 && !onScreen(); attempt++) {

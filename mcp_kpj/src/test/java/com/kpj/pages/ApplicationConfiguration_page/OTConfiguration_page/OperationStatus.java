@@ -55,23 +55,36 @@ public class OperationStatus extends BasePage {
         try { page.waitForFunction("() => window.angular", null,
                 new Page.WaitForFunctionOptions().setTimeout(20000)); } catch (Exception ignore) { }
 
-        clickMenu("^\\s*application\\s*configuration\\s*$");
-        clickMenu("^\\s*ot\\s*configuration\\s*$");
-        lastMenu = describeMenu();
+        // Each level is opened only when it is closed (expandMenuEntry is idempotent - a plain click on an already open group would SHUT it again)
+        // and the link is looked up INSIDE the Application Configuration > OT Configuration entry: the sidebar is built lazily, and an unscoped
+        // lookup can hit a same-named entry of another module whose click never navigates (the run then ends on the Patient Dashboard).
+        // Up to 3 attempts; the screen's own check decides.
+        for (int attempt = 0; attempt < 3 && !onScreen(); attempt++) {
+            expandMenuEntry(null, "^\\s*application\\s*config(uration)?\\s*$");
+            expandMenuEntry("^\\s*application\\s*config(uration)?\\s*$", "^\\s*ot\\s*configuration\\s*$");
+            lastMenu = describeMenu();
 
-        // Anchored to the whole label. A loose match on "generic" would take the first menu entry that
-        // merely contains the word — the scaffolding trap that once ran an entire Compliance flow
-        // against Complaint Type and reported PASS against the wrong screen's fields.
-        Object href = page.evaluate("() => {" + JS
-                + " const a=[...document.querySelectorAll('a[href]')]"
-                + "   .find(x=>/^\\s*operation\\s*status\\s*$/i.test(norm(x.textContent)));"
-                + " if(!a) return ''; a.id='__opsMenu'; return a.getAttribute('href')||''; }");
-        lastRoute = href == null ? "" : href.toString();
-        if (!lastRoute.isEmpty()) {
-            try { page.locator("#__opsMenu").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000)); }
-            catch (Exception e) { System.out.println("OperationStatus.nav: " + e.getMessage().split("\n")[0]); }
-            page.evaluate("() => { const e=document.getElementById('__opsMenu'); if(e) e.removeAttribute('id'); }");
-            waitForAngular(3000);
+            // Anchored to the whole label. A loose match on "generic" would take the first menu entry that
+            // merely contains the word — the scaffolding trap that once ran an entire Compliance flow
+            // against Complaint Type and reported PASS against the wrong screen's fields.
+            Object href = page.evaluate("() => {" + JS
+                    + " const top=[...document.querySelectorAll('a')].find(x=>/^\\s*application\\s*config(uration)?\\s*$/i.test(norm(x.textContent)) && vis(x));"
+                    + " const tli=top&&top.closest('li');"
+                    + " const grp=tli&&[...tli.querySelectorAll('a')].find(x=>/^\\s*ot\\s*configuration\\s*$/i.test(norm(x.textContent)) && vis(x));"
+                    + " const scope=(grp&&grp.closest('li'))||tli||document;"
+                    + " const all=[...scope.querySelectorAll('a[href]')].filter(x=>/^\\s*operation\\s*status\\s*$/i.test(norm(x.textContent)));"
+                    + " const a=all.find(vis)||all[0];"
+                    + " if(!a) return ''; a.id='__opsMenu'; return a.getAttribute('href')||''; }");
+            if (href != null && !href.toString().isEmpty()) lastRoute = href.toString();
+            if (href != null && !href.toString().isEmpty()) {
+                try { page.locator("#__opsMenu").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000)); }
+                catch (Exception e) {
+                    System.out.println("OperationStatus.nav: " + e.getMessage().split("\n")[0]);
+                    page.evaluate("() => { const e=document.getElementById('__opsMenu'); if(e) e.click(); }");
+                }
+                page.evaluate("() => { const e=document.getElementById('__opsMenu'); if(e) e.removeAttribute('id'); }");
+                waitForAngular(3000);
+            }
         }
         if (!onScreen() && !lastRoute.isEmpty()) {
             String hash = lastRoute.startsWith("#") ? lastRoute : "#" + lastRoute;
