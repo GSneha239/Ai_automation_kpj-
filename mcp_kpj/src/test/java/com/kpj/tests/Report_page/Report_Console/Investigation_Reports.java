@@ -59,13 +59,19 @@ import java.util.regex.Pattern;
  *       and list records - otherwise FAIL.</li>
  *   <li><b>STAT Report</b> (the steps of a recording): filters From Date_To Date (previous month x2, day 6); Visit Type (one); Department (four); Show Report; the report must open in another tab without an error, be this report and
  *       list records - otherwise FAIL (the console may answer "No Data Available!" and open nothing: FAIL).</li>
+ *   <li><b>Technician Wise Test</b> (the steps of a recording): filters Test Name (one); From Date_To Date (previous month x5, day 7); Modality (one); Technician Name (one); Show Report; the report must open in another tab without an
+ *       error, be this report and list records - otherwise FAIL.</li>
+ *   <li><b>Test Census by Ordering Doctor</b> (the steps of a recording): filters From Date_To Date (previous month x4, day 5); Doctor (Location, Payable Type "Agent", one user); Department (one); Ordering Doctor (a user ticked with
+ *       Location / Payable Type left as the Doctor popup left them); Show Report; the report must open in another tab without an error, be this report and list records - otherwise FAIL.</li>
+ *   <li><b>Turnaround Time for Outsourced Test</b> (the steps of a recording): filter From Date_To Date (previous month x2, day 6); Show Report; the report must open in another tab without an error, be this report and list records -
+ *       otherwise FAIL.</li>
  * </ol>
  *
  * <p>Every section ends with three verdicts on the report tab: it has no error (HTTP 4xx/5xx or an error page = FAIL), it is the report that was added, and it lists records (none = FAIL).</p>
  *
  * <p>Each filter: choose it in the Filter dropdown, <b>Add</b>, verify it appears in the Filter Name | Filter Value table, <b>Add Value</b> (its popup), OK, verify the Filter Value. Nothing is saved (the console only asks for a report).</p>
  *
- * <p>Options: {@code -Dir.only=cancer|critical|value|analysis|department|doctorwise|endoscope|laboratory|radiology|pathaudit|pathtest|pathrevenue|radtest|radrev|radiotherapy|revenue|organisms|stat} (run one section), {@code -Dir.year=} / {@code -Dir.month=} (Department Analysis Doctor, default 2026 / May), {@code -Dir.months=1|2} (months before To Date, default random 1-2), {@code -Dir.payable=}, {@code -Dir.diag=} (smart search text, default "m"),
+ * <p>Options: {@code -Dir.only=cancer|critical|value|analysis|department|doctorwise|endoscope|laboratory|radiology|pathaudit|pathtest|pathrevenue|radtest|radrev|radiotherapy|revenue|organisms|stat|technician|census|outsourced} (run one section), {@code -Dir.year=} / {@code -Dir.month=} (Department Analysis Doctor, default 2026 / May), {@code -Dir.months=1|2} (months before To Date, default random 1-2), {@code -Dir.payable=}, {@code -Dir.diag=} (smart search text, default "m"),
  * {@code -Dir.group=} (SubGroup's Group, default "Bed"), {@code -Dir.opd=OPD|IPD|EXT|ALL} (default random), {@code -Dir.timefrom=HH:mm} / {@code -Dir.timeto=HH:mm} (24 h, default 08:00 / 18:00).</p>
  */
 public class Investigation_Reports extends DevHisBase {
@@ -92,6 +98,9 @@ public class Investigation_Reports extends DevHisBase {
             {"revenue", "RevenueReport", "Revenue Report"},
             {"organisms", "SamplewiseOrganismsIsolated", "Samplewise Organisms Isolated"},
             {"stat", "STATReport", "STAT Report"},
+            {"technician", "TechnicianWiseTest", "Technician Wise Test"},
+            {"census", "TestCensusByOrderingDoctor", "Test Census by Ordering Doctor"},
+            {"outsourced", "TurnaroundTimeOutsourcedTest", "Turnaround Time for Outsourced Test"},
     };
 
     private static String[] sectionOf(String only) {
@@ -155,24 +164,56 @@ public class Investigation_Reports extends DevHisBase {
                 on ? "Opened " + page.url() + "; categories: " + rc.categories() : "Did NOT reach the Report Console (" + page.url() + ")", on ? "PASS" : "FAIL");
         if (!on) { addSummary("Result", "FAILED - Report Console not reached"); return; }
 
-        if (only.isEmpty() || only.equals("cancer")) cancerSummary(rc);
-        if (only.isEmpty() || only.equals("critical")) criticalAlert(rc);
-        if (only.isEmpty() || only.equals("value")) criticalValue(rc);
-        if (only.isEmpty() || only.equals("analysis")) departmentAnalysisDoctor(rc);
-        if (only.isEmpty() || only.equals("department")) departmentAnalysis(rc);
-        if (only.isEmpty() || only.equals("doctorwise")) doctorWiseOpdIpd(rc);
-        if (only.isEmpty() || only.equals("endoscope")) endoscopeCensus(rc);
-        if (only.isEmpty() || only.equals("laboratory")) laboratoryCensus(rc);
-        if (only.isEmpty() || only.equals("radiology")) monthlyRadiologyCensus(rc);
-        if (only.isEmpty() || only.equals("pathaudit")) pathAudit(rc);
-        if (only.isEmpty() || only.equals("pathtest")) pathologyTestCount(rc);
-        if (only.isEmpty() || only.equals("pathrevenue")) pathologyTestRevenue(rc);
-        if (only.isEmpty() || only.equals("radtest")) radiologyTestCount(rc);
-        if (only.isEmpty() || only.equals("radrev")) radiologyTestRevenue(rc);
-        if (only.isEmpty() || only.equals("radiotherapy")) radiotherapyMonthlyDetailedCensus(rc);
-        if (only.isEmpty() || only.equals("revenue")) revenueReport(rc);
-        if (only.isEmpty() || only.equals("organisms")) samplewiseOrganismsIsolated(rc);
-        if (only.isEmpty() || only.equals("stat")) statReport(rc);
+        section(rc, only, "cancer", () -> cancerSummary(rc));
+        section(rc, only, "critical", () -> criticalAlert(rc));
+        section(rc, only, "value", () -> criticalValue(rc));
+        section(rc, only, "analysis", () -> departmentAnalysisDoctor(rc));
+        section(rc, only, "department", () -> departmentAnalysis(rc));
+        section(rc, only, "doctorwise", () -> doctorWiseOpdIpd(rc));
+        section(rc, only, "endoscope", () -> endoscopeCensus(rc));
+        section(rc, only, "laboratory", () -> laboratoryCensus(rc));
+        section(rc, only, "radiology", () -> monthlyRadiologyCensus(rc));
+        section(rc, only, "pathaudit", () -> pathAudit(rc));
+        section(rc, only, "pathtest", () -> pathologyTestCount(rc));
+        section(rc, only, "pathrevenue", () -> pathologyTestRevenue(rc));
+        section(rc, only, "radtest", () -> radiologyTestCount(rc));
+        section(rc, only, "radrev", () -> radiologyTestRevenue(rc));
+        section(rc, only, "radiotherapy", () -> radiotherapyMonthlyDetailedCensus(rc));
+        section(rc, only, "revenue", () -> revenueReport(rc));
+        section(rc, only, "organisms", () -> samplewiseOrganismsIsolated(rc));
+        section(rc, only, "stat", () -> statReport(rc));
+        section(rc, only, "technician", () -> technicianWiseTest(rc));
+        section(rc, only, "census", () -> testCensusByOrderingDoctor(rc));
+        section(rc, only, "outsourced", () -> turnaroundOutsourcedTest(rc));
+    }
+
+    /**
+     * Run one section when it is selected ({@code -Dir.only=<key>}) or when the whole file runs (no option). In a WHOLE-FILE run the console is made fresh first: all the sections share ONE browser session, and a section that
+     * fails can leave the console in a state that breaks every later one - seen in the first whole-file run (2026-11-25): a popup still open after a refused OK covered the page, so the next sections' category button and Add
+     * could no longer be clicked and everything after Department Analysis failed. A single-section run starts from a fresh login anyway.
+     */
+    private void section(com.kpj.pages.Report_page.Report_Console.Investigation_Reports rc, String only, String key, Runnable run) {
+        if (!(only.isEmpty() || only.equals(key))) return;
+        if (only.isEmpty()) freshConsole(rc, key);
+        run.run();
+    }
+
+    /** Close the report tabs earlier sections opened, reload the page (any open popup, filter, toast or stale model goes) and open the Report Console again. */
+    private void freshConsole(com.kpj.pages.Report_page.Report_Console.Investigation_Reports rc, String key) {
+        try {
+            for (com.microsoft.playwright.Page p : page.context().pages()) if (p != page) { try { p.close(); } catch (Exception ignore) { } }
+            page.reload();
+            page.waitForTimeout(1500);
+            // DevHIS drops the login on a full reload (the first attempt of 2026-11-25 landed on /Account/Login and every step failed): sign in again, as the test does at its start
+            if (page.url().toLowerCase().contains("/account/login") || Boolean.TRUE.equals(page.evaluate("() => !!document.querySelector('input[type=password]:not([id^=txt])')"))) {
+                new LoginPage(page).login(BASE, USER, PASS);
+                System.out.println("freshConsole before section \"" + key + "\": the reload logged out - signed in again");
+            }
+            boolean on = rc.navigateViaMenu();
+            System.out.println("freshConsole before section \"" + key + "\": " + (on ? "Report Console re-opened" : "the Report Console was NOT reached (" + page.url() + ")"));
+        } catch (Exception e) {
+            System.out.println("freshConsole before section \"" + key + "\" failed: " + String.valueOf(e.getMessage()).split("\n")[0]);
+        }
     }
 
     // =====================================================================================================================================================
@@ -1255,6 +1296,124 @@ public class Investigation_Reports extends DevHisBase {
         addSummary(sec + " - Visit Type", String.valueOf(visits));
         addSummary(sec + " - Department", String.valueOf(deps));
         addSummary(sec + " - Result", related ? "STAT Report generated with records" : "See the failed step(s)");
+    }
+
+    // =====================================================================================================================================================
+    //  Technician Wise Test Report (recorded: Test Name; From Date_To Date; Modality; Technician Name; Show Report)
+    // =====================================================================================================================================================
+
+    private void technicianWiseTest(com.kpj.pages.Report_page.Report_Console.Investigation_Reports rc) {
+        final String sec = "Technician Wise Test";
+
+        rc.clickClear();   // the previous report's filters must not be sent along
+        if (!openReport(rc, sec, "Technician Wise Test Report")) return;
+
+        // 1) Test Name - one (record id 452)
+        final String fTest = "Test Name";
+        if (!addFilter(rc, sec, fTest)) return;
+        if (!openValue(rc, sec, fTest, "The Select Test Name popup opens (a checkbox per test)")) return;
+        List<String> tests = tickIds(rc, sec, "G.IsSelected", "a test", "452");
+        if (tests == null) return;
+        if (!okStep(rc, sec, fTest, "TestName", v -> tests.stream().allMatch(d -> v.contains(d) || d.contains(v)), "the chosen test")) return;
+
+        // 2) From Date_To Date: previous month x5, day 7 (as recorded)
+        LocalDate[] range = dateFilter(rc, sec, 5, 7);
+        if (range == null) return;
+
+        // 3) Modality - one (record id 2)
+        final String fMod = "Modality";
+        if (!addFilter(rc, sec, fMod)) return;
+        if (!openValue(rc, sec, fMod, "The Select Modality popup opens (a checkbox per modality)")) return;
+        List<String> mods = tickIds(rc, sec, "G.IsSelected", "a modality", "2");
+        if (mods == null) return;
+        if (!okStep(rc, sec, fMod, "Modality", v -> mods.stream().allMatch(d -> v.contains(d) || d.contains(v)), "the chosen modality")) return;
+
+        // 4) Technician Name - one (record id 3273)
+        final String fTech = "Technician Name";
+        if (!addFilter(rc, sec, fTech)) return;
+        if (!openValue(rc, sec, fTech, "The Select Technician popup opens (a checkbox per technician)")) return;
+        List<String> techs = tickIds(rc, sec, "G.IsSelected", "a technician", "3273");
+        if (techs == null) return;
+        if (!okStep(rc, sec, fTech, "TechnicianName", v -> techs.stream().allMatch(d -> v.contains(d) || d.contains(v)), "the chosen technician")) return;
+
+        // 5) Show Report -> another tab: it must open, without an error, be this report and list records
+        boolean related = showAndVerify(rc, sec, System.getProperty("ir.tw.title", "TECHNICIAN\\s+WISE\\s+TEST"), "TECHNICIAN WISE TEST", range,
+                // this report prints its table (technician names, then one row per test) BETWEEN the period line and a fixed legend "MODALITY TEST CODE TEST NAME Modality & Medical Act" that is always printed (even on an empty report):
+                // so the "heading" is the period line and the "footer" is that legend - anything between them is data
+                System.getProperty("ir.tw.header", "TO\\s+DATE\\s*:\\s*\\d{1,2}/\\d{1,2}/\\d{4}"), System.getProperty("ir.tw.footer", "MODALITY\\s+TEST\\s+CODE\\s+TEST\\s+NAME"));
+
+        addSummary(sec + " - Report", "Technician Wise Test Report (Investigation Reports)");
+        addSummary(sec + " - Test Name", String.valueOf(tests));
+        addSummary(sec + " - From / To Date", range[0].format(DMY) + " - " + range[1].format(DMY));
+        addSummary(sec + " - Modality", String.valueOf(mods));
+        addSummary(sec + " - Technician Name", String.valueOf(techs));
+        addSummary(sec + " - Result", related ? "Technician Wise Test report generated with records" : "See the failed step(s)");
+    }
+
+    // =====================================================================================================================================================
+    //  Test Census by Ordering Doctor (recorded: From Date_To Date; Doctor; Department; Ordering Doctor; Show Report)
+    // =====================================================================================================================================================
+
+    private void testCensusByOrderingDoctor(com.kpj.pages.Report_page.Report_Console.Investigation_Reports rc) {
+        final String sec = "Test Census by Ordering Doctor";
+
+        rc.clickClear();   // the previous report's filters must not be sent along
+        if (!openReport(rc, sec, "Test Census by Ordering Doctor")) return;
+
+        // 1) From Date_To Date: previous month x4, day 5 (as recorded)
+        LocalDate[] range = dateFilter(rc, sec, 4, 5);
+        if (range == null) return;
+
+        // 2) Doctor: Location, Payable Type Agent, one user (record id 15692)
+        String doc = doctorFilter(rc, sec, "Doctor", "KPJ DAMANSARA SPECIALIST HOSPITAL", new String[]{"Agent"}, "15692");
+        if (doc == null) return;
+
+        // 3) Department - one (record id 1)
+        final String fDep = "Department";
+        if (!addFilter(rc, sec, fDep)) return;
+        if (!openValue(rc, sec, fDep, "The Select Department popup opens (a checkbox per department)")) return;
+        List<String> deps = tickIds(rc, sec, "G.IsSelected", "a department", "1");
+        if (deps == null) return;
+        if (!okStep(rc, sec, fDep, "Department", v -> deps.stream().allMatch(d -> v.contains(d) || d.contains(v)), "the chosen department")) return;
+
+        // 4) Ordering Doctor: as recorded NO Location / Payable Type is chosen - the popup keeps the previous doctor's - one user ticked (record id 15767)
+        String ord = doctorFilter(rc, sec, "Ordering Doctor", null, new String[0], "15767");
+        if (ord == null) return;
+
+        // 5) Show Report -> another tab: it must open, without an error, be this report and list records
+        boolean related = showAndVerify(rc, sec, System.getProperty("ir.co.title", "TEST\\s+CENSUS\\s+BY\\s+ORDERING\\s+DOCTOR"), "TEST CENSUS BY ORDERING DOCTOR", range,
+                // a cross-tab (vendor rows x months) whose table lies BETWEEN the hospital address and a fixed "Referring Department" legend that is printed even when the report is empty:
+                // so the "heading" is the end of the address and the "footer" is that legend - anything between them is data
+                System.getProperty("ir.co.header", "Petaling\\s+Jaya,\\s*Selangor"), System.getProperty("ir.co.footer", "Referring\\s+Department"));
+
+        addSummary(sec + " - Report", "Test Census by Ordering Doctor (Investigation Reports)");
+        addSummary(sec + " - From / To Date", range[0].format(DMY) + " - " + range[1].format(DMY));
+        addSummary(sec + " - Doctor", doc);
+        addSummary(sec + " - Department", String.valueOf(deps));
+        addSummary(sec + " - Ordering Doctor", ord);
+        addSummary(sec + " - Result", related ? "Test Census by Ordering Doctor report generated with records" : "See the failed step(s)");
+    }
+
+    // =====================================================================================================================================================
+    //  Turnaround Time for Outsourced Test (recorded: From Date_To Date; Show Report)
+    // =====================================================================================================================================================
+
+    private void turnaroundOutsourcedTest(com.kpj.pages.Report_page.Report_Console.Investigation_Reports rc) {
+        final String sec = "Turnaround Time for Outsourced Test";
+
+        rc.clickClear();   // the previous report's filters must not be sent along
+        if (!openReport(rc, sec, "Turnaround Time for Outsourced Test")) return;
+
+        // 1) From Date_To Date: previous month x2, day 6 (as recorded)
+        LocalDate[] range = dateFilter(rc, sec, 2, 6);
+        if (range == null) return;
+
+        // 2) Show Report -> another tab: it must open, without an error, be this report and list records
+        boolean related = showAndVerify(rc, sec, System.getProperty("ir.ot.title", "TURNAROUND\\s+TIME\\s+FOR\\s+OUTSOURCED\\s+TEST"), "TURNAROUND TIME FOR OUTSOURCED TEST", range, System.getProperty("ir.ot.header", "TAT\\s*Patient\\s+Name"),System.getProperty("ir.ot.footer", "(Printed\\s+Date|Print\\s+By|Page\\s+\\d)"));
+
+        addSummary(sec + " - Report", "Turnaround Time for Outsourced Test (Investigation Reports)");
+        addSummary(sec + " - From / To Date", range[0].format(DMY) + " - " + range[1].format(DMY));
+        addSummary(sec + " - Result", related ? "Turnaround Time for Outsourced Test report generated with records" : "See the failed step(s)");
     }
 
     // =====================================================================================================================================================
