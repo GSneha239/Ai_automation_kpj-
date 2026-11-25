@@ -50,12 +50,20 @@ public class ServiceAgent extends BasePage {
         try { page.waitForFunction("() => window.angular", null,
                 new Page.WaitForFunctionOptions().setTimeout(20000)); } catch (Exception ignore) { }
 
-        clickMenu("^\\s*application\\s*configuration\\s*$");
-        clickMenu("^\\s*equipment(\\s*/?\\s*asset)?\\s*$");
+        // Each level is opened only if it is closed (a second click on an open entry CLOSES it) and the next one is looked up
+        // INSIDE its parent's li - the old unscoped first-match walk could click a same-named top-level module or toggle
+        // Application Configuration shut and end on the Patient Dashboard.
+        expandMenuEntry(null, "^\\s*application\\s*config(uration)?\\s*$");
+        expandMenuEntry("^\\s*application\\s*config(uration)?\\s*$", "^\\s*equipment(\\s*/?\\s*asset)?\\s*$");
+        waitForAngular(800);
         lastMenu = describeMenu();
 
         Object href = page.evaluate("() => {" + JS
-                + " const a=[...document.querySelectorAll('a[href]')]"
+                + " const top=[...document.querySelectorAll('a')].find(x=>/^\\s*application\\s*config(uration)?\\s*$/i.test(norm(x.textContent)) && vis(x));"
+                + " const topLi=(top&&top.closest('li'))||document;"
+                + " const grp=[...topLi.querySelectorAll('a')].find(x=>/^\\s*equipment(\\s*\\/?\\s*asset)?\\s*$/i.test(norm(x.textContent)) && vis(x));"
+                + " const scope=(grp&&grp.closest('li'))||topLi;"
+                + " const a=[...scope.querySelectorAll('a[href]')]"
                 + "   .find(x=>/^\\s*service\\s*agent\\s*$/i.test(norm(x.textContent)));"
                 + " if(!a) return ''; a.id='__saMenu'; return a.getAttribute('href')||''; }");
         lastRoute = href == null ? "" : href.toString();
@@ -74,15 +82,6 @@ public class ServiceAgent extends BasePage {
                 + ".replace(/\\s+/g,' ').trim().slice(0,300)");
         lastBodyText = body == null ? "" : body.toString();
         return onScreen() && !lastBodyText.isEmpty();
-    }
-
-    private void clickMenu(String textRegex) {
-        page.evaluate("(re) => {" + JS
-                + " const rx=new RegExp(re,'i');"
-                + " const a=[...document.querySelectorAll('a,li>a,span')].filter(vis)"
-                + "   .find(x=>rx.test(norm(x.textContent)));"
-                + " if(a) a.click(); }", textRegex);
-        waitForAngular(1200);
     }
 
     /** Every visible menu entry — used to pin the real label when a menu click misses. */

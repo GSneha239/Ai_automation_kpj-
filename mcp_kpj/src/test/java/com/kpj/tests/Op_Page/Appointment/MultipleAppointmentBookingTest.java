@@ -14,7 +14,7 @@ import com.microsoft.playwright.Page;
 public class MultipleAppointmentBookingTest extends DevHisBase {
 
     public MultipleAppointmentBookingTest() {
-        super("TC01_MAB");
+        super("op_appointment_MultipleAppointmentBooking");
     }
 
     public static void main(String[] args) {

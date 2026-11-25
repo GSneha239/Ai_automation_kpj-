@@ -58,14 +58,22 @@ public class DepreciationMaster extends BasePage {
         try { page.waitForFunction("() => window.angular", null,
                 new Page.WaitForFunctionOptions().setTimeout(20000)); } catch (Exception ignore) { }
 
-        clickMenu("^\\s*application\\s*configuration\\s*$");
-        clickMenu("^\\s*inventory\\s*$");
+        // "Inventory" is ALSO a top-level module, listed before Application Configuration: an unscoped first-match click opened that
+        // one and left Application Configuration closed (landed on the Patient Dashboard). Each level is therefore opened only if
+        // it is closed, and the next one is looked up INSIDE its parent's li.
+        expandMenuEntry(null, "^\\s*application\\s*config(uration)?\\s*$");
+        expandMenuEntry("^\\s*application\\s*config(uration)?\\s*$", "^\\s*inventory\\s*$");
+        waitForAngular(800);
         lastMenu = describeMenu();
 
         Object href = page.evaluate("() => {" + JS
-                + " const a=[...document.querySelectorAll('a[href]')]"
+                + " const top=[...document.querySelectorAll('a')].find(x=>/^\\s*application\\s*config(uration)?\\s*$/i.test(norm(x.textContent)) && vis(x));"
+                + " const topLi=(top&&top.closest('li'))||document;"
+                + " const inv=[...topLi.querySelectorAll('a')].find(x=>/^\\s*inventory\\s*$/i.test(norm(x.textContent)) && vis(x));"
+                + " const scope=(inv&&inv.closest('li'))||topLi;"
+                + " const a=[...scope.querySelectorAll('a[href]')]"
                 + "   .find(x=>/^\\s*depreciation\\s*master\\s*$/i.test(norm(x.textContent)))"
-                + "   || [...document.querySelectorAll('a[href]')]"
+                + "   || [...scope.querySelectorAll('a[href]')]"
                 + "        .find(x=>/^\\s*depreciation\\s*$/i.test(norm(x.textContent)));"
                 + " if(!a) return ''; a.id='__dmMenu'; return a.getAttribute('href')||''; }");
         lastRoute = href == null ? "" : href.toString();
@@ -89,18 +97,6 @@ public class DepreciationMaster extends BasePage {
                 + ".replace(/\\s+/g,' ').trim().slice(0,300)");
         lastBodyText = body == null ? "" : body.toString();
         return onScreen() && !lastBodyText.isEmpty();
-    }
-
-    private void clickMenu(String textRegex) {
-        page.evaluate("(re) => {" + JS
-                + " const rx=new RegExp(re,'i');"
-                + " const all=[...document.querySelectorAll('a,li>a,span')].filter(vis)"
-                + "   .filter(x=>rx.test(norm(x.textContent)));"
-                + " const ac=[...document.querySelectorAll('a')].find(x=>/^\s*application\s*configuration\s*$/i.test(norm(x.textContent)));"
-                + " const root=ac&&ac.closest('li'); const a=(root&&all.find(x=>x!==ac&&root.contains(x)))||all[0];"
-
-                + " if(a) a.click(); }", textRegex);
-        waitForAngular(1200);
     }
 
     /** Every visible menu entry — used to pin the real label when a menu click misses. */
@@ -149,6 +145,18 @@ public class DepreciationMaster extends BasePage {
     /** Click <b>Add</b> and wait for the entry form to render. */
     public boolean clickAdd() {
         if (formOpen()) return true;
+        // The route changes before the list view is drawn: until it is, the dashboard's own controls are still in the DOM and
+        // there is no Add button (a 2026-11-25 run clicked too early, timed out and reported "Code field never appeared"
+        // although the list - with its Add button - was showing a moment later). Wait for the screen's own Add button first.
+        try {
+            page.waitForFunction("() => [...document.querySelectorAll('button,a,input[type=button]')].some(x=>"
+                    + " (x.offsetWidth||x.offsetHeight||x.getClientRects().length)"
+                    + " && (/^\\s*add\\s*$/i.test(((x.textContent||x.value)||'').replace(/\\s+/g,' ').trim())"
+                    + "   || /addDepreciationMaster/i.test(x.getAttribute('ng-click')||'')))",
+                    null, new Page.WaitForFunctionOptions().setTimeout(20000));
+        } catch (Exception ignore) {
+            System.out.println("DepreciationMaster.clickAdd: no Add button within 20 s - the list did not render");
+        }
         page.evaluate("() => {" + JS
                 + " const b=[...document.querySelectorAll('button,a,input[type=button]')].filter(vis)"
                 + "   .find(x=>/^\\s*add\\s*$/i.test(norm(x.textContent)||x.value||'')"

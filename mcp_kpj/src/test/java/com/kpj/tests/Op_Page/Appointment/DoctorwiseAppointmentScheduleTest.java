@@ -8,7 +8,7 @@ import com.microsoft.playwright.Page;
 import java.util.List;
 
 /**
- * TC05 - OP &gt; Appointment &gt; Doctorwise Appointment Schedule.
+ * OP &gt; Appointment &gt; Doctorwise Appointment Schedule.
  *
  * Login; open Doctorwise Appointment Schedule; Month = current; select Department + a Doctor that
  * has available slots; double-click an available slot → auto-navigates to Book Appointment; fill

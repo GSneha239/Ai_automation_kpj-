@@ -8,7 +8,7 @@ import com.microsoft.playwright.Page;
 import java.util.List;
 
 /**
- * TC06 - OP &gt; Appointment &gt; Appointment List (consolidated).
+ * OP &gt; Appointment &gt; Appointment List (consolidated).
  *
  * <p>Exercises the Appointment List footer actions in one run, each as its own section, driving the
  * single {@link AppointmentListPage} page object. Sections run in the on-screen tab order:</p>
@@ -19,7 +19,7 @@ import java.util.List;
  *       MRDReturn popup (From/To Department + Remark) → OK (fnIUDReturn) → "File Return successfully."</li>
  *   <li><b>View App History</b> — select a row → View App History → history popup opens.</li>
  *   <li><b>Change Executor</b> — select a row → Change Executor → Department + Executor → Save.</li>
- *   <li><b>Registration</b> — select a row → Registration → routes to VisitScreen (full flow: TC02).</li>
+ *   <li><b>Registration</b> — select a row → Registration → routes to VisitScreen (full flow: OP Registration).</li>
  *   <li><b>Reschedule Appointment</b> — select a row → Reschedule → Book Appointment → Save → report.</li>
  *   <li><b>Cancel Appointment</b> — select a cancellable row → Cancel → confirm → Remark + Reason →
  *       "Appointment Cancelled Successfully".</li>
@@ -50,7 +50,7 @@ public class AppointmentListTest extends DevHisBase {
     // EXACTLY ONE constructor. A test class with two constructors is rejected by JUnit outright
     // ("must declare a single constructor") and never runs — which is what a second, report-id constructor did
     // to this class. Subclasses that reuse this whole flow override DevHisBase.reportId() instead.
-    public AppointmentListTest() { super("TC06_AppointmentList"); }
+    public AppointmentListTest() { super("op_appointment_AppointmentList"); }
 
     /** Factory for the list page — the Telemedicine variant overrides this to enter via the Telemedicine menu. */
     protected AppointmentListPage newListPage() { return new AppointmentListPage(page); }

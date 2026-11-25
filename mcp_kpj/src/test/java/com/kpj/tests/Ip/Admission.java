@@ -8,7 +8,7 @@ import com.microsoft.playwright.Page;
 // (com.kpj.pages.Ip.Admission) — importing it would clash with this test class name.
 
 /**
- * TC14 - IP &gt; <b>Admission</b> (full IPD admission).
+ * IP &gt; <b>Admission</b> (full IPD admission).
  *
  * <ol>
  *   <li>Click IP → Admission (via the menu tab, not a direct URL).</li>
@@ -20,7 +20,7 @@ import com.microsoft.playwright.Page;
  */
 public class Admission extends DevHisBase {
 
-    public Admission() { super("TC14_IP_Admission"); }
+    public Admission() { super("Ip_Admission"); }
 
     public static void main(String[] args) {
         Admission t = new Admission();

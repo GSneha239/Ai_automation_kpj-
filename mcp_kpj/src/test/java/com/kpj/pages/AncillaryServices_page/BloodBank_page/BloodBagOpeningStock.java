@@ -44,6 +44,13 @@ public class BloodBagOpeningStock extends BasePage {
             lastSaveDiagnostics = "", lastListCheck = "", lastDefaults = "";
     public String lastBagNo = "", lastWeight = "", lastType = "", lastComponent = "", lastGroup = "", lastTechnician = "",
             lastBto = "", lastRemark = "", lastExpiry = "", lastTypeIds = "";
+    /**
+     * Every Blood Bag Type entry that carries the SAME id as the one entered (the entered one included). The list finds a bag's type by id, so
+     * when several entries share an id it names any one of them - not necessarily the one that was chosen.
+     */
+    public java.util.List<String> lastTypeAliases = new java.util.ArrayList<>();
+    /** True when the list showed the bag under another entry of the same id (the type NAME differs, the type id is the entered one). */
+    public boolean lastTypeNameDiffers = false;
     /** How many grid rows the saved bag came back as, and how many distinct records / blood bag types those rows carry. */
     public int lastRowsForBag = 0, lastRecordsForBag = 0;
 
@@ -194,8 +201,9 @@ public class BloodBagOpeningStock extends BasePage {
         Object x = page.evaluate("() => { const e=document.querySelector(\"[ng-model='" + NG + "expirydate']\"); return e?e.value:''; }");
         lastExpiry = x == null ? "" : x.toString();
         describeTypeIds();
+        lastTypeAliases = typeAliases(lastType);
 
-        lastEntry = "Blood Bag No. \"" + lastBagNo + "\", Bag Weight \"" + lastWeight + "\" gm, Blood Bag Type \"" + lastType
+        lastEntry ="Blood Bag No. \"" + lastBagNo + "\", Bag Weight \"" + lastWeight + "\" gm, Blood Bag Type \"" + lastType
                 + "\", Component \"" + lastComponent + "\", Blood Group \"" + lastGroup + "\", Technician \"" + lastTechnician
                 + "\", BTO \"" + lastBto + "\", Remark \"" + lastRemark + "\" (" + lastDefaults + ")";
         System.out.println("BloodBagOpeningStock: entered -> " + lastEntry);
@@ -217,6 +225,19 @@ public class BloodBagOpeningStock extends BasePage {
                 + " return big[1].length+' of the '+all+' Blood Bag Type entries share the id \"'+big[0]+'\" ('+big[1].slice(0,4).join(', ')+', ...)'; }");
         lastTypeIds = r == null ? "" : r.toString();
         return lastTypeIds;
+    }
+
+    /** The labels of every Blood Bag Type option whose value equals the value of the option labelled {@code typeName} (that option included). */
+    private java.util.List<String> typeAliases(String typeName) {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        try {
+            Object r = page.evaluate("(t) => {" + JS
+                    + " const e=document.querySelector(\"select[ng-model='" + NG + "bloodbagtypeid']\"); if(!e) return [];"
+                    + " const mine=[...e.options].find(o=>o.value && norm(o.textContent).toLowerCase()===norm(t).toLowerCase()); if(!mine) return [];"
+                    + " return [...e.options].filter(o=>o.value===mine.value).map(o=>norm(o.textContent)); }", typeName);
+            if (r instanceof java.util.List) for (Object o : (java.util.List<?>) r) out.add(String.valueOf(o));
+        } catch (Exception ignore) { }
+        return out;
     }
 
     /**
@@ -407,14 +428,19 @@ public class BloodBagOpeningStock extends BasePage {
                     + " const mine=data.filter(d=>same(d.bloodbagno,a.no));"
                     + " const ids=new Set(mine.map(d=>d.id)); const types=new Set(mine.map(d=>d.bloodbagtypename));"
                     + " const full=mine.find(d=>same(d.bloodbagtypename,a.type)&&same(d.componentname,a.comp)&&same(d.bloodgroupname,a.grp));"
+                    // Same Blood Bag Type ID, other NAME: the master has several types under one id and the list names any one of them.
+                    + " const viaId=full?null:mine.find(d=>(a.aliases||[]).some(n=>same(d.bloodbagtypename,n))&&same(d.componentname,a.comp)&&same(d.bloodgroupname,a.grp));"
                     + " const shown=[...document.querySelectorAll('.ui-grid-row')].filter(vis).filter(r=>/\\S/.test(r.textContent||'')).length;"
                     + " const pager=norm((document.querySelector('.ui-grid-pager-count')||{}).textContent);"
                     + " const head=mine.length+'|'+ids.size+'|'+types.size+'|';"
                     + " if(full) return head+'FOUND: Blood Bag No=\"'+full.bloodbagno+'\" | Blood Bag Type=\"'+full.bloodbagtypename+'\" | Component Name=\"'+full.componentname+'\" | Blood Group=\"'+full.bloodgroupname+'\" ('+data.length+' rows in the list, '+shown+' showing after the filter, '+pager+')';"
+                    + " if(viaId) return head+'FOUND: Blood Bag No=\"'+viaId.bloodbagno+'\" | Blood Bag Type=\"'+viaId.bloodbagtypename+'\" | Component Name=\"'+viaId.componentname+'\" | Blood Group=\"'+viaId.bloodgroupname+'\" ('+data.length+' rows in the list, '+shown+' showing after the filter, '+pager+')"
+                    + "  NOTE: the list names the Blood Bag Type \"'+viaId.bloodbagtypename+'\", not the entered \"'+a.type+'\" - both entries carry the SAME type id ('+(a.aliases||[]).length+' entries share it), so the list cannot tell them apart (master-data defect)';"
                     + " if(mine.length) return head+'the bag is listed but none of its '+mine.length+' row(s) reads Type \"'+a.type+'\" + Component \"'+a.comp+'\" + Group \"'+a.grp+'\" (first row: '+mine[0].bloodbagtypename+' / '+mine[0].componentname+' / '+mine[0].bloodgroupname+')';"
                     + " return head+'not in the list ('+data.length+' rows listed for the day)'; }",
-                    java.util.Map.of("no", lastBagNo, "type", lastType, "comp", lastComponent, "grp", lastGroup));
+                    java.util.Map.of("no", lastBagNo, "type", lastType, "comp", lastComponent, "grp", lastGroup, "aliases", lastTypeAliases));
             String h = hit == null ? "" : hit.toString();
+            lastTypeNameDiffers = h.contains("NOTE: the list names the Blood Bag Type");
             String[] parts = h.split("\\|", 4);
             try {
                 lastRowsForBag = Integer.parseInt(parts[0]);

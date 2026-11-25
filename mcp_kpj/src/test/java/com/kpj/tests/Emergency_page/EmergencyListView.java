@@ -7,7 +7,7 @@ import com.kpj.pages.LoginPage;
 // name (com.kpj.pages.Emergency_page.EmergencyListView) — importing it would clash with this class name.
 
 /**
- * TC13 - Emergency &gt; <b>Emergency List View</b> — Change Admission Type.
+ * Emergency &gt; <b>Emergency List View</b> — Change Admission Type.
  *
  * <ol>
  *   <li>Click Emergency → Emergency List View (via the menu tab, not a direct URL).</li>
@@ -39,7 +39,7 @@ public class EmergencyListView extends DevHisBase {
     // machine — the newest file in this machine's Screenshots folder, or the bundled placeholder.png.
     private static final String SIGNATURE_FILE = ATTACH.toString();
 
-    public EmergencyListView() { super("TC13_EmergencyListView"); }
+    public EmergencyListView() { super("emergency_EmergencyListView"); }
 
     public static void main(String[] args) {
         EmergencyListView t = new EmergencyListView();

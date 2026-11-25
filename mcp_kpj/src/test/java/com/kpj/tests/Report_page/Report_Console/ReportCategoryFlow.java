@@ -224,9 +224,12 @@ public abstract class ReportCategoryFlow extends DevHisBase {
             saveEvidence(id, report + tag, page.screenshot());
             return "FAILED - " + why2;
         }
-        String err = rc.serverError(tab);
-        boolean drawn = err.isEmpty() && rc.waitForViewer(tab, 90000);
-        if (err.isEmpty() && !drawn) err = rc.serverError(tab);
+        // some categories (e.g. OT Reports) open a PDF in the browser's PDF viewer instead of the Crystal viewer: read the PDF itself
+        boolean pdfTab = rc.isPdf(tab);
+        ReportConsole.PdfInfo pdf = pdfTab ? rc.readPdf(tab, MAX_PAGES) : null;
+        String err = pdfTab ? "" : rc.serverError(tab);
+        boolean drawn = pdfTab ? (pdf.problem.isEmpty() && pdf.pages > 0) : (err.isEmpty() && rc.waitForViewer(tab, 90000));
+        if (!pdfTab && err.isEmpty() && !drawn) err = rc.serverError(tab);
         if (!err.isEmpty()) {
             try { tab.setViewportSize(1920, 1075); } catch (Exception ignore) { }
             byte[] errShot = tab.screenshot();
@@ -236,15 +239,18 @@ public abstract class ReportCategoryFlow extends DevHisBase {
             saveEvidence(id, report + tag, ReportConsole.stitch(java.util.Arrays.asList(filled, errShot)));
             return "FAILED - server error (" + err + ")";
         }
-        String box = rc.pageBox(tab);
-        String text = rc.reportText(tab);   // page 1 — the title is printed on the first page only
-        List<byte[]> pages = drawn ? rc.capturePages(tab, MAX_PAGES) : java.util.Collections.singletonList(tab.screenshot());
+        String box = pdfTab ? pdf.pages + " page(s)" : rc.pageBox(tab);
+        String text = pdfTab ? pdf.text : rc.reportText(tab);   // page 1 — the title is printed on the first page only
+        List<byte[]> pages = pdfTab ? (pdf.shots.isEmpty() ? java.util.Collections.singletonList(tab.screenshot()) : pdf.shots)
+                : drawn ? rc.capturePages(tab, MAX_PAGES) : java.util.Collections.singletonList(tab.screenshot());
         byte[] allPages = ReportConsole.stitch(pages);
         step(allPages, sec + " - Verify the report is generated in another tab" + tag, "Check a report opened in another tab; capture every page", "A non-blank report is generated",
-                drawn ? "The report opened in the viewer (page box \"" + box + "\"); " + pages.size() + " page(s) captured - the screenshot shows every page"
+                pdfTab ? (drawn ? "The report opened as a PDF (" + pdf.pages + " page(s), " + pdf.bytes + " bytes); " + pages.size() + " page(s) captured - the screenshot shows every page"
+                                : "The report tab opened as a PDF but " + pdf.problem)
+                : drawn ? "The report opened in the viewer (page box \"" + box + "\"); " + pages.size() + " page(s) captured - the screenshot shows every page"
                       : "The report tab opened but the viewer did not finish drawing", drawn ? "PASS" : "FAIL");
         saveEvidence(id, report + tag, ReportConsole.stitch(java.util.Arrays.asList(filled, allPages)));
-        if (!drawn) return "FAILED - the viewer did not finish drawing";
+        if (!drawn) return pdfTab ? "FAILED - the PDF could not be read (" + pdf.problem + ")" : "FAILED - the viewer did not finish drawing";
 
         String title = titleFound(text, report);
         String printed = printedTitle(text);
@@ -269,6 +275,16 @@ public abstract class ReportCategoryFlow extends DevHisBase {
     private static String titleFound(String reportText, String selected) {
         String want = norm(selected);
         if (want.isEmpty()) return null;
+        String hit = printedAs(reportText, want, selected);
+        if (hit != null) return hit;
+        // the report may print the name without the word "Report" ("OT Revenue Report" is titled "OT Revenue")
+        String shorter = selected.trim().replaceFirst("(?i)\\s*\\breport\\s*$", "").trim();
+        if (!shorter.equals(selected.trim()) && norm(shorter).length() >= 6) return printedAs(reportText, norm(shorter), shorter);
+        return null;
+    }
+
+    /** The printed words that make {@code want} (normalised) when the report text contains it; {@code fallback} when it does; null when it does not. */
+    private static String printedAs(String reportText, String want, String fallback) {
         if (!norm(reportText).contains(want)) return null;
         String[] words = reportText.split(" ");   // give back the printed words that matched
         for (int i = 0; i < words.length; i++) {
@@ -276,7 +292,7 @@ public abstract class ReportCategoryFlow extends DevHisBase {
             for (int j = i; j < words.length && norm(sb.toString()).length() < want.length(); j++) sb.append(j > i ? " " : "").append(words[j]);
             if (norm(sb.toString()).equals(want)) return sb.toString();
         }
-        return selected;
+        return fallback;
     }
 
     /** The title as printed at the top of the report: the words up to the first "Report" (the viewer's own "Main Report" tab skipped). "" when none. */

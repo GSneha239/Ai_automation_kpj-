@@ -7,7 +7,7 @@ import com.kpj.pages.LoginPage;
 // (com.kpj.pages.Ip.InPatients.OccupancyList) — importing it would clash with this test class name.
 
 /**
- * TC23 - IP &gt; Inpatients &gt; <b>Occupancy List</b> ({@code #/AdmissionList}, consolidated) — one login, then
+ * IP &gt; Inpatients &gt; <b>Occupancy List</b> ({@code #/AdmissionList}, consolidated) — one login, then
  * each footer action as its own section (each re-opens the list + searches + selects a patient):
  *
  * <ol>
@@ -21,7 +21,7 @@ import com.kpj.pages.LoginPage;
  */
 public class OccupancyList extends DevHisBase {
 
-    public OccupancyList() { super("TC23_InpatientsOccupancyList"); }
+    public OccupancyList() { super("Ip_Inpatients_OccupancyList"); }
 
     public static void main(String[] args) {
         OccupancyList t = new OccupancyList();

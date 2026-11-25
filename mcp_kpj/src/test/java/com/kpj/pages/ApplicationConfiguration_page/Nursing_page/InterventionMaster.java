@@ -87,8 +87,8 @@ public class InterventionMaster extends BasePage {
         try {
             page.waitForFunction("() => [...document.querySelectorAll('button,a,input[type=button]')].some(x=>(x.offsetWidth||x.offsetHeight||x.getClientRects().length)"
                             + " && /^\\s*add\\s*$/i.test(((x.textContent||x.value)||'').replace(/\\s+/g,' ').trim()))",
-                    null, new Page.WaitForFunctionOptions().setTimeout(15000));
-        } catch (Exception e) { return false; }
+                    null, new Page.WaitForFunctionOptions().setTimeout(30000));   // 15 s was too short on a slow day: the 2026-11-24 run
+        } catch (Exception e) { return false; }                                // sat on #/InterventionMaster and reported "did NOT reach"
         return page.url().toLowerCase().contains("interventionmaster");
     }
 
