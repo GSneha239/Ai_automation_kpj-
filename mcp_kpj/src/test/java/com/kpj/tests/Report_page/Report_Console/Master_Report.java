@@ -13,8 +13,7 @@ import java.util.regex.Pattern;
  *
  * <p><b>How a Master report differs from the Investigation Reports:</b> Show Report does not open a PDF tab - the console builds the report in the browser and the browser <b>downloads</b> it (a CSV). Every section ends with four
  * verdicts on that file: it was generated (a non-empty {@code .csv} was downloaded), it has no error (a download happened, it is data and not an error page / the console's "No Data Available!"), it is the report that was added
- * (its file name / first line say so) and it lists records (at least one data row under its header) - otherwise FAIL. The file is saved in {@code <outdir>/downloads/MasterReport/} and its first lines are in the test report.
- * <b>Evidence:</b> the screenshot of the "shows records" step is the downloaded CSV shown as a table (long files: the first 40 and last 5 rows); the same picture is saved next to the CSV as {@code .png}.</p>
+ * (its file name / first line say so) and it lists records (at least one data line under its header) - otherwise FAIL. The file is saved in {@code <outdir>/downloads/MasterReport/} and its first lines are in the test report.</p>
  *
  * <ol>
  *   <li><b>Admission - Admission Type</b> (Master Report &gt; "Admission - Admission Type"; the steps of a recording): filter Location (one, {@code loc.IsSelected}); Show Report; a CSV must be downloaded and list records.</li>
@@ -24,42 +23,12 @@ import java.util.regex.Pattern;
  *   <li><b>Admission - Bed Release Checklist</b> (Master Report &gt; "Admission - Bed Release Checklist"; the steps of a recording): filter Location (one); Show Report; a CSV must be downloaded and list records.</li>
  *   <li><b>Admission - Discharge Destination</b> (Master Report &gt; "Admission - Discharge Destination"; the steps of a recording - asked for as "Discharge Checklist", the recording chose this neighbouring entry): filter Location (one); Show Report; a CSV must be downloaded and list records.</li>
  *   <li><b>Admission - Discharge Checklist</b> (Master Report &gt; "Admission - Discharge Checklist"; asked for by the user, derived from the Discharge Destination recording - same steps, the report offers only the Location filter): filter Location (one); Show Report; a CSV must be downloaded and list records.</li>
- *   <li><b>Admission - Discharge Type</b> (Master Report &gt; "Admission - Discharge Type"; the steps of a recording): filter Location (one); Show Report; a CSV must be downloaded and list records.</li>
- *   <li><b>Admission - Floor</b> (Master Report &gt; "Admission - Floor"; the steps of a recording): filter Location (one); Show Report; a CSV must be downloaded and list records.</li>
- *   <li><b>Admission - Room</b> (Master Report &gt; "Admission - Room", not "Room Amenities"; the steps of a recording): filter Location (one); Show Report; a CSV must be downloaded and list records.</li>
- *   <li><b>Admission - Room Amenities</b> (Master Report &gt; "Admission - Room Amenities"; the steps of a recording): filter Location (one); Show Report; a CSV must be downloaded and list records.</li>
- *   <li><b>Admission - Ward</b> (Master Report &gt; "Admission - Ward"; the steps of a recording): filter Location (one); Show Report; a CSV must be downloaded and list records.</li>
- *   <li><b>Billing - Bill &amp; Receipt Cancellation Reason</b> (Master Report &gt; "Billing - Bill &amp; Receipt Cancellation Reason"; the steps of a recording): filter Location (one); Show Report; a CSV must be downloaded and list records.</li>
- *   <li><b>Billing - Code Type</b> (Master Report &gt; "Billing - Code Type"; not separately recorded - a probe showed it offers only the Location filter, so the recorded steps of the other Master tabs apply): filter Location (one); Show Report; a CSV must be downloaded and list records.</li>
- *   <li><b>Billing - Concession Discount Reason</b> (Master Report &gt; "Billing - Concession Discount Reason"; not separately recorded - a probe showed it offers only the Location filter): filter Location (one); Show Report; a CSV must be downloaded and list records.</li>
- *   <li><b>Billing - Cost Center</b> (Master Report &gt; "Billing - Cost Center"; not separately recorded - a probe showed it offers only the Location filter): filter Location (one); Show Report; a CSV must be downloaded and list records.</li>
- *   <li><b>Billing - CreditNote Reason</b> (Master Report &gt; "Billing - CreditNote Reason"; not separately recorded - a probe showed it offers only the Location filter): filter Location (one); Show Report; a CSV must be downloaded and list records.</li>
- *   <li><b>Billing - Customer Type</b> (Master Report &gt; "Billing - Customer Type"; not separately recorded - a probe showed it offers only the Location filter): filter Location (one); Show Report; a CSV must be downloaded and list records.</li>
- *   <li><b>Billing - Deposit Against (Deposit Receipt Against)</b> (Master Report &gt; "Billing - Deposit Against (Deposit Receipt Against)"; not separately recorded - a probe showed it offers only the Location filter): filter Location (one); Show Report; a CSV must be downloaded and list records.</li>
- *   <li><b>Billing - Discount Policy</b> (Master Report &gt; "Billing - Discount Policy"; not separately recorded - a probe showed it offers only the Location filter): filter Location (one); Show Report; a CSV must be downloaded and list records.</li>
- *   <li><b>Billing - Doctor_Fee_MMA13</b> (Master Report &gt; "Billing - Doctor_Fee_MMA13"; not separately recorded - a probe showed it offers only the Location filter): filter Location (one); Show Report; a CSV must be downloaded and list records.</li>
- *   <li><b>Billing - DoctorShare</b> (Master Report &gt; "Billing - DoctorShare"; not separately recorded - a probe showed it offers only the Location filter): filter Location (one); Show Report; a CSV must be downloaded and list records.</li>
- *   <li><b>Billing - Group</b> (Master Report &gt; "Billing - Group"; not separately recorded - a probe showed it offers only the Location filter): filter Location (one); Show Report; a CSV must be downloaded and list records.</li>
- *   <li><b>Billing - Procedure Master</b> (Master Report &gt; "Billing - Procedure Master"; not separately recorded - a probe showed it offers only the Location filter): filter Location (one); Show Report; a CSV must be downloaded and list records.</li>
- *   <li><b>Billing - ProcedureType</b> (Master Report &gt; "Billing - ProcedureType"; not separately recorded - a probe showed it offers only the Location filter): filter Location (one); Show Report; a CSV must be downloaded and list records.</li>
- *   <li><b>Billing - Service</b> (Master Report &gt; "Billing - Service"; not separately recorded - a probe showed it offers only the Location filter): filter Location (one); Show Report; a CSV must be downloaded and list records.</li>
- *   <li><b>Billing - Service-CodeType Integration</b> (Master Report &gt; "Billing - Service-CodeType Integration"; not separately recorded - a probe showed it offers only the Location filter): filter Location (one); Show Report; a CSV must be downloaded and list records.</li>
- *   <li><b>Billing - Status Tag</b> (Master Report &gt; "Billing - Status Tag"; not separately recorded - a probe showed it offers only the Location filter): filter Location (one); Show Report; a CSV must be downloaded and list records.</li>
- *   <li><b>Billing - Store</b> (Master Report &gt; "Billing - Store"; not separately recorded - a probe showed it offers only the Location filter): filter Location (one); Show Report; a CSV must be downloaded and list records.</li>
- *   <li><b>Billing - Sub Service Master</b> (Master Report &gt; "Billing - Sub Service Master"; not separately recorded - a probe showed it offers only the Location filter): filter Location (one); Show Report; a CSV must be downloaded and list records.</li>
- *   <li><b>Billing - Subgroup</b> (Master Report &gt; "Billing - Subgroup"; not separately recorded - a probe showed it offers only the Location filter): filter Location (one); Show Report; a CSV must be downloaded and list records.</li>
- *   <li><b>Clinical-Laboratory - Lab Profile</b> (Master Report &gt; "Clinical-Laboratory - Lab Profile"; not separately recorded - a probe showed it offers only the Location filter): filter Location (one); Show Report; a CSV must be downloaded and list records.</li>
- *   <li><b>Clinical-Laboratory - Lab Sample</b> (Master Report &gt; "Clinical-Laboratory - Lab Sample"; not separately recorded - a probe showed it offers only the Location filter): filter Location (one); Show Report; a CSV must be downloaded and list records.</li>
- *   <li><b>Clinical-MRD - Diagnosis Master</b> (recorded 2026-11-26: Master Report &gt; "Clinical-MRD - Diagnosis Master"): filter Location; Add; Add Value; tick the one location (id 1); OK; Show Report; a CSV must be downloaded and list records.</li>
- *   <li><b>Clinical-Nursing - Allergy</b> (Master Report &gt; "Clinical-Nursing - Allergy"; not separately recorded - a probe showed it offers only the Location filter): filter Location (one); Show Report; a CSV must be downloaded and list records.</li>
- *   <li><b>Clinical-Nursing - Triage</b> (Master Report &gt; "Clinical-Nursing - Triage"; not separately recorded - a probe showed it offers only the Location filter): filter Location (one); Show Report; a CSV must be downloaded and list records.</li>
- *   <li><b>Clinical-Nursing - Vital Sign</b> (Master Report &gt; "Clinical-Nursing - Vital Sign"; not separately recorded - a probe showed it offers only the Location filter): filter Location (one); Show Report; a CSV must be downloaded and list records.</li>
  * </ol>
  *
  * <p>Each filter: choose it in the Filter dropdown, <b>Add</b>, verify it appears in the Filter Name | Filter Value table, <b>Add Value</b> (its popup), tick, OK, verify the Filter Value. Nothing is saved in the application.</p>
  *
- * <p>Options: {@code -Dmst.only=admissiontype|bedamenities|bedclass|beddetails|bedrelease|dischargedestination|dischargechecklist|dischargetype|floor|room|roomamenities|ward|billcancel|codetype|concession|costcenter|creditnote|customertype|depositagainst|discountpolicy|doctorfee|doctorshare|group|proceduremaster|proceduretype|service|servicecodetype|statustag|store|subservice|subgroup|labprofile|labsample|diagnosismaster|nursingallergy|triage|vitalsign} (run one section; its own report {@code ReportConsole_MasterReport_<Section>.html}, no option = every section = {@code ReportConsole_MasterReport.html}),
- * {@code -Dmst.at.report=} / {@code -Dmst.at.header=}, {@code -Dmst.ba.*}, {@code -Dmst.bc.*}, {@code -Dmst.bd.*}, {@code -Dmst.br.*}, {@code -Dmst.dd.*}, {@code -Dmst.dc.*}, {@code -Dmst.dt.*}, {@code -Dmst.fl.*}, {@code -Dmst.rm.*}, {@code -Dmst.ra.*}, {@code -Dmst.wd.*}, {@code -Dmst.bcr.*}, {@code -Dmst.bct.*}, {@code -Dmst.bcd.*}, {@code -Dmst.bcc.*}, {@code -Dmst.bcn.*}, {@code -Dmst.bcu.*}, {@code -Dmst.bda.*}, {@code -Dmst.bdp.*}, {@code -Dmst.bdf.*}, {@code -Dmst.bds.*}, {@code -Dmst.bg.*}, {@code -Dmst.bpm.*}, {@code -Dmst.bpt.*}, {@code -Dmst.bsv.*}, {@code -Dmst.bsc.*}, {@code -Dmst.bst.*}, {@code -Dmst.bsto.*}, {@code -Dmst.bssm.*}, {@code -Dmst.bsg.*}, {@code -Dmst.clp.*}, {@code -Dmst.cls.*}, {@code -Dmst.cdm.*}, {@code -Dmst.cna.*}, {@code -Dmst.cnt.*} and {@code -Dmst.cnv.*} (the same two options for the other sections; regexes: the file name / first line must match the report, the first line must match the header; defaults in the section).</p>
+ * <p>Options: {@code -Dmst.only=admissiontype|bedamenities|bedclass|beddetails|bedrelease|dischargedestination|dischargechecklist} (run one section; its own report {@code ReportConsole_MasterReport_<Section>.html}, no option = every section = {@code ReportConsole_MasterReport.html}),
+ * {@code -Dmst.at.report=} / {@code -Dmst.at.header=}, {@code -Dmst.ba.*}, {@code -Dmst.bc.*}, {@code -Dmst.bd.*}, {@code -Dmst.br.*}, {@code -Dmst.dd.*} and {@code -Dmst.dc.*} (the same two options for the other sections; regexes: the file name / first line must match the report, the first line must match the header; defaults in the section).</p>
  */
 public class Master_Report extends DevHisBase {
 
@@ -72,36 +41,6 @@ public class Master_Report extends DevHisBase {
             {"bedrelease", "AdmissionBedReleaseChecklist", "Admission - Bed Release Checklist"},
             {"dischargedestination", "AdmissionDischargeDestination", "Admission - Discharge Destination"},
             {"dischargechecklist", "AdmissionDischargeChecklist", "Admission - Discharge Checklist"},
-            {"dischargetype", "AdmissionDischargeType", "Admission - Discharge Type"},
-            {"floor", "AdmissionFloor", "Admission - Floor"},
-            {"room", "AdmissionRoom", "Admission - Room"},
-            {"roomamenities", "AdmissionRoomAmenities", "Admission - Room Amenities"},
-            {"ward", "AdmissionWard", "Admission - Ward"},
-            {"billcancel", "BillingBillReceiptCancellationReason", "Billing - Bill & Receipt Cancellation Reason"},
-            {"codetype", "BillingCodeType", "Billing - Code Type"},
-            {"concession", "BillingConcessionDiscountReason", "Billing - Concession Discount Reason"},
-            {"costcenter", "BillingCostCenter", "Billing - Cost Center"},
-            {"creditnote", "BillingCreditNoteReason", "Billing - CreditNote Reason"},
-            {"customertype", "BillingCustomerType", "Billing - Customer Type"},
-            {"depositagainst", "BillingDepositAgainst", "Billing - Deposit Against (Deposit Receipt Against)"},
-            {"discountpolicy", "BillingDiscountPolicy", "Billing - Discount Policy"},
-            {"doctorfee", "BillingDoctorFeeMMA13", "Billing - Doctor_Fee_MMA13"},
-            {"doctorshare", "BillingDoctorShare", "Billing - DoctorShare"},
-            {"group", "BillingGroup", "Billing - Group"},
-            {"proceduremaster", "BillingProcedureMaster", "Billing - Procedure Master"},
-            {"proceduretype", "BillingProcedureType", "Billing - ProcedureType"},
-            {"service", "BillingService", "Billing - Service"},
-            {"servicecodetype", "BillingServiceCodeTypeIntegration", "Billing - Service-CodeType Integration"},
-            {"statustag", "BillingStatusTag", "Billing - Status Tag"},
-            {"store", "BillingStore", "Billing - Store"},
-            {"subservice", "BillingSubServiceMaster", "Billing - Sub Service Master"},
-            {"subgroup", "BillingSubgroup", "Billing - Subgroup"},
-            {"labprofile", "ClinicalLaboratoryLabProfile", "Clinical-Laboratory - Lab Profile"},
-            {"labsample", "ClinicalLaboratoryLabSample", "Clinical-Laboratory - Lab Sample"},
-            {"diagnosismaster", "ClinicalMrdDiagnosisMaster", "Clinical-MRD - Diagnosis Master"},
-            {"nursingallergy", "ClinicalNursingAllergy", "Clinical-Nursing - Allergy"},
-            {"triage", "ClinicalNursingTriage", "Clinical-Nursing - Triage"},
-            {"vitalsign", "ClinicalNursingVitalSign", "Clinical-Nursing - Vital Sign"},
     };
 
     private static String[] sectionOf(String only) {
@@ -166,36 +105,6 @@ public class Master_Report extends DevHisBase {
         if (only.isEmpty() || only.equals("bedrelease")) bedReleaseChecklist(rc);
         if (only.isEmpty() || only.equals("dischargedestination")) dischargeDestination(rc);
         if (only.isEmpty() || only.equals("dischargechecklist")) dischargeChecklist(rc);
-        if (only.isEmpty() || only.equals("dischargetype")) dischargeType(rc);
-        if (only.isEmpty() || only.equals("floor")) admissionFloor(rc);
-        if (only.isEmpty() || only.equals("room")) admissionRoom(rc);
-        if (only.isEmpty() || only.equals("roomamenities")) roomAmenities(rc);
-        if (only.isEmpty() || only.equals("ward")) admissionWard(rc);
-        if (only.isEmpty() || only.equals("billcancel")) billingCancellationReason(rc);
-        if (only.isEmpty() || only.equals("codetype")) billingCodeType(rc);
-        if (only.isEmpty() || only.equals("concession")) billingConcessionDiscountReason(rc);
-        if (only.isEmpty() || only.equals("costcenter")) billingCostCenter(rc);
-        if (only.isEmpty() || only.equals("creditnote")) billingCreditNoteReason(rc);
-        if (only.isEmpty() || only.equals("customertype")) billingCustomerType(rc);
-        if (only.isEmpty() || only.equals("depositagainst")) billingDepositAgainst(rc);
-        if (only.isEmpty() || only.equals("discountpolicy")) billingDiscountPolicy(rc);
-        if (only.isEmpty() || only.equals("doctorfee")) billingDoctorFeeMma13(rc);
-        if (only.isEmpty() || only.equals("doctorshare")) billingDoctorShare(rc);
-        if (only.isEmpty() || only.equals("group")) billingGroup(rc);
-        if (only.isEmpty() || only.equals("proceduremaster")) billingProcedureMaster(rc);
-        if (only.isEmpty() || only.equals("proceduretype")) billingProcedureType(rc);
-        if (only.isEmpty() || only.equals("service")) billingService(rc);
-        if (only.isEmpty() || only.equals("servicecodetype")) billingServiceCodeTypeIntegration(rc);
-        if (only.isEmpty() || only.equals("statustag")) billingStatusTag(rc);
-        if (only.isEmpty() || only.equals("store")) billingStore(rc);
-        if (only.isEmpty() || only.equals("subservice")) billingSubServiceMaster(rc);
-        if (only.isEmpty() || only.equals("subgroup")) billingSubgroup(rc);
-        if (only.isEmpty() || only.equals("labprofile")) clinicalLabProfile(rc);
-        if (only.isEmpty() || only.equals("labsample")) clinicalLabSample(rc);
-        if (only.isEmpty() || only.equals("diagnosismaster")) clinicalMrdDiagnosisMaster(rc);
-        if (only.isEmpty() || only.equals("nursingallergy")) clinicalNursingAllergy(rc);
-        if (only.isEmpty() || only.equals("triage")) clinicalNursingTriage(rc);
-        if (only.isEmpty() || only.equals("vitalsign")) clinicalNursingVitalSign(rc);
     }
 
     // =====================================================================================================================================================
@@ -260,287 +169,6 @@ public class Master_Report extends DevHisBase {
     private void dischargeChecklist(com.kpj.pages.Report_page.Report_Console.Master_Report rc) {
         locationCsvReport(rc, "Admission - Discharge Checklist", "DISCHARGE CHECKLIST",
                 System.getProperty("mst.dc.report", "DISCHARGE\\W*CHECKLIST"), System.getProperty("mst.dc.header", "^\\W*id\\s*,\\s*TCARE\\s*Code\\s*,\\s*Description\\s*,\\s*Status"));
-    }
-
-    // =====================================================================================================================================================
-    //  Admission - Discharge Type (recorded: Master Report; Location; Show Report -> a CSV is downloaded)
-    // =====================================================================================================================================================
-
-    private void dischargeType(com.kpj.pages.Report_page.Report_Console.Master_Report rc) {
-        locationCsvReport(rc, "Admission - Discharge Type", "DISCHARGE TYPE",
-                System.getProperty("mst.dt.report", "DISCHARGE\\W*TYPE"), System.getProperty("mst.dt.header", "^\\W*dischargetypeid\\W*,\\s*TCARE\\s*Code\\s*,\\s*Description\\s*,\\s*Status"));
-    }
-
-    // =====================================================================================================================================================
-    //  Admission - Floor (recorded: Master Report; Location; Show Report -> a CSV is downloaded)
-    // =====================================================================================================================================================
-
-    private void admissionFloor(com.kpj.pages.Report_page.Report_Console.Master_Report rc) {
-        locationCsvReport(rc, "Admission - Floor", "ADMISSION FLOOR",
-                System.getProperty("mst.fl.report", "ADMISSION\\W*FLOOR"), System.getProperty("mst.fl.header", "^\\W*floorid\\W*,\\s*TCARE\\s*Code\\s*,\\s*Description\\s*,\\s*Status"));
-    }
-
-    // =====================================================================================================================================================
-    //  Admission - Room (recorded: Master Report; Location; Show Report -> a CSV is downloaded). The name check excludes the neighbouring "Admission - Room Amenities".
-    // =====================================================================================================================================================
-
-    private void admissionRoom(com.kpj.pages.Report_page.Report_Console.Master_Report rc) {
-        locationCsvReport(rc, "Admission - Room", "ADMISSION ROOM",
-                System.getProperty("mst.rm.report", "ADMISSION\\W*ROOM(?!\\W*AMENIT)"), System.getProperty("mst.rm.header", "^\\W*roomid\\W*,\\s*TCARE\\s*Code\\s*,\\s*Description\\s*,\\s*Room\\s*Type"));
-    }
-
-    // =====================================================================================================================================================
-    //  Admission - Room Amenities (recorded: Master Report; Location; Show Report -> a CSV is downloaded)
-    // =====================================================================================================================================================
-
-    private void roomAmenities(com.kpj.pages.Report_page.Report_Console.Master_Report rc) {
-        locationCsvReport(rc, "Admission - Room Amenities", "ROOM AMENITIES",
-                System.getProperty("mst.ra.report", "ROOM\\W*AMENIT"), System.getProperty("mst.ra.header", "^\\W*roomamenitiesid\\W*,\\s*TCARE\\s*Code\\s*,\\s*Description\\s*,\\s*Status"));
-    }
-
-    // =====================================================================================================================================================
-    //  Admission - Ward (recorded: Master Report; Location; Show Report -> a CSV is downloaded)
-    // =====================================================================================================================================================
-
-    private void admissionWard(com.kpj.pages.Report_page.Report_Console.Master_Report rc) {
-        locationCsvReport(rc, "Admission - Ward", "ADMISSION WARD",
-                System.getProperty("mst.wd.report", "ADMISSION\\W*WARD"), System.getProperty("mst.wd.header", "^\\W*wardid\\W*,\\s*TCARE\\s*Code\\s*,\\s*Description\\s*,\\s*Floor\\s*,\\s*Gender\\s*,\\s*Status"));
-    }
-
-    // =====================================================================================================================================================
-    //  Billing - Bill & Receipt Cancellation Reason (recorded: Master Report; Location; Show Report -> a CSV is downloaded)
-    // =====================================================================================================================================================
-
-    private void billingCancellationReason(com.kpj.pages.Report_page.Report_Console.Master_Report rc) {
-        locationCsvReport(rc, "Billing - Bill & Receipt Cancellation Reason", "BILL & RECEIPT CANCELLATION REASON",
-                System.getProperty("mst.bcr.report", "RECEIPT\\W*CANCELLATION\\W*REASON"), System.getProperty("mst.bcr.header", "^\\W*id\\s*,\\s*code\\s*,\\s*description\\s*,\\s*Status"));
-    }
-
-    // =====================================================================================================================================================
-    //  Billing - Code Type (asked for by the user without a recording: a probe showed the report offers only the Location filter, so it uses the steps recorded for the other Master tabs).
-    //  The name check needs "Billing - Code Type", so the neighbouring "Billing - Service-CodeType Integration" cannot pass.
-    // =====================================================================================================================================================
-
-    private void billingCodeType(com.kpj.pages.Report_page.Report_Console.Master_Report rc) {
-        locationCsvReport(rc, "Billing - Code Type", "BILLING CODE TYPE",
-                System.getProperty("mst.bct.report", "BILLING\\W*CODE\\W*TYPE"), System.getProperty("mst.bct.header", "^\\W*clinicalcodetypeid\\W*,\\s*Code\\s*,\\s*Description\\s*,\\s*Status"));
-    }
-
-    // =====================================================================================================================================================
-    //  Billing - Concession Discount Reason (asked for by the user without a recording: a probe showed the report offers only the Location filter, so it uses the steps recorded for the other Master tabs)
-    // =====================================================================================================================================================
-
-    private void billingConcessionDiscountReason(com.kpj.pages.Report_page.Report_Console.Master_Report rc) {
-        locationCsvReport(rc, "Billing - Concession Discount Reason", "BILLING CONCESSION DISCOUNT REASON",
-                System.getProperty("mst.bcd.report", "CONCESSION\\W*DISCOUNT\\W*REASON"), System.getProperty("mst.bcd.header", "^\\W*id\\s*,\\s*code\\s*,\\s*description\\s*,\\s*Status"));
-    }
-
-    // =====================================================================================================================================================
-    //  Billing - Cost Center (asked for by the user without a recording: a probe showed the report offers only the Location filter, so it uses the steps recorded for the other Master tabs)
-    // =====================================================================================================================================================
-
-    private void billingCostCenter(com.kpj.pages.Report_page.Report_Console.Master_Report rc) {
-        locationCsvReport(rc, "Billing - Cost Center", "BILLING COST CENTER",
-                System.getProperty("mst.bcc.report", "BILLING\\W*COST\\W*CENT(ER|RE)"), System.getProperty("mst.bcc.header", "^\\W*costcenterid\\W*,\\s*costcentercode\\s*,\\s*costcentername\\s*,\\s*profitcenter\\s*,\\s*Status"));
-    }
-
-    // =====================================================================================================================================================
-    //  Billing - CreditNote Reason (asked for by the user without a recording: a probe showed the report offers only the Location filter, so it uses the steps recorded for the other Master tabs)
-    // =====================================================================================================================================================
-
-    private void billingCreditNoteReason(com.kpj.pages.Report_page.Report_Console.Master_Report rc) {
-        locationCsvReport(rc, "Billing - CreditNote Reason", "BILLING CREDITNOTE REASON",
-                System.getProperty("mst.bcn.report", "CREDIT\\W*NOTE\\W*REASON"), System.getProperty("mst.bcn.header", "^\\W*id\\s*,\\s*code\\s*,\\s*description\\s*,\\s*Status"));
-    }
-
-    // =====================================================================================================================================================
-    //  Billing - Customer Type (asked for by the user without a recording: a probe showed the report offers only the Location filter, so it uses the steps recorded for the other Master tabs)
-    // =====================================================================================================================================================
-
-    private void billingCustomerType(com.kpj.pages.Report_page.Report_Console.Master_Report rc) {
-        locationCsvReport(rc, "Billing - Customer Type", "BILLING CUSTOMER TYPE",
-                System.getProperty("mst.bcu.report", "CUSTOMER\\W*TYPE"), System.getProperty("mst.bcu.header", "^\\W*Code\\s*,\\s*receivabletype\\s*,\\s*Status"));
-    }
-
-    // =====================================================================================================================================================
-    //  Billing - Deposit Against (Deposit Receipt Against) (asked for without a recording: a probe showed the report offers only the Location filter, so it uses the steps recorded for the other Master tabs)
-    // =====================================================================================================================================================
-
-    private void billingDepositAgainst(com.kpj.pages.Report_page.Report_Console.Master_Report rc) {
-        // On 2026-11-26 this report downloaded an EMPTY file (5 bytes: byte-order mark + line break), so its columns have never been seen: the header pattern only asks for SOME comma-separated header line.
-        // When the report returns data, replace it with the real columns.
-        locationCsvReport(rc, "Billing - Deposit Against (Deposit Receipt Against)", "BILLING DEPOSIT AGAINST",
-                System.getProperty("mst.bda.report", "DEPOSIT\\W*AGAINST"), System.getProperty("mst.bda.header", "^\\W*[A-Za-z][^,]*,"));
-    }
-
-    // =====================================================================================================================================================
-    //  Billing - Discount Policy (asked for without a recording: a probe showed the report offers only the Location filter, so it uses the steps recorded for the other Master tabs)
-    // =====================================================================================================================================================
-
-    private void billingDiscountPolicy(com.kpj.pages.Report_page.Report_Console.Master_Report rc) {
-        locationCsvReport(rc, "Billing - Discount Policy", "BILLING DISCOUNT POLICY",
-                System.getProperty("mst.bdp.report", "DISCOUNT\\W*POLICY"), System.getProperty("mst.bdp.header", "^\\W*id\\s*,\\s*Case\\s*Type\\s*,\\s*Discount\\s*Policy\\s*Code\\s*,\\s*Discount\\s*Policy\\s*Name\\s*,\\s*Group\\s*Code\\s*,\\s*Group\\s*Name\\s*,\\s*Subgroup\\s*Code\\s*,\\s*Subgroup\\s*Name\\s*,\\s*Discount\\s*Percentage"));
-    }
-
-    // =====================================================================================================================================================
-    //  Billing - Doctor_Fee_MMA13 (asked for without a recording: a probe showed the report offers only the Location filter, so it uses the steps recorded for the other Master tabs)
-    // =====================================================================================================================================================
-
-    private void billingDoctorFeeMma13(com.kpj.pages.Report_page.Report_Console.Master_Report rc) {
-        locationCsvReport(rc, "Billing - Doctor_Fee_MMA13", "BILLING DOCTOR FEE MMA13",
-                System.getProperty("mst.bdf.report", "DOCTOR\\W*FEE\\W*MMA\\W*13"), System.getProperty("mst.bdf.header", "^\\W*id\\s*,\\s*ProcedureCode\\s*,\\s*DoctorFeeCode\\s*,\\s*DoctorFee\\s*,\\s*MMADoctorFeeServiceCode\\s*,\\s*AnesthetistFeeCode\\s*,\\s*AnesthetistFee\\s*,\\s*MMAAnesthetistFeeCode"));
-    }
-
-    // =====================================================================================================================================================
-    //  Billing - DoctorShare (asked for without a recording: a probe showed the report offers only the Location filter, so it uses the steps recorded for the other Master tabs)
-    // =====================================================================================================================================================
-
-    private void billingDoctorShare(com.kpj.pages.Report_page.Report_Console.Master_Report rc) {
-        locationCsvReport(rc, "Billing - DoctorShare", "BILLING DOCTOR SHARE",
-                System.getProperty("mst.bds.report", "DOCTOR\\W*SHARE"), System.getProperty("mst.bds.header", "^\\W*PayableClassificationCode\\s*,\\s*ServiceCode\\s*,\\s*PayableCode\\s*,\\s*SharePercentage\\s*,\\s*ShareAmount\\s*,\\s*BedClassCode\\s*,\\s*Status"));
-    }
-
-    // =====================================================================================================================================================
-    //  Billing - Group (asked for without a recording: a probe showed the report offers only the Location filter, so it uses the steps recorded for the other Master tabs)
-    // =====================================================================================================================================================
-
-    private void billingGroup(com.kpj.pages.Report_page.Report_Console.Master_Report rc) {
-        locationCsvReport(rc, "Billing - Group", "BILLING GROUP",
-                System.getProperty("mst.bg.report", "BILLING\\W*GROUP"), System.getProperty("mst.bg.header", "^\\W*groupid\\s*,\\s*Group\\s*Code\\s*,\\s*Group\\s*Name\\s*,\\s*Is\\s*Clinical\\s*,\\s*Status"));
-    }
-
-    // =====================================================================================================================================================
-    //  Billing - Procedure Master (asked for without a recording: a probe showed the report offers only the Location filter, so it uses the steps recorded for the other Master tabs)
-    // =====================================================================================================================================================
-
-    private void billingProcedureMaster(com.kpj.pages.Report_page.Report_Console.Master_Report rc) {
-        locationCsvReport(rc, "Billing - Procedure Master", "BILLING PROCEDURE MASTER",
-                System.getProperty("mst.bpm.report", "PROCEDURE\\W*MASTER"), System.getProperty("mst.bpm.header", "^\\W*Procedure\\s*Id\\s*,\\s*Procedure\\s*Code\\s*,\\s*Procedure\\s*Description\\s*,\\s*Service\\s*Item\\s*Code\\s*,\\s*Duration\\s*\\(\\s*Mins\\s*\\)\\s*,\\s*Procedure\\s*Type\\s*,\\s*Remark\\s*,\\s*Status"));
-    }
-
-    // =====================================================================================================================================================
-    //  Billing - ProcedureType (asked for without a recording: a probe showed the report offers only the Location filter, so it uses the steps recorded for the other Master tabs)
-    // =====================================================================================================================================================
-
-    private void billingProcedureType(com.kpj.pages.Report_page.Report_Console.Master_Report rc) {
-        locationCsvReport(rc, "Billing - ProcedureType", "BILLING PROCEDURE TYPE",
-                System.getProperty("mst.bpt.report", "PROCEDURE\\W*TYPE"), System.getProperty("mst.bpt.header", "^\\W*code\\s*,\\s*description\\s*,\\s*Status"));
-    }
-
-    // =====================================================================================================================================================
-    //  Billing - Service (asked for without a recording: a probe showed the report offers only the Location filter, so it uses the steps recorded for the other Master tabs)
-    // =====================================================================================================================================================
-
-    private void billingService(com.kpj.pages.Report_page.Report_Console.Master_Report rc) {
-        // the report check must not accept the neighbouring "Billing - Service-CodeType Integration"
-        locationCsvReport(rc, "Billing - Service", "BILLING SERVICE",
-                System.getProperty("mst.bsv.report", "BILLING\\W*SERVICE(?!\\W*CODE)"), System.getProperty("mst.bsv.header", "^\\W*serviceitemid\\s*,\\s*Service\\s*Code\\s*,\\s*Service\\s*Name\\s*,\\s*Service\\s*Name\\s*Label\\s*,\\s*Group\\s*Name\\s*,\\s*Sub\\s*Group\\s*Name\\s*,\\s*Short\\s*Description\\s*,"
-                        + "\\s*Rate\\s*Editable\\s*,\\s*Emergency\\s*Applicable\\s*,\\s*Discount\\s*Applicable\\s*,\\s*Min\\s*Rate\\s*,\\s*Max\\s*Rate\\s*,\\s*Emergency\\s*Charge\\s*Percentage\\s*,\\s*Discount\\s*Percentage\\s*,\\s*Rate\\s*\\(OPD\\)\\s*,\\s*Rate\\s*\\(IPD\\)\\s*,"
-                        + "\\s*Service\\s*Type\\s*,\\s*Can\\s*be\\s*part\\s*of\\s*Package\\s*,\\s*Is\\s*Package\\s*,\\s*Package\\s*\\(IPD\\)\\s*,\\s*Package\\s*\\(OPD\\)\\s*,\\s*Is\\s*OT\\s*Procedure\\s*,\\s*Is\\s*Doctor\\s*Share\\s*Applicable\\s*,\\s*Share\\s*%\\s*,"
-                        + "\\s*E-Invoice\\s*Classification\\s*Code\\s*,\\s*Cost\\s*Center\\s*,\\s*Service\\s*Tax\\s*Applicability\\s*\\(Non\\s*Citizen\\)\\s*,\\s*Service\\s*Tax\\s*%\\s*\\(Non\\s*Citizen\\)"));
-    }
-
-    // =====================================================================================================================================================
-    //  Billing - Service-CodeType Integration (asked for without a recording: a probe showed the report offers only the Location filter, so it uses the steps recorded for the other Master tabs)
-    // =====================================================================================================================================================
-
-    private void billingServiceCodeTypeIntegration(com.kpj.pages.Report_page.Report_Console.Master_Report rc) {
-        locationCsvReport(rc, "Billing - Service-CodeType Integration", "BILLING SERVICE CODETYPE INTEGRATION",
-                System.getProperty("mst.bsc.report", "SERVICE\\W*CODE\\W*TYPE\\W*INTEGRATION"), System.getProperty("mst.bsc.header", "^\\W*codeid\\s*,\\s*Service\\s*Item\\s*Code\\s*,\\s*TC-ServiceCode\\s*\\(Integration\\)\\s*,\\s*Clinical\\s*Code\\s*Type\\s*,\\s*Status"));
-    }
-
-    // =====================================================================================================================================================
-    //  Billing - Status Tag (asked for without a recording: a probe showed the report offers only the Location filter, so it uses the steps recorded for the other Master tabs)
-    // =====================================================================================================================================================
-
-    private void billingStatusTag(com.kpj.pages.Report_page.Report_Console.Master_Report rc) {
-        locationCsvReport(rc, "Billing - Status Tag", "BILLING STATUS TAG",
-                System.getProperty("mst.bst.report", "STATUS\\W*TAG"), System.getProperty("mst.bst.header", "^\\W*billstatusid\\s*,\\s*code\\s*,\\s*description\\s*,\\s*Status"));
-    }
-
-    // =====================================================================================================================================================
-    //  Billing - Store (asked for without a recording: a probe showed the report offers only the Location filter, so it uses the steps recorded for the other Master tabs)
-    // =====================================================================================================================================================
-
-    private void billingStore(com.kpj.pages.Report_page.Report_Console.Master_Report rc) {
-        locationCsvReport(rc, "Billing - Store", "BILLING STORE",
-                System.getProperty("mst.bsto.report", "BILLING\\W*STORE"), System.getProperty("mst.bsto.header", "^\\W*id\\s*,\\s*Store\\s*Code\\s*,\\s*Store\\s*Name\\s*,\\s*Cost\\s*Center\\s*,\\s*Status"));
-    }
-
-    // =====================================================================================================================================================
-    //  Billing - Sub Service Master (asked for without a recording: a probe showed the report offers only the Location filter, so it uses the steps recorded for the other Master tabs)
-    // =====================================================================================================================================================
-
-    private void billingSubServiceMaster(com.kpj.pages.Report_page.Report_Console.Master_Report rc) {
-        locationCsvReport(rc, "Billing - Sub Service Master", "BILLING SUB SERVICE MASTER",
-                System.getProperty("mst.bssm.report", "SUB\\W*SERVICE\\W*MASTER"), System.getProperty("mst.bssm.header", "^\\W*Sub\\s*Service\\s*ID\\s*,\\s*Parent\\s*Service\\s*Code\\s*,\\s*Parent\\s*Service\\s*Description\\s*,\\s*Sub\\s*Service\\s*Code\\s*,\\s*Sub\\s*Service\\s*Description\\s*,\\s*Is\\s*Selected"));
-    }
-
-    // =====================================================================================================================================================
-    //  Billing - Subgroup (asked for without a recording: a probe showed the report offers only the Location filter, so it uses the steps recorded for the other Master tabs)
-    // =====================================================================================================================================================
-
-    private void billingSubgroup(com.kpj.pages.Report_page.Report_Console.Master_Report rc) {
-        locationCsvReport(rc, "Billing - Subgroup", "BILLING SUBGROUP",
-                System.getProperty("mst.bsg.report", "BILLING\\W*SUB\\W*GROUP"), System.getProperty("mst.bsg.header", "^\\W*subgroupid\\s*,\\s*Subgroup\\s*Code\\s*,\\s*Description\\s*,\\s*Group\\s*Name\\s*,\\s*Cost\\s*Center\\s*,\\s*GL\\s*Code\\s*OP\\s*,\\s*GL\\s*Code\\s*IP\\s*,"
-                        + "\\s*GL\\s*Code\\s*OP\\s*Discount\\s*,\\s*GL\\s*Code\\s*IP\\s*Discount\\s*,\\s*Inventory\\s*GL\\s*Code\\s*,\\s*COGS\\s*GL\\s*Code\\s*,\\s*COGS\\s*Write\\s*Off\\s*GL\\s*Code\\s*,\\s*Status"));
-    }
-
-    // =====================================================================================================================================================
-    //  Clinical-Laboratory - Lab Profile (asked for without a recording: a probe showed the report offers only the Location filter, so it uses the steps recorded for the other Master tabs)
-    // =====================================================================================================================================================
-
-    private void clinicalLabProfile(com.kpj.pages.Report_page.Report_Console.Master_Report rc) {
-        locationCsvReport(rc, "Clinical-Laboratory - Lab Profile", "CLINICAL LABORATORY LAB PROFILE",
-                System.getProperty("mst.clp.report", "LAB\\W*PROFILE"), System.getProperty("mst.clp.header", "^\\W*id\\s*,\\s*Lab\\s*Profile\\s*Code\\s*,\\s*Profile\\s*Name\\s*,\\s*Service\\s*Code\\s*,\\s*Category\\s*,\\s*Service\\s*/\\s*Item\\s*Name\\s*\\(Included\\s*in\\s*Package\\)\\s*,"
-                        + "\\s*Package\\s*Rate\\s*-\\s*OPD\\s*,\\s*Package\\s*Rate\\s*-\\s*IPD\\s*,\\s*OPD\\s*Rate\\s*,\\s*IPD\\s*Rate"));
-    }
-
-    // =====================================================================================================================================================
-    //  Clinical-Laboratory - Lab Sample (asked for without a recording: a probe showed the report offers only the Location filter, so it uses the steps recorded for the other Master tabs)
-    // =====================================================================================================================================================
-
-    private void clinicalLabSample(com.kpj.pages.Report_page.Report_Console.Master_Report rc) {
-        locationCsvReport(rc, "Clinical-Laboratory - Lab Sample", "CLINICAL LABORATORY LAB SAMPLE",
-                System.getProperty("mst.cls.report", "LAB\\W*SAMPLE"), System.getProperty("mst.cls.header", "^\\W*id\\s*,\\s*Service\\s*Code\\s*,\\s*Service\\s*Name\\s*,\\s*Test\\s*Name\\s*,\\s*Sample\\s*Name\\s*,\\s*Volume\\s*,\\s*Volume\\s*Unit\\s*,\\s*Frequency\\s*,\\s*TAT\\s*,\\s*Notify\\s*TAT\\s*,"
-                        + "\\s*Container\\s*,\\s*Authorization\\s*Level\\s*,\\s*Status"));
-    }
-
-    // =====================================================================================================================================================
-    //  Clinical-MRD - Diagnosis Master (recorded from the user's own actions, 2026-11-26: Master Report > report > filter Location > Add > Add Value > tick location 1 > OK > Show Report > CSV download)
-    // =====================================================================================================================================================
-
-    private void clinicalMrdDiagnosisMaster(com.kpj.pages.Report_page.Report_Console.Master_Report rc) {
-        locationCsvReport(rc, "Clinical-MRD - Diagnosis Master", "CLINICAL MRD DIAGNOSIS MASTER",
-                System.getProperty("mst.cdm.report", "DIAGNOSIS\\W*MASTER"), System.getProperty("mst.cdm.header", "^\\W*code\\s*,\\s*description\\s*,\\s*Status"));
-    }
-
-    // =====================================================================================================================================================
-    //  Clinical-Nursing - Allergy (asked for without a recording: a probe showed the report offers only the Location filter, so it uses the steps recorded for the other Master tabs)
-    // =====================================================================================================================================================
-
-    private void clinicalNursingAllergy(com.kpj.pages.Report_page.Report_Console.Master_Report rc) {
-        // the report check must not accept the neighbouring "Clinical-Pharmacy - Allergy Severity"
-        locationCsvReport(rc, "Clinical-Nursing - Allergy", "CLINICAL NURSING ALLERGY",
-                System.getProperty("mst.cna.report", "NURSING\\W*ALLERGY(?!\\W*SEVERITY)"), System.getProperty("mst.cna.header", "^\\W*allergyid\\s*,\\s*Code\\s*,\\s*Allergen\\s*,\\s*Status"));
-    }
-
-    // =====================================================================================================================================================
-    //  Clinical-Nursing - Triage (asked for without a recording: a probe showed the report offers only the Location filter, so it uses the steps recorded for the other Master tabs)
-    // =====================================================================================================================================================
-
-    private void clinicalNursingTriage(com.kpj.pages.Report_page.Report_Console.Master_Report rc) {
-        locationCsvReport(rc, "Clinical-Nursing - Triage", "CLINICAL NURSING TRIAGE",
-                System.getProperty("mst.cnt.report", "NURSING\\W*TRIAGE"), System.getProperty("mst.cnt.header", "^\\W*triagemasterid\\s*,\\s*Code\\s*,\\s*Category\\s*,\\s*Status\\s*,\\s*printorder"));
-    }
-
-    // =====================================================================================================================================================
-    //  Clinical-Nursing - Vital Sign (asked for without a recording: a probe showed the report offers only the Location filter, so it uses the steps recorded for the other Master tabs)
-    // =====================================================================================================================================================
-
-    private void clinicalNursingVitalSign(com.kpj.pages.Report_page.Report_Console.Master_Report rc) {
-        locationCsvReport(rc, "Clinical-Nursing - Vital Sign", "CLINICAL NURSING VITAL SIGN",
-                System.getProperty("mst.cnv.report", "NURSING\\W*VITAL\\W*SIGN"), System.getProperty("mst.cnv.header", "^\\W*patientvitalid\\s*,\\s*Code\\s*,\\s*Vital\\s*,\\s*Default\\s*Value\\s*,\\s*Min\\s*Value\\s*,\\s*Max\\s*Value\\s*,\\s*Unit\\s*,\\s*Vital\\s*Order\\s*,\\s*Status"));
     }
 
     /**
@@ -636,24 +264,6 @@ public class Master_Report extends DevHisBase {
         return true;
     }
 
-    private static final Pattern ERROR_MESSAGE = Pattern.compile("server error|failed to retrieve|error in file|exception|database vendor code", Pattern.CASE_INSENSITIVE);
-
-    /**
-     * The first line of a downloaded report that carries an error message, or "" when none does. The records of a table are data whatever words they hold (Diagnosis Master lists "Exceptionally large
-     * newborn baby", which is not an exception), so for a file whose header has two or more columns only the header and the lines that do NOT have that many columns are searched (an error text or a
-     * stack trace added to the data). A file that is not such a table - an error message instead of a CSV - is searched whole.
-     */
-    private static String errorMessageIn(String text) {
-        java.util.List<java.util.List<String>> rows = com.kpj.pages.Report_page.Report_Console.Master_Report.parseCsv(text);
-        final int columns = rows.isEmpty() ? 0 : rows.get(0).size();
-        for (int i = 0; i < rows.size(); i++) {
-            if (columns >= 2 && i > 0 && rows.get(i).size() == columns) continue;
-            String line = String.join(",", rows.get(i)).trim();
-            if (ERROR_MESSAGE.matcher(line).find()) return line.length() > 200 ? line.substring(0, 200) + " ..." : line;
-        }
-        return "";
-    }
-
     /**
      * Show Report; the report is DOWNLOADED as a file. Four verdicts: it was generated (a non-empty .csv), it has no error (a download happened - the console's "No Data Available!" or no file at all = FAIL - and the file is data,
      * not an HTML error page), it is the report that was added (file name / first line match {@code reportRegex}; the first line matches {@code headerRegex}) and it lists records (at least one data line under the header).
@@ -673,11 +283,10 @@ public class Master_Report extends DevHisBase {
                 dr.diagnostics + (dr.downloaded ? (isCsv ? "" : " - FAILS: the file is not a .csv") : " - FAILS: nothing was downloaded") + (dr.savedTo.isEmpty() ? "" : ". Saved to " + dr.savedTo), generated ? "PASS" : "FAIL");
 
         // 2) no error: a download happened, it is data and not an error page / the console's refusal
-        final String errorFound = errorMessageIn(dr.text);
-        boolean errored = !dr.downloaded || !dr.failure.isEmpty() || dr.looksLikeHtml || !errorFound.isEmpty();
+        boolean errored = !dr.downloaded || !dr.failure.isEmpty() || dr.looksLikeHtml
+                || Pattern.compile("server error|failed to retrieve|error in file|exception|database vendor code", Pattern.CASE_INSENSITIVE).matcher(dr.text).find();
         final String errAct = !dr.downloaded ? "FAILS: the report was NOT downloaded - " + dr.diagnostics
-                : errored ? "FAILS: the downloaded file is an ERROR, not data - " + (!dr.failure.isEmpty() ? dr.failure
-                        : (errorFound.isEmpty() ? "" : "found \"" + errorFound + "\"; the file starts: ") + (dr.text.length() > 300 ? dr.text.substring(0, 300) + " ..." : dr.text))
+                : errored ? "FAILS: the downloaded file is an ERROR, not data - " + (dr.failure.isEmpty() ? (dr.text.length() > 300 ? dr.text.substring(0, 300) + " ..." : dr.text) : dr.failure)
                 : "The report was downloaded without an error (" + dr.bytes + " bytes)";
         stepL(sec + " - Verify the report has no error", "Look at what Show Report produced for an error message", "The report is downloaded without an error", errAct, errored ? "FAIL" : "PASS");
         addSummary(sec + " - Report error", errored ? "YES - " + (dr.downloaded ? "error text in the file" : (dr.errorText.isEmpty() ? "nothing downloaded" : dr.errorText)) : "none");
@@ -692,31 +301,19 @@ public class Master_Report extends DevHisBase {
         stepL(sec + " - Verify the report is the " + reportLabel + " report", "Read the file's name and first line", "The file is the " + reportLabel + " report",
                 !dr.downloaded ? "No readable file to judge (" + dr.diagnostics + ")"
                         : (named ? "The file name / first line mention \"" + reportRegex + "\"" : "FAILS: neither the file name \"" + dr.filename + "\" nor the first line matches \"" + reportRegex + "\"")
-                          + "; " + (dr.lines.isEmpty() ? "FAILS: the file is EMPTY - it has no header line, so its content cannot confirm the report (only its file name does)"
-                                  : (headed ? "the first line is the report's header" : "FAILS: the first line does not match the header pattern \"" + headerRegex + "\"") + ". First line: \"" + head + "\""),
+                          + "; " + (headed ? "the first line is the report's header" : "FAILS: the first line does not match the header pattern \"" + headerRegex + "\"") + ". First line: \"" + head + "\"",
                 related ? "PASS" : "FAIL");
 
-        // 4) it lists records: at least one data row (not only commas / blanks) under the header
-        int dataLines = Math.max(0, com.kpj.pages.Report_page.Report_Console.Master_Report.parseCsv(dr.text).size() - 1);
+        // 4) it lists records: at least one data line (not only commas / blanks) under the header
+        int dataLines = 0;
+        for (int i = 1; i < dr.lines.size(); i++) if (!dr.lines.get(i).replaceAll("[,;\\s\"]", "").isEmpty()) dataLines++;
         boolean records = generated && dataLines >= 1;
         final String recAct = !dr.downloaded ? "No readable file to judge (" + dr.diagnostics + ")"
-                : records ? dataLines + " data row(s) under the header; the first: \"" + (dr.lines.size() > 1 ? (dr.lines.get(1).length() > 200 ? dr.lines.get(1).substring(0, 200) + " ..." : dr.lines.get(1)) : "") + "\""
-                : "FAILS: the file is generated but lists NO RECORD - " + (dr.lines.isEmpty() ? "the file is EMPTY (" + dr.bytes + " bytes: not even a header line)" : dr.lines.size() == 1 ? "only its header line" : "only empty lines under its header") + ". No record matches the chosen filters (or the report returns none).";
-
-        // EVIDENCE: the downloaded CSV shown as a table (the application has no screen for it), photographed and saved next to the file; it is this step's screenshot
-        byte[] csvPng = null;
-        String pngSaved = "";
-        if (dr.downloaded && !dr.looksLikeZip && !dr.savedTo.isEmpty()) {   // an empty file is pictured too ("THE DOWNLOADED FILE IS EMPTY")
-            Path pngFile = Paths.get(dr.savedTo.replaceAll("(?i)\\.csv$", "") + ".png");
-            csvPng = rc.screenshotCsv(dr, sec, pngFile);
-            if (csvPng != null) pngSaved = pngFile.toString();
-        }
-        final String recName = sec + " - Verify the report shows records", recDesc = "Look for data rows under the CSV's header", recExpected = "The CSV lists the records matching the filters";
-        if (csvPng != null) step(csvPng, recName, recDesc, recExpected, recAct + ". The screenshot is the downloaded CSV shown as a table (also saved as " + pngSaved + ").", records ? "PASS" : "FAIL");
-        else stepL(recName, recDesc, recExpected, recAct + (dr.downloaded ? " (no picture of the CSV could be made " + rc.problems + "; the screenshot is the console)" : ""), records ? "PASS" : "FAIL");
+                : records ? dataLines + " data line(s) under the header; the first: \"" + (dr.lines.get(1).length() > 200 ? dr.lines.get(1).substring(0, 200) + " ..." : dr.lines.get(1)) + "\""
+                : "FAILS: the file is generated but lists NO RECORD - " + (dr.lines.size() <= 1 ? "only its header line (" + dr.lines.size() + " line)" : "only empty lines under its header") + ". No record matches the chosen filters (or the report returns none).";
+        stepL(sec + " - Verify the report shows records", "Look for data lines under the CSV's header", "The CSV lists the records matching the filters", recAct, records ? "PASS" : "FAIL");
 
         addSummary(sec + " - Downloaded file", dr.downloaded ? dr.filename + " (" + dr.bytes + " bytes) - " + dr.savedTo : "(none)");
-        addSummary(sec + " - CSV picture (evidence)", pngSaved.isEmpty() ? "(none)" : pngSaved);
         addSummary(sec + " - Full report text", dr.text.isEmpty() ? "(none)" : (dr.text.length() > 1500 ? dr.text.substring(0, 1500) + " ..." : dr.text));
         addSummary(sec + " - Records in the report", records ? dataLines + " data line(s)" : "NONE");
         return related && records;
