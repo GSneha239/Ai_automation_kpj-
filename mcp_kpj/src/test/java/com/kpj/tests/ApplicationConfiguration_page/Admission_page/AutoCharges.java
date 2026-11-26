@@ -62,11 +62,16 @@ public class AutoCharges extends DevHisBase {
         String chosen = null, toast = null;
         boolean ok = false, exists = false;
         StringBuilder tried = new StringBuilder();
-        int max = Math.min(total, 8);   // cap attempts
+        int max = Math.min(total, 10);   // cap attempts
+        // The shared QA environment keeps every Auto Charge a run saves, and this test used to walk the FIRST 8 services of the list
+        // (8,015 options): by 2026-11-26 all 8 already had one, Add landed for none of them, and the last attempt submitted anyway
+        // ("saved successfully" + a list check that found AB008 from an earlier run). Start from a random service past those 8 instead.
+        int start = total > 8 ? 8 + new java.util.Random().nextInt(total - 8) : 0;
         byte[] addedPng = null;
         String addResult = "";
         boolean addedOk = false;
-        for (int i = 0; i < max; i++) {
+        for (int k = 0; k < max; k++) {
+            int i = (start + k) % total;
             chosen = ac.selectServiceByIndex(i);
             if (chosen == null || chosen.isEmpty()) continue;
             // Click Add (beside Services) — it puts the chosen service into the Services grid; Submit saves that grid.
@@ -76,7 +81,7 @@ public class AutoCharges extends DevHisBase {
             try { addedPng = page.screenshot(new com.microsoft.playwright.Page.ScreenshotOptions().setTimeout(8000)); }
             catch (Exception e) { System.out.println("AutoCharges: filled-form screenshot failed - " + e.getMessage()); }
             // Add silently does nothing for a service that already has an Auto Charge: choose a different one.
-            if (!addedOk && i < max - 1) { tried.append(chosen).append("(Add did not land→next) "); continue; }
+            if (!addedOk) { tried.append(chosen).append("(Add did not land→next) "); continue; }
             toast = ac.submitAndGetToast();
             String tl = toast == null ? "" : toast.toLowerCase();
             ok = tl.contains("saved") || tl.contains("success") || tl.contains("added") || tl.contains("updated");
@@ -99,7 +104,8 @@ public class AutoCharges extends DevHisBase {
                     "The chosen service is added to the Services grid", addResult, addedOk ? "PASS" : "FAIL");
         }
 
-        String actual = toast == null || toast.isEmpty() ? "No toast appeared"
+        String actual = !addedOk ? "Not submitted - none of the " + max + " services tried could be added to the Services grid (each already has an Auto Charge?)"
+                : toast == null || toast.isEmpty() ? "No toast appeared"
                 : (ok ? toast : "Not saved — server returned: \"" + toast + "\"" + (ac.lastSaveHttp.isEmpty() ? "" : "  ||  HTTP: " + ac.lastSaveHttp));
         step(page, "Click Submit & success toast", "Click Submit; wait for the success toast",
                 "'... saved successfully.' toast", actual, ok ? "PASS" : "FAIL");
