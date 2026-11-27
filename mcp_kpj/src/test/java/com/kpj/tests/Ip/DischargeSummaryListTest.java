@@ -6,7 +6,7 @@ import com.kpj.pages.LoginPage;
 // The page object is referenced by its fully-qualified name (com.kpj.pages.Ip.DischargeSummaryListPage).
 
 /**
- * TC22 - IP &gt; <b>Discharge Summary List</b> — ReferralLetter/Medical Report template.
+ * IP &gt; <b>Discharge Summary List</b> — ReferralLetter/Medical Report template.
  *
  * <ol>
  *   <li>Open Discharge Summary List (IP menu → Discharge Summary List).</li>
@@ -18,7 +18,7 @@ import com.kpj.pages.LoginPage;
  */
 public class DischargeSummaryListTest extends DevHisBase {
 
-    public DischargeSummaryListTest() { super("TC22_DischargeSummaryList"); }
+    public DischargeSummaryListTest() { super("Ip_DischargeSummaryList"); }
 
     public static void main(String[] args) {
         DischargeSummaryListTest t = new DischargeSummaryListTest();

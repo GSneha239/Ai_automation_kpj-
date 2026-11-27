@@ -48,10 +48,12 @@ public class ConsultantOnCall extends DevHisBase {
 
         // DevHIS rejects a roster whose date/doctor/duty combination already exists ("One or more roster
         // rows already exist..."), so a fixed window makes this test pass once and fail on every re-run.
-        // Default to a FUTURE window that shifts with the time of day, giving each run its own free slot.
+        // Default to a RANDOM future window (30..~360 days ahead) with a random Department / Doctor / Duty / Room: the old
+        // "30 + secondOfDay % 90" window with the first option of everything had used up every free slot by 2026-11-26 ("One or
+        // more roster rows already exist..."), because the shared environment keeps every earlier run's roster.
         // Pin it with -DfromDate=/-DtoDate= (yyyy-MM-dd) when you want a specific range.
         java.time.LocalDate base = java.time.LocalDate.now()
-                .plusDays(30 + (java.time.LocalTime.now().toSecondOfDay() % 90));
+                .plusDays(30 + new java.util.Random().nextInt(330));
         String fromDate = System.getProperty("fromDate", base.toString());
         String toDate = System.getProperty("toDate", base.plusDays(6).toString());
 

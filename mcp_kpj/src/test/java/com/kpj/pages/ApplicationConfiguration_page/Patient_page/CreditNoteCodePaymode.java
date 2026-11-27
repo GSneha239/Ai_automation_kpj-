@@ -85,7 +85,7 @@ public class CreditNoteCodePaymode extends BasePage {
         try {
             page.waitForFunction("() => [...document.querySelectorAll('input')].some(e=>(e.offsetWidth||e.offsetHeight||e.getClientRects().length)"
                             + " && (e.getAttribute('ng-model')||'')==='" + CODE_MODEL + "')",
-                    null, new Page.WaitForFunctionOptions().setTimeout(15000));
+                    null, new Page.WaitForFunctionOptions().setTimeout(30000));    // 15s was not enough in the 2026-11-26 full run
         } catch (Exception e) { return false; }
         return page.url().toLowerCase().contains("creditnotecodepaymode");
     }

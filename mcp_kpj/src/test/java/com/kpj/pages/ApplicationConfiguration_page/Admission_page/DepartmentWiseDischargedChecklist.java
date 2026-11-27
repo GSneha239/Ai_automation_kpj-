@@ -167,7 +167,65 @@ public class DepartmentWiseDischargedChecklist extends BasePage {
         for (int i = 0; i < 80 && !gridReady(); i++) page.waitForTimeout(250);
         List<String[]> rows = new ArrayList<>();
         for (int i = 0; i < 32 && rows.isEmpty(); i++) { rows = existing(); if (rows.isEmpty()) page.waitForTimeout(250); }
-        return rows;
+        return existingAllPages(rows);
+    }
+
+    /** The grid's total item count (pager "of N items"); -1 when unreadable. */
+    public int totalItems() {
+        Object r = page.evaluate("() => { try{ return angular.element(document.getElementById('grid1')).scope().gridOptions.totalItems; }catch(e){ return -1; } }");
+        return r instanceof Number ? ((Number) r).intValue() : -1;
+    }
+
+    private boolean clickPager(String which) {
+        Locator b = page.locator("button.ui-grid-pager-" + which).first();
+        try {
+            if (b.count() == 0 || !b.isVisible() || !b.isEnabled()) return false;
+            b.click(new Locator.ClickOptions().setTimeout(4000));
+            return true;
+        } catch (Exception e) { return false; }
+    }
+
+    /** Every row of the list: the grid pages on the SERVER (25 per page, "1 - 25 of 28 items"), so the first page alone hides the other codes (2026-11-26: DDC026-028 sat on page 2 and Save said "Code already exist"). Leaves the grid on page 1. */
+    public List<String[]> existingAllPages() { return existingAllPages(existing()); }
+
+    /** Page the grid until the page holding this Code is on screen (so a screenshot shows the row); false when no page has it. Starts from page 1. */
+    public boolean openPageWith(String code) {
+        for (int i = 0; i < 40 && clickPager("first"); i++) { page.waitForTimeout(400); if (!existing().isEmpty()) break; }
+        for (int p = 0; p < 40; p++) {
+            List<String[]> now = existing();
+            for (String[] r : now) if (r[0].trim().equalsIgnoreCase(code.trim())) { waitForAngular(400); return true; }
+            String before = now.isEmpty() ? "" : now.get(0)[0] + "|" + now.get(0)[1];
+            if (!clickPager("next")) return false;
+            for (int i = 0; i < 40; i++) {
+                page.waitForTimeout(250);
+                List<String[]> n2 = existing();
+                if (!n2.isEmpty() && !(n2.get(0)[0] + "|" + n2.get(0)[1]).equals(before)) break;
+            }
+        }
+        return false;
+    }
+
+    private List<String[]> existingAllPages(List<String[]> firstPage) {
+        List<String[]> all = new ArrayList<>(firstPage);
+        int total = totalItems();
+        if (total <= all.size()) return all;
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        for (String[] r : all) seen.add(r[0] + "|" + r[1]);
+        for (int p = 0; p < 40 && all.size() < total; p++) {
+            String before = existing().isEmpty() ? "" : existing().get(0)[0] + "|" + existing().get(0)[1];
+            if (!clickPager("next")) break;
+            List<String[]> now = new ArrayList<>();
+            for (int i = 0; i < 40; i++) {   // up to 10 s for the next page to arrive
+                page.waitForTimeout(250);
+                now = existing();
+                if (!now.isEmpty() && !(now.get(0)[0] + "|" + now.get(0)[1]).equals(before)) break;
+            }
+            int added = 0;
+            for (String[] r : now) if (seen.add(r[0] + "|" + r[1])) { all.add(r); added++; }
+            if (added == 0) break;
+        }
+        for (int i = 0; i < 40 && clickPager("first"); i++) { page.waitForTimeout(400); if (existing().size() > 0 && !existing().get(0)[0].isEmpty()) break; }
+        return all;
     }
 
     /** The pager text ("1 - 5 of 12 items"), "" when there is none. */

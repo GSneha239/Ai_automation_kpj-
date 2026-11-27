@@ -189,11 +189,17 @@ public class AmbulanceBooking extends BasePage {
 
     // ---- step 1: vehicle type ---------------------------------------------
 
+    /**
+     * JS condition (run with the {@code JS} helpers) that is true when the Vehicle Type just chosen left the form in the
+     * layout this screen needs. Booking needs the Doctor field; Requisition has none and overrides this.
+     */
+    protected String usableLayoutJs() { return "!!byNg('" + M + "doctorid')"; }
+
     /** Select <b>Vehicle Type</b> ({@code AmbulanceRequisition.vehicletypeid}) — it cascades into Vehicle. */
     public String selectVehicleType() {
         // The first real Vehicle Type ("Air Ambulance Transfer") flips the form to the Payable layout, which has no Doctor
-        // field - yet Save on this screen demands a Doctor, so a booking could never be saved. Take the first Vehicle Type
-        // that keeps the Doctor field on screen (the OPD / IPD layout); fall back to the first real one if none does.
+        // field and turns MRN into PayableNo. - yet Booking's Save demands a Doctor. Take the first Vehicle Type that keeps
+        // the layout this screen needs (usableLayoutJs); fall back to the first real one if none does.
         Object r = page.evaluate("() => new Promise(async resolve => {" + JS
                 + " const e=byNg('" + M + "vehicletypeid'); if(!e) return resolve('(no-field)');"
                 + " const real=o=>o.value && !/^-*\\s*select|^\\s*$|^--/i.test(norm(o.textContent));"
@@ -203,8 +209,8 @@ public class AmbulanceBooking extends BasePage {
                 + " for(let k=0;k<15 && !idx.length;k++){ await sleep(400); idx.push(...[...e.options].map((o,i)=>real(o)?i:-1).filter(i=>i>=0)); }"
                 + " if(!idx.length) return resolve('(no-option)');"
                 + " for(const i of idx){ set(i); await sleep(900);"
-                + "   if(byNg('" + M + "doctorid')) return resolve(norm(e.options[i].textContent)); }"
-                + " set(idx[0]); resolve(norm(e.options[idx[0]].textContent) + ' (no vehicle type shows a Doctor field)'); })");
+                + "   if(" + usableLayoutJs() + ") return resolve(norm(e.options[i].textContent)); }"
+                + " set(idx[0]); resolve(norm(e.options[idx[0]].textContent) + ' (no vehicle type keeps the needed layout)'); })");
         lastVehicleType = r == null ? "" : r.toString();
         waitForAngular(1500);   // Vehicle list loads off the back of this
         System.out.println("AmbulanceBooking: Vehicle Type = " + lastVehicleType);

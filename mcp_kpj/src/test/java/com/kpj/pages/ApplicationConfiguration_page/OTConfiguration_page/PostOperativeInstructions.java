@@ -47,51 +47,51 @@ public class PostOperativeInstructions extends BasePage {
     /**
      * Application Configuration &rarr; OT Configuration &rarr; PostOperativeInstructions.
      *
-     * <p>The route is taken from the menu link and used as the fallback too — guessing routes on this
-     * module is a coin flip, and a wrong guess lands the run on the dashboard while still looking like a
-     * navigation (the Shift screen is served from {@code #/AccountingShift}).</p>
+     * <p>Each level is opened only if it is closed and the next one is looked up INSIDE its parent's {@code li}; the sidebar is built
+     * lazily after login, so each level is waited for and clicked again if needed. There is deliberately no typed-hash or deep-link
+     * fallback: the app answers those with "Reload page" / the dashboard.</p>
      */
     public boolean navigateViaMenu(String baseUrl) {
         try { page.waitForFunction("() => window.angular", null,
                 new Page.WaitForFunctionOptions().setTimeout(20000)); } catch (Exception ignore) { }
 
-        clickMenu("^\\s*application\\s*configuration\\s*$");
-        clickMenu("^\\s*ot\\s*configuration\\s*$");
-        lastMenu = describeMenu();
+        boolean drawn = false;
+        for (int attempt = 1; attempt <= 3 && !drawn; attempt++) {
+            expandMenuEntry(null, "^\\s*application\\s*config(uration)?\\s*$");
+            expandMenuEntry("^\\s*application\\s*config(uration)?\\s*$", "^\\s*ot\\s*configuration\\s*$");
+            lastMenu = describeMenu();
 
-        // Anchored to the whole label. A loose match on "generic" would take the first menu entry that
-        // merely contains the word — the scaffolding trap that once ran an entire Compliance flow
-        // against Complaint Type and reported PASS against the wrong screen's fields.
-        Object href = page.evaluate("() => {" + JS
-                + " const a=[...document.querySelectorAll('a[href]')]"
-                + "   .find(x=>/^\\s*post\\s*[- ]?\\s*operative\\s*instruction\\s*s?\\s*$/i.test(norm(x.textContent)));"
-                + " if(!a) return ''; a.id='__poiMenu'; return a.getAttribute('href')||''; }");
-        lastRoute = href == null ? "" : href.toString();
-        if (!lastRoute.isEmpty()) {
-            try { page.locator("#__poiMenu").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000)); }
-            catch (Exception e) { System.out.println("PostOperativeInstructions.nav: " + e.getMessage().split("\n")[0]); }
-            page.evaluate("() => { const e=document.getElementById('__poiMenu'); if(e) e.removeAttribute('id'); }");
-            waitForAngular(3000);
-        }
-        if (!onScreen() && !lastRoute.isEmpty()) {
-            String hash = lastRoute.startsWith("#") ? lastRoute : "#" + lastRoute;
-            try { page.evaluate("(h) => { window.location.hash = h; }", hash.substring(1)); }
-            catch (Exception ignore) { }
-            waitForAngular(3000);
-            if (!onScreen()) {
-                try { page.navigate(baseUrl + hash); } catch (Exception ignore) { }
-                waitForAngular(3500);
+            // Anchored to the whole label. A loose match would take the first menu entry that merely contains
+            // the word — the scaffolding trap that once ran a flow against the wrong screen and reported PASS.
+            Object href = page.evaluate("() => {" + JS
+                    + " const top=[...document.querySelectorAll('a')].find(x=>/^\\s*application\\s*config(uration)?\\s*$/i.test(norm(x.textContent)) && vis(x));"
+                    + " const topLi=(top&&top.closest('li'))||document;"
+                    + " const grp=[...topLi.querySelectorAll('a')].find(x=>/^\\s*ot\\s*configuration\\s*$/i.test(norm(x.textContent)) && vis(x));"
+                    + " const scope=(grp&&grp.closest('li'))||topLi;"
+                    + " const a=[...scope.querySelectorAll('a[href]')]"
+                    + "   .find(x=>/^\\s*post\\s*[- ]?\\s*operative\\s*instruction\\s*s?\\s*$/i.test(norm(x.textContent)));"
+                    + " if(!a) return ''; a.id='__poiMenu'; return a.getAttribute('href')||''; }");
+            lastRoute = href == null ? "" : href.toString();
+            if (!lastRoute.isEmpty()) {
+                try { page.locator("#__poiMenu").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000)); }
+                catch (Exception e) { System.out.println("PostOperativeInstructions.nav: " + e.getMessage().split("\n")[0]); }
+                page.evaluate("() => { const e=document.getElementById('__poiMenu'); if(e) e.removeAttribute('id'); }");
+                waitForAngular(2000);
+                // The route resolving is not the screen rendering. GENMST loads its view after the hash changes,
+                // and until it does the DASHBOARD's controls are still in the DOM — a run that starts typing
+                // straight away puts its values into dashboard widgets (LocationName took the remark once).
+                drawn = waitForScreenControls(30000) && onScreen();
+            }
+            if (!drawn) {
+                System.out.println("PostOperativeInstructions.nav: attempt " + attempt + " - screen not shown (" + page.url() + ")");
+                page.waitForTimeout(2000);
             }
         }
-        // The route resolving is not the screen rendering. GENMST loads its view after the hash changes,
-        // and until it does the DASHBOARD's controls are still in the DOM — a run that starts typing
-        // straight away puts its values into dashboard widgets (LocationName took the remark once).
-        waitForScreenControls(15000);
 
         Object body = page.evaluate("() => (document.body? document.body.innerText : '')"
                 + ".replace(/\\s+/g,' ').trim().slice(0,300)");
         lastBodyText = body == null ? "" : body.toString();
-        return onScreen() && !lastBodyText.isEmpty();
+        return drawn && !lastBodyText.isEmpty();
     }
 
     /** Wait for this screen's OWN controls — a Code box, or its grid — rather than the dashboard's. */
@@ -112,15 +112,6 @@ public class PostOperativeInstructions extends BasePage {
                     + timeoutMs + "ms — the screen may not have rendered");
             return false;
         }
-    }
-
-    private void clickMenu(String textRegex) {
-        page.evaluate("(re) => {" + JS
-                + " const rx=new RegExp(re,'i');"
-                + " const a=[...document.querySelectorAll('a,li>a,span')].filter(vis)"
-                + "   .find(x=>rx.test(norm(x.textContent)));"
-                + " if(a) a.click(); }", textRegex);
-        waitForAngular(1200);
     }
 
     /** Every visible menu entry — used to pin the real label when a menu click misses. */

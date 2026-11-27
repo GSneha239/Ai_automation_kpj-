@@ -6,7 +6,7 @@ import com.kpj.pages.Op_page.OutPatientQueueManagementPage;
 import com.microsoft.playwright.Page;
 
 /**
- * TC10 - OP &gt; Outpatient Queue Management (consolidated) — mirrors the TC06 Appointment List pattern:
+ * OP &gt; Outpatient Queue Management (consolidated) — mirrors the Appointment List pattern:
  * one login, then each queue action as its own section, each re-opening the queue and searching. Uses
  * the single {@link OutPatientQueueManagementPage} page object.
  *
@@ -37,7 +37,7 @@ public class OutPatientQueueManagementTest extends DevHisBase {
     private static final String FROM_DATE = java.time.LocalDate.now().minusDays(30).format(DMY);
     private static final String TO_DATE   = java.time.LocalDate.now().format(DMY);
 
-    public OutPatientQueueManagementTest() { super("TC10_QueueManagement"); }
+    public OutPatientQueueManagementTest() { super("Op_OutpatientQueueManagement"); }
 
     public static void main(String[] args) {
         OutPatientQueueManagementTest t = new OutPatientQueueManagementTest();

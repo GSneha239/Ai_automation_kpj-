@@ -6,7 +6,7 @@ import com.kpj.pages.LoginPage;
 // The page object is referenced by its fully-qualified name (com.kpj.pages.Ip.DischargePage).
 
 /**
- * TC21 - IP &gt; <b>Discharge</b> (consolidated) — one login, then each Discharge action as its own section
+ * IP &gt; <b>Discharge</b> (consolidated) — one login, then each Discharge action as its own section
  * (each re-opens the list + searches + selects a patient, so one failing section doesn't abort the rest):
  *
  * <ol>
@@ -19,7 +19,7 @@ import com.kpj.pages.LoginPage;
  */
 public class DischargeTest extends DevHisBase {
 
-    public DischargeTest() { super("TC21_Discharge"); }
+    public DischargeTest() { super("Ip_Discharge"); }
 
     public static void main(String[] args) {
         DischargeTest t = new DischargeTest();

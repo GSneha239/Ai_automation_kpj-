@@ -165,6 +165,8 @@ public class BloodBagOpeningStock extends DevHisBase {
                     once ? "PASS" : "FAIL");
         }
         if (!bb.lastTypeIds.isEmpty()) addSummary("Blood Bag Type ids", bb.lastTypeIds);
+        if (bb.lastTypeNameDiffers) addSummary("Blood Bag Type name in the list", "the list names the type under another entry of the same id (entered \"" + bb.lastType
+                + "\"; entries sharing the id: " + bb.lastTypeAliases.size() + ") - accepted as the same type id, reported here because the master data cannot tell them apart");
 
         addSummary("Blood Bag No.", bag);
         addSummary("Weight / Type / Component / Group", bb.lastWeight + " gm / " + bb.lastType + " / " + bb.lastComponent + " / " + bb.lastGroup);

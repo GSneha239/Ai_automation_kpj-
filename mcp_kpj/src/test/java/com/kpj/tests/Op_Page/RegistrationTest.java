@@ -8,7 +8,7 @@ import com.kpj.pages.Op_page.RegistrationPage.SaveOutcome;
 import com.microsoft.playwright.Page;
 
 /**
- * TC02 - OP &gt; Registration (VisitScreen).
+ * OP &gt; Registration (VisitScreen).
  *
  * <p>Login; fill EVERY section for a randomised patient (Patient / Correspondence / Other / Payor /
  * Visit / Next of Kin) plus Photo/Thumb/IC-Card attachments; Save; handle the in-app "Consent Details"
@@ -19,7 +19,7 @@ import com.microsoft.playwright.Page;
  */
 public class RegistrationTest extends DevHisBase {
 
-    public RegistrationTest() { super("TC02_Registration"); }
+    public RegistrationTest() { super("Op_Registration"); }
 
     public static void main(String[] args) {
         RegistrationTest t = new RegistrationTest();

@@ -36,6 +36,17 @@ public class AmbulanceRequisition extends AmbulanceBooking {
     @Override protected String listUrlToken() { return "ambulancerequisition"; }
 
     /**
+     * This form has no Doctor field, so the parent's check never matched: it tried every Vehicle Type and fell back to the
+     * first one ("Air Ambulance Transfer"), which turns MRN into PayableNo. (Payable / External radios), so the MRN could
+     * not be found. What this screen needs is the patient layout: MRN with the OPD / IPD / External radios.
+     */
+    @Override
+    protected String usableLayoutJs() {
+        return "[...document.querySelectorAll(\"input[type=radio][ng-model='" + M + "OPDIPD']\")].filter(vis)"
+                + ".some(x=>/\\bIPD\\b/i.test(norm((x.closest('label')||x.parentElement).textContent)))";
+    }
+
+    /**
      * This form has no Booking Details block, so there is nothing to select here.
      *
      * @throws UnsupportedOperationException always — calling it signals the flow is using the wrong screen.

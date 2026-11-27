@@ -20,29 +20,35 @@ public class FileLinking extends BasePage {
 
     // ---- navigation ------------------------------------------------------
 
+    /** True only when the screen's own File Name box is drawn. */
+    private static final String SCREEN_DRAWN = "() => [...document.querySelectorAll('input')].some(e=>(e.getAttribute('ng-model')||'')==='filelinkings.FileName' && e.offsetParent!==null)";
+
+    /**
+     * Nursing Station &rarr; File Linking through the sidebar. The sidebar is built lazily after login, so each level is waited for and
+     * clicked again if needed. There is deliberately no typed-hash fallback: the app answers it with "Reload page" / the dashboard.
+     */
     public boolean navigateTo(String baseUrl) {
         try { page.waitForFunction("() => window.angular", null, new Page.WaitForFunctionOptions().setTimeout(15000)); } catch (Exception ignore) { }
-        page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const b=[...document.querySelectorAll('a,li>a')].find(x=>/^\\s*nursing\\s*station\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null); if(b) b.click(); }");
-        waitForAngular(1000);
-        Object href = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const a=[...document.querySelectorAll('a[href]')].find(x=>/file\\s*linking/i.test(norm(x.textContent)) || /filelinking/i.test(x.getAttribute('href')||'')); if(!a) return ''; a.id='__flMenu'; return a.getAttribute('href')||'link'; }");
-        if (href != null && !href.toString().isEmpty()) {
-            route = href.toString();
-            try { page.locator("#__flMenu").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000)); } catch (Exception e) { System.out.println("FileLinking.nav: click failed - " + e.getMessage()); }
-            waitForAngular(2000);
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            expandMenuEntry(null, "^\\s*nursing\\s*station\\s*$");
+            Object href = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const top=[...document.querySelectorAll('a')].find(x=>/^\\s*nursing\\s*station\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null); const li=top&&top.closest('li'); if(!li) return ''; const a=[...li.querySelectorAll('a[href]')].find(x=>(x.getAttribute('href')||'').toLowerCase()==='#/filelinking'); if(!a) return ''; a.id='__flMenu'; return a.getAttribute('href'); }");
+            if (href != null && !href.toString().isEmpty()) {
+                route = href.toString();
+                try { page.locator("#__flMenu").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000)); } catch (Exception e) { System.out.println("FileLinking.nav: click failed - " + e.getMessage().split("\n")[0]); }
+                page.evaluate("() => { const e=document.getElementById('__flMenu'); if(e) e.removeAttribute('id'); }");
+                try {
+                    page.waitForFunction(SCREEN_DRAWN, null, new Page.WaitForFunctionOptions().setTimeout(30000));
+                    waitForAngular(1000);
+                    if (onScreen()) return true;
+                } catch (Exception ignore) { }
+            }
+            System.out.println("FileLinking.nav: attempt " + attempt + " - screen not shown (" + page.url() + ")");
+            page.waitForTimeout(2000);
         }
-        if (!page.url().toLowerCase().contains("filelinking")) {
-            try { page.evaluate("() => { window.location.hash = '#/FileLinking'; }"); } catch (Exception ignore) { }
-            waitForAngular(2000);
-        }
-        try {
-            page.waitForFunction("() => [...document.querySelectorAll('input')].some(e=>(e.getAttribute('ng-model')||'')==='filelinkings.FileName' && e.offsetParent!==null)",
-                    null, new Page.WaitForFunctionOptions().setTimeout(15000));
-        } catch (Exception ignore) { System.out.println("FileLinking.nav: form not ready"); }
-        waitForAngular(1000);
-        return onScreen();
+        return false;
     }
 
-    public boolean onScreen() { return page.url().toLowerCase().contains("filelinking"); }
+    public boolean onScreen() { return page.url().toLowerCase().contains("filelinking") && Boolean.TRUE.equals(page.evaluate(SCREEN_DRAWN)); }
 
     /** Enter an MRN directly and search (SearchPatientByMRNo). Returns true if the patient loaded (MRN retained). */
     public boolean enterMrn(String mrn) {

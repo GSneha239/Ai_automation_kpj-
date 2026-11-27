@@ -406,6 +406,14 @@ public class ReportConsole extends BasePage {
             res.chosen = "0 - 100";
             return;
         }
+        // Bill No (Filter by Bill No): a typed box, no list — type a real bill number and the popup's OK takes it (-Dreport.billno)
+        Locator billNo = m.locator("input#BillNoInput:visible, input[ng-model$='.BillNo']:visible");
+        if (billNo.count() > 0) {
+            String no = System.getProperty("report.billno", DEFAULT_BILL_NO);
+            billNo.first().fill(no);
+            res.chosen = "Bill No " + no;
+            return;
+        }
         // Patient: type an MRN and Find (the patient must exist) — the MRN comes from -Dreport.mrn
         Locator mrn = m.locator("input[ng-model='Patient.MRNo']:visible");
         if (mrn.count() > 0) {
@@ -478,6 +486,8 @@ public class ReportConsole extends BasePage {
 
     /** A patient that exists on devhis (seen in the Date Wise Death Report); override with -Dreport.mrn. */
     private static final String DEFAULT_MRN = "1100339288";
+    /** An inpatient bill that exists on devhis (listed in the PER-PS101 Bill Amount report, MRN 1000338088); override with -Dreport.billno. */
+    private static final String DEFAULT_BILL_NO = "IPB-THKD-0000003";
     /** Words tried in search-first popups (e.g. Diagnosis) until the list shows entries. */
     private static final String[] SEARCH_TERMS = {"fever", "pain", "diabetes", "a"};
     /** Typed in number popups (Discharge, Occupancy Rate, beds); override with -Dreport.number. */
@@ -591,11 +601,55 @@ public class ReportConsole extends BasePage {
         StringBuilder sb = new StringBuilder();
         for (com.microsoft.playwright.Frame f : tab.frames()) {
             try {
+                if (!String.valueOf(f.url()).startsWith("http")) continue;   // a browser-internal frame (the PDF viewer) never answers
                 Object t = f.evaluate("() => document.body ? document.body.innerText : ''");
                 if (t != null) sb.append(' ').append(t.toString());
             } catch (Exception ignore) { }
         }
         return sb.toString().replace(' ', ' ').replaceAll("\\s+", " ").trim();
+    }
+
+    /** True when the report tab is a PDF in the browser's PDF viewer (some categories, e.g. OT Reports, open a PDF instead of the Crystal viewer). */
+    public boolean isPdf(Page tab) {
+        try {
+            Object r = tab.evaluate("() => document.contentType");
+            return r != null && r.toString().toLowerCase().contains("pdf");
+        } catch (Exception e) { return false; }
+    }
+
+    /** What a PDF report tab holds. */
+    public static class PdfInfo {
+        public int bytes, pages;
+        public String text = "", problem = "";
+        /** One picture per page (the viewer itself would show only the page in view). */
+        public List<byte[]> shots = new ArrayList<>();
+    }
+
+    /** Read the PDF the tab shows: fetch its bytes from inside the tab (same session), count the pages, read the first two pages' text, render every page. */
+    public PdfInfo readPdf(Page tab, int maxPages) {
+        PdfInfo r = new PdfInfo();
+        try {
+            Object o = tab.evaluate("async () => { const res = await fetch(location.href, {credentials:'include'}); const buf = await res.arrayBuffer(); const u8 = new Uint8Array(buf);"
+                    + " let head=''; for(let i=0;i<Math.min(8,u8.length);i++) head += String.fromCharCode(u8[i]);"
+                    + " let bin=''; const chunk=0x8000; for(let i=0;i<u8.length;i+=chunk) bin += String.fromCharCode.apply(null, u8.subarray(i,i+chunk));"
+                    + " return {len:u8.length, head:head, status:res.status, b64:btoa(bin)}; }");
+            @SuppressWarnings("unchecked")
+            java.util.Map<String, Object> m = (java.util.Map<String, Object>) o;
+            r.bytes = ((Number) m.get("len")).intValue();
+            if (!String.valueOf(m.get("head")).startsWith("%PDF")) { r.problem = "the tab says PDF but the bytes are not (HTTP " + m.get("status") + ")"; return r; }
+            byte[] pdf = java.util.Base64.getDecoder().decode(String.valueOf(m.get("b64")));
+            try (org.apache.pdfbox.pdmodel.PDDocument doc = org.apache.pdfbox.pdmodel.PDDocument.load(pdf)) {
+                r.pages = doc.getNumberOfPages();
+                org.apache.pdfbox.text.PDFTextStripper st = new org.apache.pdfbox.text.PDFTextStripper();
+                st.setStartPage(1); st.setEndPage(Math.min(2, Math.max(1, r.pages)));
+                r.text = st.getText(doc).replaceAll("\\s+", " ").trim();
+            }
+            r.shots = com.kpj.core.PdfUtil.pagesToPng(pdf, maxPages, 1100);
+            if (r.shots.isEmpty()) r.problem = "the PDF could not be drawn";
+        } catch (Throwable e) {
+            r.problem = "the PDF could not be read: " + String.valueOf(e.getMessage()).split("\n")[0];
+        }
+        return r;
     }
 
     /**

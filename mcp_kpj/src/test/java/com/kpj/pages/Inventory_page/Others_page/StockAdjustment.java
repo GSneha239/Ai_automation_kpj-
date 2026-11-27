@@ -760,6 +760,15 @@ public class StockAdjustment extends BasePage {
     }
 
     public static String firstLine(Throwable e) {
-        return String.valueOf(e.getMessage()).split("\\R")[0];
+        String m = String.valueOf(e.getMessage());
+        // A Playwright exception's message starts with a bare "Error {" line, so the first line alone told nobody anything
+        // (a 2026-11-25 report said only "calendar step failed: Error {"): use its message='...' text and the first call-log line.
+        if (m.startsWith("Error {")) {
+            java.util.regex.Matcher msg = java.util.regex.Pattern.compile("message='([^\\r\\n]*)").matcher(m);
+            java.util.regex.Matcher log = java.util.regex.Pattern.compile("(?m)^\\s*-\\s+(.+)$").matcher(m);
+            String text = msg.find() ? msg.group(1).replaceAll("'\\s*$", "") : "";
+            if (!text.isEmpty()) return log.find() ? text + " [" + log.group(1).trim() + "]" : text;
+        }
+        return m.split("\\R")[0];
     }
 }

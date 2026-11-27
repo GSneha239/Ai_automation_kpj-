@@ -21,6 +21,31 @@ public final class PdfUtil {
     private static final float MIN_DPI = 96f, MAX_DPI = 600f;
 
     /**
+     * Render EVERY page (at most {@code maxPages}) of the PDF to a PNG, each about {@code widthPx} wide. Used to show a whole
+     * multi-page report in one screenshot (Chromium's PDF viewer only shows the page in view). Empty list on failure.
+     */
+    public static java.util.List<byte[]> pagesToPng(byte[] pdf, int maxPages, int widthPx) {
+        java.util.List<byte[]> out = new java.util.ArrayList<>();
+        if (pdf == null || pdf.length == 0) return out;
+        try (PDDocument doc = PDDocument.load(pdf)) {
+            PDFRenderer renderer = new PDFRenderer(doc);
+            int n = Math.min(doc.getNumberOfPages(), Math.max(1, maxPages));
+            for (int p = 0; p < n; p++) {
+                float widthPoints = doc.getPage(p).getMediaBox().getWidth();
+                float dpi = widthPoints > 0 ? (72f * widthPx / widthPoints) : 100f;
+                dpi = Math.max(60f, Math.min(MAX_DPI, dpi));
+                BufferedImage img = renderer.renderImageWithDPI(p, dpi, ImageType.RGB);
+                ByteArrayOutputStream bos = new ByteArrayOutputStream();
+                ImageIO.write(img, "png", bos);
+                out.add(bos.toByteArray());
+            }
+        } catch (Exception e) {
+            System.out.println("PdfUtil.pagesToPng: " + e.getMessage());
+        }
+        return out;
+    }
+
+    /**
      * Render page 1 of the given PDF bytes to a PNG byte[]. Returns null on failure.
      *
      * <p>The DPI is chosen so the page comes out ~{@value #TARGET_WIDTH_PX}px wide instead of a fixed 150: a

@@ -96,21 +96,38 @@ public class DepartmentWiseDischargedChecklist extends DevHisBase {
         step("Click Submit", "Click Submit", "The checklist item is submitted", dw.problems.isEmpty() ? "Submit clicked" + (tried.isEmpty() ? "" : " — earlier attempt(s): " + tried) : "Problem — " + dw.problems,
                 dw.problems.isEmpty() ? "PASS" : "FAIL");
 
-        // the new item should now be in the list (the screen returns to it after a save)
-        String listed = "";
-        if (ok) {
-            long end = System.currentTimeMillis() + 15000;
-            while (System.currentTimeMillis() < end && listed.isEmpty()) {
-                for (String[] r : dw.existing()) if (r[0].equalsIgnoreCase(code) && r[1].equalsIgnoreCase(remark)) listed = r[0] + " = " + r[1] + " (status " + r[2] + (r[3].isEmpty() ? "" : ", department " + r[3]) + ")";
-                if (listed.isEmpty()) page.waitForTimeout(500);
-            }
-        }
         step("Verify success toast message", "Read the toast shown after Submit", "A success toast appears",
                 ok ? "PASSES because the toast is a success message: \"" + toast + "\"" + (dw.lastSaveMessage.isEmpty() ? "" : " and the server answered \"" + dw.lastSaveMessage + "\"")
-                        + (listed.isEmpty() ? "; the new row was not found in the list afterwards" : "; the list now shows " + listed)
                    : toast.isEmpty() ? "FAILS because no toast appeared — " + dw.saveDiagnosis()
                                      : "FAILS because the toast is not a success message: \"" + toast + "\" — " + dw.saveDiagnosis(),
                 ok ? "PASS" : "FAIL");
+
+        // the new item must now be stored in the table: the grid is read from the server, so a row here is a row that was stored.
+        // Every page is read (the grid pages 25 at a time), the row is matched on Code, then Department / Remark / Status are compared.
+        String[] row = null;
+        int totalNow = 0;
+        if (ok) {
+            long end = System.currentTimeMillis() + 15000;
+            while (System.currentTimeMillis() < end && row == null) {
+                List<String[]> all = dw.existingAllPages();
+                totalNow = all.size();
+                for (String[] r : all) if (r[0].trim().equalsIgnoreCase(code)) row = r;
+                if (row == null) page.waitForTimeout(500);
+            }
+            if (row != null) dw.openPageWith(code);   // leave the page with the new row on screen for the screenshot
+        }
+        boolean deptSame = row != null && row[3].trim().equalsIgnoreCase(dept.trim());
+        boolean remarkSame = row != null && row[1].trim().equalsIgnoreCase(remark.trim());
+        boolean active = row != null && row[2].trim().matches("(?i)true|active|1|yes");
+        boolean stored = deptSame && remarkSame;
+        step("Verify the data is stored in the table", "Find the new Code in the table (all pages) and compare its Department, Remark and Status with what was entered",
+                "The table lists the new row with the entered Code, Department and Remark",
+                !ok ? "Not checked — the save was not confirmed (see the previous step)"
+                  : row == null ? "FAILS because the Code \"" + code + "\" is not in the table (" + totalNow + " row(s) read over all pages, pager \"" + dw.pagerText() + "\") although the save was confirmed"
+                  : stored ? "PASSES because the table (pager \"" + dw.pagerText() + "\", " + totalNow + " rows over all pages) lists Code \"" + row[0] + "\" / Department \"" + row[3] + "\" / Remark \"" + row[1] + "\" / Status \"" + row[2] + (active ? "\" (active)" : "\"")
+                  : "FAILS because the row for Code \"" + code + "\" differs from what was entered: " + (deptSame ? "" : "Department \"" + row[3] + "\" instead of \"" + dept + "\"; ") + (remarkSame ? "" : "Remark \"" + row[1] + "\" instead of \"" + remark + "\""),
+                ok && stored ? "PASS" : "FAIL");
+        String listed = row == null ? "" : row[0] + " = " + row[1] + " (status " + row[2] + (row[3].isEmpty() ? "" : ", department " + row[3]) + ")";
 
         addSummary("Rows in the table before", String.valueOf(rows.size()));
         addSummary("Code / Department / Remark added", code + " / " + dept + " / " + remark);

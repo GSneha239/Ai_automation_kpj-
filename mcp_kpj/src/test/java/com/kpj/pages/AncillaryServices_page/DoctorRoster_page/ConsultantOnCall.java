@@ -61,6 +61,18 @@ public class ConsultantOnCall extends BasePage {
             + "      return norm(e.options[i].textContent); }"
             + "    await sleep(400); }"
             + "  return '(no-option)'; };"
+            // Same as pick(), but a RANDOM real option. DevHIS refuses a roster whose date + doctor + duty already exists, and the
+            // shared QA environment keeps every roster earlier runs saved, so always taking the first option / the same window
+            // used the combinations up for good (2026-11-26: "One or more roster rows already exist...").
+            + "const setSel=(e,i)=>{ e.selectedIndex=i; e.dispatchEvent(new Event('change',{bubbles:true}));"
+            + "  try{ A.element(e).triggerHandler('change'); }catch(x){}"
+            + "  if($){ try{ $(e).trigger('change'); }catch(x){} } return norm(e.options[i].textContent); };"
+            + "const realIdx=e=>[...e.options].map((o,i)=>real(o)?i:-1).filter(i=>i>=0);"
+            + "const pickRnd=async(ng)=>{ const e=byNg(ng); if(!e) return '(no-field)';"
+            + "  for(let k=0;k<15;k++){ const ix=realIdx(e);"
+            + "    if(ix.length) return setSel(e, ix[Math.floor(Math.random()*ix.length)]);"
+            + "    await sleep(400); }"
+            + "  return '(no-option)'; };"
             // native <input type=date>: write yyyy-MM-dd and let Angular's date directive parse it —
             // $setViewValue with a string would put a string where the model expects a Date.
             + "const setDate=(ng,v)=>{ const e=byNg(ng); if(!e) return '(no-field)';"
@@ -193,7 +205,15 @@ public class ConsultantOnCall extends BasePage {
                 + " const [from, to] = args;"
                 + " const f=setDate('form.FromDate', from); const t=setDate('form.ToDate', to);"
                 + " await sleep(400);"
-                + " const d=await pick('form.DepartmentID');"
+                // A random Department that has doctors (its Doctor list loads after the change): try up to 10 of them.
+                + " const de=byNg('form.DepartmentID'); let d='(no-field)';"
+                + " if(de){ d='(no-option)';"
+                + "   for(let k=0;k<15 && !realIdx(de).length;k++) await sleep(400);"
+                + "   const order=realIdx(de).sort(()=>Math.random()-0.5).slice(0,10);"
+                + "   for(const i of order){ d=setSel(de,i);"
+                + "     const doc=byNg('form.DoctorID'); let has=false;"
+                + "     for(let k=0;k<9 && !has;k++){ await sleep(400); has=!!doc && realIdx(doc).length>0; }"
+                + "     if(has) break; d+=' (no doctors)'; } }"
                 + " resolve('FromDate='+f+' | ToDate='+t+' | Department='+d); })",
                 java.util.List.of(fromDate, toDate));
         String out = r == null ? "" : r.toString();
@@ -223,7 +243,7 @@ public class ConsultantOnCall extends BasePage {
      */
     public String selectDoctorDutyAndRoom() {
         Object doc = page.evaluate("() => new Promise(async resolve => {" + JS
-                + " resolve(await pick('form.DoctorID')); })");
+                + " resolve(await pickRnd('form.DoctorID')); })");
         lastDoctor = doc == null ? "" : doc.toString();
         waitForAngular(600);
 
@@ -231,7 +251,7 @@ public class ConsultantOnCall extends BasePage {
         waitForAngular(400);
 
         Object room = page.evaluate("() => new Promise(async resolve => {" + JS
-                + " resolve(await pick('form.ConsultationRoomID')); })");
+                + " resolve(await pickRnd('form.ConsultationRoomID')); })");
         lastRoom = room == null ? "" : room.toString();
         waitForAngular(400);
 
@@ -250,7 +270,7 @@ public class ConsultantOnCall extends BasePage {
         // Newer builds of the screen render Duty as a plain <select ng-model="form.DutyID"> like Doctor and Room —
         // set it the same way; the ui-select path below is kept for builds that still use the widget.
         Object plain = page.evaluate("() => new Promise(async resolve => {" + JS
-                + " resolve(await pick('form.DutyID')); })");
+                + " resolve(await pickRnd('form.DutyID')); })");
         if (plain != null && isReal(plain.toString())) {
             System.out.println("ConsultantOnCall: Duty = " + plain + " (native select)");
             return plain.toString();

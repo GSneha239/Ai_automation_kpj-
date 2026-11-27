@@ -7,7 +7,7 @@ import com.kpj.pages.LoginPage;
 // same style as the sibling com.kpj.tests.Ip.Admission test.
 
 /**
- * TC18 - IP &gt; <b>Bedboard Occupancy List</b> (consolidated) — one login, then each footer action as its own
+ * IP &gt; <b>Bedboard Occupancy List</b> (consolidated) — one login, then each footer action as its own
  * section (each re-opens the list + searches + selects a patient, so one failing section doesn't abort the rest):
  *
  * <ol>
@@ -19,7 +19,7 @@ import com.kpj.pages.LoginPage;
  */
 public class BedboardOccupancyListTest extends DevHisBase {
 
-    public BedboardOccupancyListTest() { super("TC18_BedboardOccupancyList"); }
+    public BedboardOccupancyListTest() { super("Ip_BedboardOccupancyList"); }
 
     public static void main(String[] args) {
         BedboardOccupancyListTest t = new BedboardOccupancyListTest();

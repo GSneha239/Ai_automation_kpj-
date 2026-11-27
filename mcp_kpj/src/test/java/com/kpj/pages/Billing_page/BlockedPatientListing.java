@@ -172,11 +172,15 @@ public class BlockedPatientListing extends BasePage {
         return out;
     }
 
-    /** The cell texts of the rows the grid draws, one list per row, in column order (the View Details button cell is empty text). */
+    /**
+     * The cell texts of the rows the grid draws, one list per row, in column order (the View Details button cell is empty text).
+     * Only the grid's BODY rows: the row-selection (tick) column is pinned in its own container with its own textless rows, which
+     * were read as records without a date.
+     */
     @SuppressWarnings("unchecked")
     public List<List<String>> drawnRows(String grid, int max) {
         Object r = page.evaluate("([g,n]) => {" + JS + " const e=grid(g); if(!e) return [];"
-                + " return [...e.querySelectorAll('.ui-grid-row')].slice(0,n).map(row=>[...row.querySelectorAll('.ui-grid-cell')].map(c=>norm(c.textContent))); }", java.util.Arrays.asList(grid, max));
+                + " return [...e.querySelectorAll('.ui-grid-render-container-body .ui-grid-row')].slice(0,n).map(row=>[...row.querySelectorAll('.ui-grid-cell')].map(c=>norm(c.textContent))); }", java.util.Arrays.asList(grid, max));
         List<List<String>> out = new ArrayList<>();
         if (r instanceof List) for (Object o : (List<Object>) r) {
             List<String> cells = new ArrayList<>();
@@ -208,7 +212,9 @@ public class BlockedPatientListing extends BasePage {
         List<String> bad = new ArrayList<>();
         java.time.format.DateTimeFormatter f = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy");
         java.time.LocalDate a = java.time.LocalDate.parse(from, f), b = java.time.LocalDate.parse(to, f);
-        for (List<String> cells : drawnRows(grid, 200)) {
+        List<List<String>> rows = drawnRows(grid, 200);
+        if (rows.isEmpty() && rowCount(grid) > 0) bad.add("(the grid holds records but no row could be read)");
+        for (List<String> cells : rows) {
             String first = cells.isEmpty() ? "" : cells.get(0);
             try {
                 java.time.LocalDate d = java.time.LocalDate.parse(first.substring(0, 10), f);
