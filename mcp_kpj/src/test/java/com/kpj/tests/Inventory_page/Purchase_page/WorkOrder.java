@@ -83,21 +83,49 @@ public class WorkOrder extends DevHisBase {
                 supplier.isEmpty() ? "Not selected — " + w.problems : "Selected \"" + supplier + "\"", supplier.isEmpty() || !w.ok() ? "FAIL" : "PASS");
         if (supplier.isEmpty() || !w.ok()) { addSummary("Result", "FAILED — no supplier: " + w.problems); return; }
 
-        // 3) item code, item name, quantity, Enter
+        // 3) item code, item name, quantity — fill all three first, then ONE screenshot shared by all three steps
+        // (instead of a separate screenshot per field).
         String code = w.enterCode(CODE);
-        step(page, "Enter item code", "Enter the item Code (" + CODE + ")", "The item code is entered",
-                w.ok() ? "Entered \"" + code + "\"" : "Problem — " + w.problems, w.ok() ? "PASS" : "FAIL");
-        if (!w.ok()) { addSummary("Result", "FAILED — item code: " + w.problems); return; }
+        boolean codeOk = w.ok();
+        String codeProblems = codeOk ? "" : w.problems.toString();
 
-        String name = w.enterName(ITEM);
-        step(page, "Enter item name", "Enter the item Name (" + ITEM + ")", "The item name is entered",
-                w.ok() ? "Entered \"" + name + "\"" : "Problem — " + w.problems, w.ok() ? "PASS" : "FAIL");
-        if (!w.ok()) { addSummary("Result", "FAILED — item name: " + w.problems); return; }
+        String name = codeOk ? w.enterName(ITEM) : "";
+        boolean nameOk = codeOk && w.ok();
+        String nameProblems = (codeOk && !nameOk) ? w.problems.toString() : "";
 
-        String qty = w.enterQuantity(QUANTITY);
-        step(page, "Enter quantity", "Enter the Quantity (" + QUANTITY + ")", "The quantity is entered",
-                w.ok() ? "Entered \"" + qty + "\"" : "Problem — " + w.problems, w.ok() ? "PASS" : "FAIL");
-        if (!w.ok()) { addSummary("Result", "FAILED — quantity: " + w.problems); return; }
+        String qty = (codeOk && nameOk) ? w.enterQuantity(QUANTITY) : "";
+        boolean qtyOk = codeOk && nameOk && w.ok();
+        String qtyProblems = (codeOk && nameOk && !qtyOk) ? w.problems.toString() : "";
+
+        byte[] fillShot;
+        try { fillShot = page.screenshot(new com.microsoft.playwright.Page.ScreenshotOptions().setTimeout(8000)); } catch (Exception e) { fillShot = null; }
+
+        if (fillShot != null) {
+            step(fillShot, "Enter item code", "Enter the item Code (" + CODE + ")", "The item code is entered",
+                    codeOk ? "Entered \"" + code + "\"" : "Problem — " + codeProblems, codeOk ? "PASS" : "FAIL");
+        } else {
+            step(page, "Enter item code", "Enter the item Code (" + CODE + ")", "The item code is entered",
+                    codeOk ? "Entered \"" + code + "\"" : "Problem — " + codeProblems, codeOk ? "PASS" : "FAIL");
+        }
+        if (!codeOk) { addSummary("Result", "FAILED — item code: " + codeProblems); return; }
+
+        if (fillShot != null) {
+            step(fillShot, "Enter item name", "Enter the item Name (" + ITEM + ")", "The item name is entered",
+                    nameOk ? "Entered \"" + name + "\"" : "Problem — " + nameProblems, nameOk ? "PASS" : "FAIL");
+        } else {
+            step(page, "Enter item name", "Enter the item Name (" + ITEM + ")", "The item name is entered",
+                    nameOk ? "Entered \"" + name + "\"" : "Problem — " + nameProblems, nameOk ? "PASS" : "FAIL");
+        }
+        if (!nameOk) { addSummary("Result", "FAILED — item name: " + nameProblems); return; }
+
+        if (fillShot != null) {
+            step(fillShot, "Enter quantity", "Enter the Quantity (" + QUANTITY + ")", "The quantity is entered",
+                    qtyOk ? "Entered \"" + qty + "\"" : "Problem — " + qtyProblems, qtyOk ? "PASS" : "FAIL");
+        } else {
+            step(page, "Enter quantity", "Enter the Quantity (" + QUANTITY + ")", "The quantity is entered",
+                    qtyOk ? "Entered \"" + qty + "\"" : "Problem — " + qtyProblems, qtyOk ? "PASS" : "FAIL");
+        }
+        if (!qtyOk) { addSummary("Result", "FAILED — quantity: " + qtyProblems); return; }
 
         int rows = w.pressEnterInQuantity();
         boolean rowOk = w.ok() && rows == 1 && w.rowHolds(CODE, ITEM, QUANTITY);
@@ -128,15 +156,27 @@ public class WorkOrder extends DevHisBase {
         // 5) Save -> toast
         String toast = w.clickSaveAndCapture();
         boolean ok = w.saveSucceeded() && w.savedOnServer;
-        step(page, "Click Save", "Click Save (IUDWorkOrder)", "The work order is saved",
-                w.lastSave + (toast.isEmpty() ? "; no toast appeared" : "; the screen answered \"" + toast + "\"") + "; the server answered " + w.lastSaveAnswer,
-                toast.isEmpty() ? "FAIL" : "PASS");
+        // The app navigates back to the list right after the toast, so a screenshot taken after clickSaveAndCapture()
+        // returns never shows it — use the one captured the instant the toast was first seen, falling back to the live page.
+        java.util.function.Supplier<byte[]> shot = () -> w.lastSaveScreenshot;
+        if (shot.get() != null) {
+            step(shot.get(), "Click Save", "Click Save (IUDWorkOrder)", "The work order is saved",
+                    w.lastSave + (toast.isEmpty() ? "; no toast appeared" : "; the screen answered \"" + toast + "\"") + "; the server answered " + w.lastSaveAnswer,
+                    toast.isEmpty() ? "FAIL" : "PASS");
+        } else {
+            step(page, "Click Save", "Click Save (IUDWorkOrder)", "The work order is saved",
+                    w.lastSave + (toast.isEmpty() ? "; no toast appeared" : "; the screen answered \"" + toast + "\"") + "; the server answered " + w.lastSaveAnswer,
+                    toast.isEmpty() ? "FAIL" : "PASS");
+        }
 
-        step(page, "Verify success toast message", "Read the toast shown after Save", "A success toast appears",
-                ok ? "PASSES because the toast is a success message: \"" + toast + "\" and the server confirmed the save (ResultStatus 1)"
+        String toastVerdict = ok ? "PASSES because the toast is a success message: \"" + toast + "\" and the server confirmed the save (ResultStatus 1)"
                    : (toast.isEmpty() ? "FAILS because no toast appeared — server: " + w.lastSaveAnswer
-                                      : "FAILS because the toast is not a success message: \"" + toast + "\" — server: " + w.lastSaveAnswer),
-                ok ? "PASS" : "FAIL");
+                                      : "FAILS because the toast is not a success message: \"" + toast + "\" — server: " + w.lastSaveAnswer);
+        if (shot.get() != null) {
+            step(shot.get(), "Verify success toast message", "Read the toast shown after Save", "A success toast appears", toastVerdict, ok ? "PASS" : "FAIL");
+        } else {
+            step(page, "Verify success toast message", "Read the toast shown after Save", "A success toast appears", toastVerdict, ok ? "PASS" : "FAIL");
+        }
 
         // 6) read the new order back from the list
         String wo = "";

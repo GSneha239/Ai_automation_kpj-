@@ -48,6 +48,8 @@ public class WorkOrder extends BasePage {
     /** Toasts seen after an Enter (the implicit-submit warnings), for the report. */
     public String lastStrayToast = "";
     public boolean savedOnServer;
+    /** Screenshot taken the instant the Save toast is first seen — the app navigates back to the list right after, so a screenshot taken later never shows it. */
+    public byte[] lastSaveScreenshot;
     /** What the last fill step could not verify (empty = everything held). */
     public final List<String> problems = new ArrayList<>();
     public boolean ok() { return problems.isEmpty(); }
@@ -313,7 +315,7 @@ public class WorkOrder extends BasePage {
      * be mistaken for the answer. Returns the toast.
      */
     public String clickSaveAndCapture() {
-        lastToast = ""; lastSaveAnswer = ""; lastSave = ""; savedOnServer = false;
+        lastToast = ""; lastSaveAnswer = ""; lastSave = ""; savedOnServer = false; lastSaveScreenshot = null;
         final List<com.microsoft.playwright.Response> answers = new java.util.concurrent.CopyOnWriteArrayList<>();
         java.util.function.Consumer<com.microsoft.playwright.Response> watcher = r -> {
             try { if (r.url().toLowerCase().contains("inventoryworkorder/iud")) answers.add(r); } catch (Exception ignore) { }
@@ -327,16 +329,15 @@ public class WorkOrder extends BasePage {
                 + " window.__woObs=new MutationObserver(grab); window.__woObs.observe(document.body,{childList:true,subtree:true}); }");
         try {
             if (!clickByHandler("IUDWorkOrder", "^\\s*save\\s*$")) System.out.println("WorkOrder: the Save button was not found");
-            for (int i = 0; i < 30; i++) {
-                page.evaluate("() => {" + JS
-                        + " document.querySelectorAll('.toast-message,.toast,[id^=toast]').forEach(el=>{"
-                        + "   const t=norm(el.textContent); window.__woToasts=window.__woToasts||[];"
-                        + "   if(t && !window.__woToasts.includes(t)) window.__woToasts.push(t); }); }");
-                boolean got = Boolean.TRUE.equals(page.evaluate(
-                        "() => (window.__woToasts||[]).some(a=>/succe|saved|error|fail|please|invalid|required|already|exist/i.test(a))"));
-                if (got) break;
-                page.waitForTimeout(500);
-            }
+            try {
+                page.waitForFunction("() => (window.__woToasts||[]).some(a=>/succe|saved|error|fail|please|invalid|required|already|exist/i.test(a))",
+                        null, new Page.WaitForFunctionOptions().setTimeout(15000));
+            } catch (Exception ignore) { }
+            // The toast genuinely stays on screen for a couple of seconds (confirmed manually), but screenshotting the
+            // instant the DOM mutation is observed catches it mid fade-in (still near-invisible) — give its entrance
+            // animation a moment to finish before capturing.
+            page.waitForTimeout(400);
+            try { lastSaveScreenshot = page.screenshot(new Page.ScreenshotOptions().setTimeout(5000)); } catch (Exception ignore) { }
             lastSave = "clicked Save [IUDWorkOrder]";
             waitForAngular(1500);
         } finally {

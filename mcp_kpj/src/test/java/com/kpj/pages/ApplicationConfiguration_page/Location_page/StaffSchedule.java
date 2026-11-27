@@ -22,8 +22,13 @@ public class StaffSchedule extends BasePage {
 
     public StaffSchedule(Page page) { super(page); }
 
-    /** Route — mined from the menu at runtime. */
-    public static String ROUTE = "";
+    /** True on the list screen only: its grid's Staff Name column ("Payable Name" on older builds) and the Add button. */
+    private static final String LIST_DRAWN = "() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+            + " return [...document.querySelectorAll('.ui-grid-header-cell')].some(h=>h.offsetParent!==null && /(staff|payable)\\s*name/i.test(norm(h.textContent)))"
+            + "   && [...document.querySelectorAll('button,a,input[type=button]')].some(x=>x.offsetParent!==null && /^add$/i.test(norm(x.textContent||x.value))); }";
+
+    /** True once the add form is drawn: its Start / End time boxes. */
+    private static final String FORM_DRAWN = "() => [...document.querySelectorAll(\"input[ng-model='inputTime']\")].some(e=>e.offsetParent!==null)";
 
     public String lastDepartment = "", lastPayable = "", lastStart = "", lastEnd = "",
             lastConsultationRoom = "", lastNursingStation = "", lastDays = "";
@@ -75,51 +80,59 @@ public class StaffSchedule extends BasePage {
 
     // ---- navigation ------------------------------------------------------
 
+    /**
+     * Application Configuration &rarr; Location &rarr; Staff Schedule, by real menu clicks (3 attempts).
+     *
+     * <p>Each level is opened only if it is closed and the link is looked up INSIDE the Location entry; the sidebar is built lazily
+     * after login. There is deliberately no typed-route fallback: the app answers it with "Reload page" / the dashboard.</p>
+     */
     public boolean navigateViaMenu() {
-        try {
-            page.waitForFunction("() => [...document.querySelectorAll('a')].some(a=>/application\\s*config/i.test((a.textContent||'')) && a.offsetParent!==null)",
-                    null, new Page.WaitForFunctionOptions().setTimeout(15000));
-        } catch (Exception ignore) { }
-        try {
-            page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                    + " const a=[...document.querySelectorAll('a')].find(x=>/application\\s*config/i.test(norm(x.textContent)) && x.offsetParent!==null); if(a) a.click(); }");
-            waitForAngular(1200);
-            page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                    + " const a=[...document.querySelectorAll('a')].find(x=>/^\\s*locations?\\s*$/i.test(norm(x.textContent)) && x.offsetParent!==null && (x.getAttribute('href')||'')==='#'); if(a) a.click(); }");
-            waitForAngular(1500);
-        } catch (Exception e) {
-            System.out.println("StaffSchedule.nav: menu entry raced the SPA route change - " + e.getMessage());
-        }
-        Object href = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
-                + " const want=x=>/^\\s*staff\\s*schedule\\s*$/i.test(norm(x.textContent));"
-                + " const a=[...document.querySelectorAll('a[href]')].find(x=>want(x) && x.offsetParent!==null)"
-                + "   || [...document.querySelectorAll('a[href]')].find(want)"
-                + "   || [...document.querySelectorAll('a[href]')].find(x=>/staffschedule/i.test(x.getAttribute('href')||''));"
-                + " if(!a) return ''; a.id='__ssMenu'; return a.getAttribute('href')||'link'; }");
-        if (href != null && !href.toString().isEmpty()) {
-            if (href.toString().contains("#/")) ROUTE = href.toString().substring(href.toString().indexOf("#/"));
-            try { page.locator("#__ssMenu").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(5000)); }
-            catch (Exception e) {
-                System.out.println("StaffSchedule.nav: real click failed, dispatching in-page click");
-                try { page.evaluate("() => { const a=document.getElementById('__ssMenu'); if(a) a.click(); }"); } catch (Exception ignore) { }
+        final String config = "^\\s*application\\s*config(uration)?\\s*$";
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            try {
+                expandMenuEntry(null, config);
+                expandMenuEntry(config, "^\\s*locations?\\s*$");
+                Object found = page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim(); const vis=e=>e.offsetParent!==null;"
+                        + " const top=[...document.querySelectorAll('a')].find(x=>/^\\s*application\\s*config(uration)?\\s*$/i.test(norm(x.textContent)) && vis(x));"
+                        + " const topLi=(top&&top.closest('li'))||document;"
+                        + " const grp=[...topLi.querySelectorAll('a')].find(x=>/^\\s*locations?\\s*$/i.test(norm(x.textContent)) && vis(x));"
+                        + " const scope=(grp&&grp.closest('li'))||topLi;"
+                        + " const a=[...scope.querySelectorAll('a[href]')].find(x=>/^\\s*staff\\s*schedule\\s*$/i.test(norm(x.textContent)));"
+                        + " if(!a) return false; a.id='__ssMenu'; return true; }");
+                if (Boolean.TRUE.equals(found)) {
+                    page.locator("#__ssMenu").click(new com.microsoft.playwright.Locator.ClickOptions().setTimeout(6000));
+                } else {
+                    System.out.println("StaffSchedule.nav: menu link not found. schedule links => " + findScheduleLinks());
+                }
+            } catch (Exception e) {
+                System.out.println("StaffSchedule.nav: " + String.valueOf(e.getMessage()).split("\n")[0]);
             }
             try { page.evaluate("() => { const e=document.getElementById('__ssMenu'); if(e) e.removeAttribute('id'); }"); } catch (Exception ignore) { }
-            waitForAngular(2500);
-        } else {
-            System.out.println("StaffSchedule.nav: menu link not found. schedule links => " + findScheduleLinks());
+            if (waitFor(LIST_DRAWN, 30000) && onScreen()) {
+                // The rows arrive after the headers: wait for them so the screenshot shows the list (an empty list is allowed).
+                waitFor("() => [...document.querySelectorAll('.ui-grid-row')].some(r=>r.offsetParent!==null)", 15000);
+                waitForAngular(800);
+                return true;
+            }
+            System.out.println("StaffSchedule.nav: attempt " + attempt + " - list screen not shown (" + page.url() + ")");
+            page.waitForTimeout(2000);
         }
-        if (!onScreen() && !ROUTE.isEmpty()) {
-            System.out.println("StaffSchedule.nav: direct route " + ROUTE);
-            try { page.evaluate("(h) => { window.location.hash = h; }", ROUTE); } catch (Exception ignore) { }
-            waitForAngular(2500);
-        }
-        for (int i = 0; i < 8 && !onScreen(); i++) page.waitForTimeout(1000);
-        return onScreen();
+        return false;
     }
 
+    /** True only when this screen's own list is drawn — never judged on the words "Staff Schedule", which the menu holds too. */
     public boolean onScreen() {
-        if (!ROUTE.isEmpty() && page.url().toLowerCase().contains(ROUTE.replace("#/", "").toLowerCase())) return true;
-        return Boolean.TRUE.equals(page.evaluate("() => /staff\\s*schedule/i.test(document.body.innerText||'')"));
+        return page.url().toLowerCase().contains("staffschedule") && Boolean.TRUE.equals(page.evaluate(LIST_DRAWN));
+    }
+
+    /** Wait for a JS condition; false (not an exception) when it never becomes true. */
+    private boolean waitFor(String condition, int timeoutMs) {
+        try {
+            page.waitForFunction(condition, null, new Page.WaitForFunctionOptions().setTimeout(timeoutMs));
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     // ---- actions ---------------------------------------------------------
@@ -133,8 +146,12 @@ public class StaffSchedule extends BasePage {
         catch (Exception e) { System.out.println("StaffSchedule." + what + ": DOM click failed - " + e.getMessage()); }
     }
 
-    /** Click the list screen's <b>Add</b>. */
+    /** Click the list screen's <b>Add</b>; true only when the add form is actually drawn. */
     public boolean clickAdd() {
+        if (!waitFor(LIST_DRAWN, 30000)) {
+            System.out.println("StaffSchedule.clickAdd: the list screen and its Add button never appeared (" + page.url() + ")");
+            return false;
+        }
         boolean tagged = false;
         for (int i = 0; i < 15 && !tagged; i++) {
             tagged = Boolean.TRUE.equals(page.evaluate("() => { const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
@@ -146,6 +163,10 @@ public class StaffSchedule extends BasePage {
         }
         if (!tagged) { System.out.println("StaffSchedule.clickAdd: Add button not found"); return false; }
         robustClick("__ssAdd", "clickAdd");
+        if (!waitFor(FORM_DRAWN, 30000)) {
+            System.out.println("StaffSchedule.clickAdd: Add was clicked but the form did not open (" + page.url() + ")");
+            return false;
+        }
         waitForAngular(1800);
         return true;
     }
