@@ -6,12 +6,14 @@ import com.microsoft.playwright.Page;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
+import java.util.regex.Pattern;
 
 /**
  * Report &gt; <b>Report Console</b> &gt; <b>Master Report</b> - Page Object (route {@code #/reportconsole}).
@@ -154,6 +156,8 @@ public class Master_Report extends Investigation_Reports {
         final Consumer<Download> handler = got::set;
         page.onDownload(handler);
         boolean clicked;
+        final long asked = System.currentTimeMillis();
+        long secondsToDownload = 0;
         try {
             clicked = clickShowReport();
             long deadline = System.currentTimeMillis() + waitMs;
@@ -165,6 +169,7 @@ public class Master_Report extends Investigation_Reports {
                 }
                 page.waitForTimeout(400);
             }
+            secondsToDownload = Math.round((System.currentTimeMillis() - asked) / 1000.0);
         } finally {
             page.offDownload(handler);
         }
@@ -197,12 +202,75 @@ public class Master_Report extends Investigation_Reports {
                 String head = t.trim().toLowerCase();
                 r.looksLikeHtml = head.startsWith("<!doctype") || head.startsWith("<html") || head.contains("server error in");
             }
-            r.diagnostics = "downloaded \"" + r.filename + "\" (" + r.bytes + " bytes, " + (r.looksLikeZip ? "a zip container, not a CSV" : r.lines.size() + " non-blank line(s)") + ") from " + r.url
+            r.diagnostics = "downloaded \"" + r.filename + "\" (" + r.bytes + " bytes, " + (r.looksLikeZip ? "a zip container, not a CSV" : r.lines.size() + " non-blank line(s)") + ") about " + secondsToDownload + " s after Show Report, from " + r.url
                     + (r.failure.isEmpty() ? "" : " - the download FAILED: " + r.failure);
         } catch (Exception e) {
             r.diagnostics = "a file \"" + r.filename + "\" was downloaded but could not be saved / read: " + String.valueOf(e.getMessage()).split("\n")[0];
             r.failure = r.failure.isEmpty() ? "could not be saved" : r.failure;
         }
         return r;
+    }
+
+    // ---- private data -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+    /** What a hidden cell shows in the saved copy, the report and the evidence picture. */
+    public static final String HIDDEN = "[hidden]";
+
+    /** A column name (lower case, letters and digits only) that shows a file holds private data: passwords, bank or tax numbers, identity numbers, birth dates, phone numbers, e-mail addresses. */
+    private static final Pattern PRIVATE_COLUMN = Pattern.compile(
+            "password|passwd|^pwd$|bankaccount|bankacc(ount)?no|^accountno$|identification(number|no|nmber)|^ic(no|number)$|nric|passport|birthdate|dateofbirth|^dob$|mobile|telephone|^(home|office|res|company|primary|contact)?tel(no|number)?\\d*$|^phone$|phone(no|number)|^contactno$|email|^tin(no|number)$|taxidentification");
+
+    /** Further personal columns, hidden only in a file that also has one of the above (the Nationality master list is not private data; a doctor's nationality is). */
+    private static final Pattern PERSONAL_COLUMN = Pattern.compile("loginname|username|maritalstatus|nationality|^gender$|^sex$|address|postcode|postalcode|zipcode|contactperson|fax|tourismtax|sstregist|^nmc$|^nsr$");
+
+    /**
+     * Hides private data BEFORE anything else is written from a downloaded report. When the header has a private column, every filled cell of the private and personal columns becomes {@value #HIDDEN} - in {@code r.text} /
+     * {@code r.lines} (what the HTML report and the evidence picture are made from) and in the saved copy of the file. The number of rows and columns, and which cells are blank, stay as downloaded. A row whose column
+     * count differs from the header's keeps only its first cell (a private value could sit in any of the others). If the saved copy cannot be rewritten it is removed, so that no unhidden copy stays behind.
+     *
+     * @return the names of the hidden columns; empty = nothing private, and the file stays exactly as downloaded
+     */
+    public List<String> hidePrivateColumns(DownloadResult r) {
+        List<String> hidden = new ArrayList<>();
+        if (r == null || !r.downloaded || r.looksLikeZip) return hidden;
+        List<List<String>> rows = parseCsv(r.text);
+        if (rows.isEmpty()) return hidden;
+        List<String> header = rows.get(0);
+        if (header.stream().noneMatch(h -> PRIVATE_COLUMN.matcher(columnKey(h)).find())) return hidden;
+        List<Integer> columns = new ArrayList<>();
+        for (int c = 0; c < header.size(); c++) {
+            String key = columnKey(header.get(c));
+            if (PRIVATE_COLUMN.matcher(key).find() || PERSONAL_COLUMN.matcher(key).find()) { columns.add(c); hidden.add(header.get(c).trim()); }
+        }
+        StringBuilder out = new StringBuilder();
+        for (int i = 0; i < rows.size(); i++) {
+            List<String> row = new ArrayList<>(rows.get(i));
+            if (i > 0 && row.size() != header.size()) for (int c = 1; c < row.size(); c++) { if (!row.get(c).trim().isEmpty()) row.set(c, HIDDEN); }
+            else if (i > 0) for (int c : columns) { if (!row.get(c).trim().isEmpty()) row.set(c, HIDDEN); }
+            for (int c = 0; c < row.size(); c++) {
+                String v = row.get(c);
+                if (c > 0) out.append(',');
+                out.append(v.contains(",") || v.contains("\"") || v.contains("\n") || v.contains("\r") ? "\"" + v.replace("\"", "\"\"") + "\"" : v);
+            }
+            out.append("\r\n");
+        }
+        r.text = out.toString();
+        r.lines = new ArrayList<>();
+        for (String line : r.text.split("\\r?\\n")) if (!line.trim().isEmpty()) r.lines.add(line);
+        if (!r.savedTo.isEmpty()) {
+            Path saved = Paths.get(r.savedTo);
+            try {
+                Files.write(saved, ("﻿" + r.text).getBytes(StandardCharsets.UTF_8));
+            } catch (Exception e) {
+                try { Files.deleteIfExists(saved); } catch (Exception ignore) { }
+                problems.add("the copy with the private data hidden could not be written, so no copy was kept: " + String.valueOf(e.getMessage()).split("\n")[0]);
+                r.savedTo = "";
+            }
+        }
+        return hidden;
+    }
+
+    private static String columnKey(String header) {
+        return header.toLowerCase().replaceAll("[^a-z0-9]", "");
     }
 }
